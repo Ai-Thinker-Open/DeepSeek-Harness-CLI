@@ -1,5 +1,5 @@
-import React, { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react'
-import { Box, useApp, useInput } from 'ink'
+import React, { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
+import { Box, Text, useApp, useInput } from 'ink'
 import { Store } from '../store.ts'
 import { Agent, QuestionCenter } from '../agent.ts'
 import { HarnessDriver } from '../harness/driver.ts'
@@ -10,10 +10,10 @@ import { appendEvent, createSession, listSessions, replaySession } from '../sess
 import type { ToolDef } from '../tools/types.ts'
 import type { SessionDriver, SessionMeta, TodoItem } from '../types.ts'
 import { ChatPane } from './ChatPane.tsx'
-import { Sidebar, type SidebarTab } from './Sidebar.tsx'
 import { StatusBar } from './StatusBar.tsx'
 import { InputBar } from './InputBar.tsx'
 import { QuestionModal } from './QuestionModal.tsx'
+import { CommandPanel, PALETTE_COMMANDS, type PaletteMode } from './CommandPanel.tsx'
 import { theme } from '../theme.ts'
 
 /** In-process cordis mode (dsh --profile cli): drive the host agent directly. */
@@ -23,6 +23,11 @@ export interface CordisMode {
   model: string
   questionCenter: QuestionCenter
   sessionId: string
+}
+
+interface Panel {
+  mode: 'sessions' | 'todos' | 'help'
+  selected: number
 }
 
 export function App({
@@ -48,10 +53,9 @@ export function App({
   const [input, setInput] = useState('')
   const [history, setHistory] = useState<string[]>([])
   const [histIdx, setHistIdx] = useState(-1)
-  const [focus, setFocus] = useState<'chat' | 'sidebar'>('chat')
-  const [tab, setTab] = useState<SidebarTab>('sessions')
-  const [selIndex, setSelIndex] = useState(0)
   const [sessionId, setSessionId] = useState<string>(initialSessionId ?? '')
+  const [panel, setPanel] = useState<Panel | null>(null)
+  const [cmdSel, setCmdSel] = useState(0)
   const driverRef = useRef<SessionDriver | null>(null)
   const currentIdRef = useRef<string>(initialSessionId ?? '')
 
@@ -82,7 +86,6 @@ export function App({
       const questionCenter = new QuestionCenter(store, false)
 
       if (cordis) {
-        // ── cordis plugin mode: drive the host agent in-process ──
         const driver = new CordisDriver({
           ctx: cordis.ctx,
           agent: cordis.agent,
@@ -104,7 +107,6 @@ export function App({
       }
 
       if (harness) {
-        // ── connected mode: drive a harness session ──
         const driver = new HarnessDriver({
           client: harness,
           store,
@@ -121,7 +123,6 @@ export function App({
         if (id) void driver.loadHistory()
         driver.startListening()
         if (!id) {
-          // fresh session — ask the harness to create one
           void harness
             .createSession(config.cwd)
             .then(({ sessionId: sid }) => {
@@ -137,7 +138,7 @@ export function App({
         return
       }
 
-      // ── standalone mode: local agent ──
+      // standalone
       const fresh = id === null
       const data = fresh
         ? { meta: {} as SessionMeta, messages: [], todos: [], planMode: false }
@@ -186,7 +187,7 @@ export function App({
     }
   }, [mountSession, initialSessionId])
 
-  // keep the sidebar list fresh when a title lands
+  // keep the session list fresh when a title lands
   useEffect(() => {
     if (state.title) refreshList()
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -195,10 +196,25 @@ export function App({
   const busy = state.busy
   const hasQuestion = state.questions.length > 0
 
+  const filteredCommands = useMemo(() => {
+    const q = input.startsWith('/') ? input.slice(1).toLowerCase() : ''
+    return q ? PALETTE_COMMANDS.filter((c) => c.name.startsWith(q)) : PALETTE_COMMANDS
+  }, [input])
+
+  const showCommands = input.startsWith('/') && !panel
+  const panelLen = panel
+    ? panel.mode === 'sessions'
+      ? Math.min(20, state.sessionList.length)
+      : panel.mode === 'todos'
+        ? state.todos.length
+        : 1
+    : filteredCommands.length
+
   const send = useCallback(
     (textOverride?: string) => {
       const text = (textOverride ?? input).trim()
       if (!text || busy || hasQuestion) return
+      if (text.startsWith('/')) return // slash commands are handled by the palette
       setHistory((h) => [...h, text])
       setHistIdx(-1)
       setInput('')
@@ -230,7 +246,6 @@ export function App({
   const newSession = useCallback(() => {
     if (busy) return
     mountSession(null)
-    setFocus('chat')
   }, [busy, mountSession])
 
   const togglePlan = useCallback(() => {
@@ -253,6 +268,56 @@ export function App({
     [state.todos],
   )
 
+  /** Run the selected slash command. */
+  const runCommand = useCallback(() => {
+    const cmd = filteredCommands[cmdSel]
+    if (!cmd) return
+    setInput('')
+    setCmdSel(0)
+    switch (cmd.name) {
+      case 'sessions':
+        setPanel({ mode: 'sessions', selected: 0 })
+        break
+      case 'todos':
+        setPanel({ mode: 'todos', selected: 0 })
+        break
+      case 'new':
+        newSession()
+        break
+      case 'plan':
+        togglePlan()
+        break
+      case 'models':
+        driverRef.current?.cycleModel()
+        break
+      case 'help':
+        setPanel({ mode: 'help', selected: 0 })
+        break
+      case 'exit':
+        exit()
+        break
+    }
+  }, [filteredCommands, cmdSel, newSession, togglePlan, exit])
+
+  /** Confirm the open panel (sessions / todos / help). */
+  const confirmPanel = useCallback(() => {
+    if (!panel) return
+    if (panel.mode === 'sessions') {
+      const s = state.sessionList[panel.selected]
+      if (s) mountSession(s.id)
+      setPanel(null)
+      setInput('')
+      return
+    }
+    if (panel.mode === 'todos') {
+      const t = state.todos[panel.selected]
+      if (t) toggleTodo(t.id)
+      return
+    }
+    setPanel(null)
+    setInput('')
+  }, [panel, state.sessionList, state.todos, mountSession, toggleTodo])
+
   useInput((inputKey, key) => {
     if (key.ctrl && inputKey === 'c') {
       const driver = driverRef.current
@@ -264,6 +329,23 @@ export function App({
       return
     }
     if (hasQuestion) return // modal owns the keys
+    if (panel) {
+      if (key.upArrow) setPanel((p) => (p ? { ...p, selected: Math.max(0, p.selected - 1) } : p))
+      else if (key.downArrow) setPanel((p) => (p ? { ...p, selected: Math.min(panelLen - 1, p.selected + 1) } : p))
+      else if (key.return || input.includes('\r') || input.includes('\n')) confirmPanel()
+      else if (key.escape) {
+        setPanel(null)
+        setInput('')
+      }
+      return
+    }
+    if (showCommands) {
+      if (key.upArrow) setCmdSel((s) => Math.max(0, s - 1))
+      else if (key.downArrow) setCmdSel((s) => Math.min(filteredCommands.length - 1, s + 1))
+      else if (key.return || input.includes('\r') || input.includes('\n')) runCommand()
+      else if (key.escape) setInput('')
+      return // other keys edit the query
+    }
     if (key.ctrl && inputKey === 'n') {
       newSession()
       return
@@ -276,72 +358,73 @@ export function App({
       driverRef.current?.cycleModel()
       return
     }
-    if (key.ctrl && inputKey === 'r') {
-      setFocus('sidebar')
-      setTab('sessions')
-      return
-    }
     if (key.ctrl && inputKey === 'l') {
       setInput('')
       return
     }
-    if (key.tab) {
-      setFocus((f) => (f === 'chat' ? 'sidebar' : 'chat'))
-      setSelIndex(0)
-      return
-    }
     if (key.escape) {
       if (input) setInput('')
-      else if (focus === 'sidebar') setFocus('chat')
       return
     }
-    if (focus === 'chat' && key.upArrow && !input) histUp()
-    if (focus === 'chat' && key.downArrow && !input) histDown()
+    if (key.upArrow && !input) histUp()
+    if (key.downArrow && !input) histDown()
   })
 
   const activeQuestion = hasQuestion ? (state.questions[0] as NonNullable<typeof state.questions[0]>) : null
 
   return (
-    <Box flexDirection="row" height="100%">
-      <Sidebar
-        focused={focus === 'sidebar'}
-        tab={tab}
-        onTab={setTab}
-        sessions={state.sessionList}
-        currentSessionId={sessionId}
-        selIndex={selIndex}
-        onSelectIndex={setSelIndex}
-        onOpenSession={(id) => {
-          mountSession(id)
-          setFocus('chat')
-        }}
-        todos={state.todos}
-        onToggleTodo={toggleTodo}
-        planMode={state.planMode}
-        onTogglePlan={togglePlan}
-      />
-      <Box flexDirection="column" flexGrow={1}>
-        <ChatPane messages={state.messages} focused={focus === 'chat'} status={state.status} />
+    <Box flexDirection="column" height="100%">
+      <Box borderBottom={true} borderColor={theme.border} paddingX={1} height={1} flexShrink={0}>
+        <Text color={theme.whale} bold>
+          🐳 dskharness
+        </Text>
+        <Text color={theme.textDim}>
+          {' '}
+          · {state.title || 'new session'}
+        </Text>
+        <Box flexGrow={1} />
+        {state.planMode && (
+          <Text color={theme.warn} bold>
+            PLAN{' '}
+          </Text>
+        )}
+        <Text color={theme.textDim}>{state.model || config.model}</Text>
+      </Box>
+      <ChatPane messages={state.messages} focused status={state.status} />
+      {showCommands || panel ? (
         <Box paddingX={1} flexShrink={0}>
-          <InputBar
-            value={input}
-            onChange={setInput}
-            onSubmit={send}
-            disabled={focus !== 'chat' || busy || hasQuestion}
-            busy={busy}
-            placeholder={harness ? 'Ask the harness… (Ctrl+N new · Ctrl+M model)' : 'Ask dskharness anything… (Ctrl+E plan · Ctrl+N new · Ctrl+M model)'}
+          <CommandPanel
+            mode={panel?.mode ?? 'command'}
+            query={input}
+            selected={panel?.selected ?? cmdSel}
+            filteredCommands={filteredCommands}
+            sessions={state.sessionList}
+            todos={state.todos}
+            currentSessionId={sessionId}
+            planMode={state.planMode}
+            model={state.model || config.model}
           />
         </Box>
-        <StatusBar
-          model={state.model || config.model}
-          status={state.status}
-          detail={state.statusDetail}
-          planMode={state.planMode}
-          usage={state.usage}
-          cwd={config.cwd}
-          sessionTitle={state.title}
+      ) : null}
+      <Box paddingX={1} flexShrink={0}>
+        <InputBar
+          value={input}
+          onChange={setInput}
+          onSubmit={send}
+          disabled={busy || hasQuestion}
+          busy={busy}
+          placeholder={'Ask anything… ( / for commands )'}
         />
       </Box>
+      <StatusBar
+        model={state.model || config.model}
+        status={state.status}
+        detail={state.statusDetail}
+        planMode={state.planMode}
+        usage={state.usage}
+        cwd={config.cwd}
+        sessionTitle={state.title}
+      />
       {activeQuestion ? <QuestionModal question={activeQuestion} /> : null}
     </Box>
   )
