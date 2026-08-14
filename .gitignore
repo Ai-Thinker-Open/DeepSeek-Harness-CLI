@@ -6,3 +6,4 @@ dist/
 .global/
 *.log
 *.tgz
+tui-*.txt
