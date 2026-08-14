@@ -40,6 +40,16 @@ function blockText(blocks: Block[] | undefined): string {
     .join('')
 }
 
+/**
+ * Some harness deployments record the runtime context / system prompt as a
+ * user message ("Current runtime context. This snapshot supersedes…"). Hide
+ * those injections so the conversation stays clean.
+ */
+export function isRuntimeContextInjection(text: string): boolean {
+  const t = text.trim()
+  return /^current runtime context\./i.test(t) || t.includes('runtime-context snapshots')
+}
+
 /** Extract {content, thinking, toolCalls} from assistant content blocks. */
 export function assistantBlocksToMessage(
   blocks: Block[],
@@ -87,10 +97,12 @@ export function eventToMessage(ev: SessionEvent): ChatMessage | null {
     case 'user/message': {
       const m = data as unknown as { id?: string; content?: Block[] }
       if (!m.content) return null
+      const text = blockText(m.content)
+      if (isRuntimeContextInjection(text)) return null
       return {
         id: `msg-${m.id ?? seqId}`,
         role: 'user',
-        content: blockText(m.content),
+        content: text,
         createdAt: ev.time,
       }
     }

@@ -80,13 +80,8 @@ export class CordisDriver implements SessionDriver {
       const title = text.trim().split('\n')[0]?.slice(0, 48) || 'Session'
       this.store.handleEvent({ type: 'title', title })
     }
-    const userMsg: ChatMessage = {
-      id: `user-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-      role: 'user',
-      content: text,
-      createdAt: Date.now(),
-    }
-    this.store.handleEvent({ type: 'message', message: userMsg })
+    // The user message is rendered from the host's own user/message event;
+    // pushing it here would duplicate it.
     this.agent.followup(userMessage(text))
     await this.waitForTurnEnd()
   }

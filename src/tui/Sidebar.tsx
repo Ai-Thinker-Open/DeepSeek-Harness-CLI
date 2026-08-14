@@ -90,7 +90,7 @@ export function Sidebar({
         {tab === 'sessions' && (
           <Box flexDirection="column">
             {sessions.length === 0 && <Text color={theme.subtle}> no sessions yet</Text>}
-            {sessions.map((s, i) => {
+            {sessions.slice(0, 15).map((s, i) => {
               const selected = i === selIndex && focused
               const current = s.id === currentSessionId
               return (
@@ -110,6 +110,12 @@ export function Sidebar({
                 </Box>
               )
             })}
+            {sessions.length > 15 && (
+              <Text color={theme.subtle} dimColor>
+                {' '}
+                … {sessions.length - 15} more
+              </Text>
+            )}
           </Box>
         )}
         {tab === 'todos' && (

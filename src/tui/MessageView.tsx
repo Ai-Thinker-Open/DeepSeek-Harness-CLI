@@ -70,7 +70,7 @@ export const ToolCard = function ToolCard({
 
 const ThinkingBlock = function ThinkingBlock({ text, streaming }: { text: string; streaming?: boolean }) {
   const lines = text.split('\n')
-  const preview = lines.length > 12 ? [...lines.slice(0, 12), `… (${lines.length - 12} more lines)`] : lines
+  const preview = lines.length > 4 ? [...lines.slice(0, 4), `… ${lines.length - 4} more`] : lines
   return (
     <Box flexDirection="column" marginY={0}>
       <Box>
@@ -96,12 +96,9 @@ export const MessageView = function MessageView({ m }: { m: ChatMessage }) {
   if (m.role === 'user') {
     return (
       <Box flexDirection="column" marginY={0}>
-        <Box>
-          <Text color={theme.user} bold>
-            You
-          </Text>
-          <Text color={theme.subtle}> · {new Date(m.createdAt).toLocaleTimeString()}</Text>
-        </Box>
+        <Text color={theme.user} bold>
+          You
+        </Text>
         <Box paddingLeft={1}>
           <Markdown text={m.content} />
         </Box>
@@ -113,12 +110,9 @@ export const MessageView = function MessageView({ m }: { m: ChatMessage }) {
 
   return (
     <Box flexDirection="column" marginY={0}>
-      <Box>
-        <Text color={theme.whale} bold>
-          🐳
-        </Text>
-        <Text color={theme.subtle}> · {new Date(m.createdAt).toLocaleTimeString()}</Text>
-      </Box>
+      <Text color={theme.whale} bold>
+        🐳
+      </Text>
       {m.thinking ? <ThinkingBlock text={m.thinking} streaming={m.streaming} /> : null}
       {showWhale ? <Whale label={m.thinking ? 'still thinking…' : 'thinking…'} /> : null}
       {m.content ? (

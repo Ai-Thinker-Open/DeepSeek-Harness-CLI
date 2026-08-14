@@ -202,13 +202,8 @@ export class HarnessDriver implements SessionDriver {
       this.onTitle?.(title)
       void this.client.rename(this.sessionId, title).catch(() => {})
     }
-    const userMsg: ChatMessage = {
-      id: `user-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-      role: 'user',
-      content: text,
-      createdAt: Date.now(),
-    }
-    this.store.handleEvent({ type: 'message', message: userMsg })
+    // The user message is rendered from the harness's own user/message event;
+    // pushing it here would duplicate it.
     try {
       await this.client.prompt(this.sessionId, text)
     } catch (e) {
