@@ -92,12 +92,17 @@ export function InputBar({ value, onChange, onSubmit, disabled, busy, placeholde
     <Box>
       <Text color={theme.cyan}>❯ </Text>
       {value.length === 0 && placeholder && !disabled ? (
-        <Text dimColor>{placeholder}</Text>
+        <Text dimColor>
+          {placeholder}
+          <Text color={theme.accent} bold>
+            ▏
+          </Text>
+        </Text>
       ) : (
         <Text color={theme.text}>
           {before}
-          <Text inverse backgroundColor={theme.accent} color="#0B0D12">
-            {at ?? ' '}
+          <Text color={theme.accent} bold>
+            ▏
           </Text>
           {after}
         </Text>

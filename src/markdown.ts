@@ -127,8 +127,8 @@ export function parseMarkdown(src: string): Block[] {
       i++
       continue
     }
-    if (m && m[3] !== undefined) {
-      // blockquote — gather consecutive quote lines
+    if (m && m[4] !== undefined) {
+      // blockquote — gather consecutive quote lines (group 4)
       const buf: string[] = []
       while (i < lines.length && /^>\s?/.test(lines[i] as string)) {
         buf.push((lines[i] as string).replace(/^>\s?/, ''))
@@ -138,16 +138,16 @@ export function parseMarkdown(src: string): Block[] {
       continue
     }
     if (m && m[5] !== undefined) {
-      // list item
-      const ordered = /^\d+[.)]/.test((m[5] as string))
+      // list item (groups 5=indent, 6=marker, 7=content)
+      const ordered = /^\d+[.)]/.test((m[6] as string))
       const items: { marker: string; children: Block[] }[] = []
-      const listIndent = (m[4] as string).length
+      const listIndent = (m[5] as string).length
       while (i < lines.length) {
         const lm = BLOCK_RE.exec(lines[i] as string)
-        if (lm && lm[5] !== undefined && (lm[4] as string).length === listIndent) {
+        if (lm && lm[5] !== undefined && (lm[5] as string).length === listIndent) {
           items.push({
-            marker: (lm[5] as string).replace(/[.)]$/, '.'),
-            children: parseMarkdown((lm[6] as string) || ''),
+            marker: (lm[6] as string).replace(/[.)]$/, '.'),
+            children: parseMarkdown((lm[7] as string) || ''),
           })
           i++
           // continuation lines (indented)
@@ -160,7 +160,7 @@ export function parseMarkdown(src: string): Block[] {
       pushBlock({ type: 'list', ordered, items })
       continue
     }
-    if (m && m[7]) {
+    if (m && m[8]) {
       pushBlock({ type: 'rule' })
       i++
       continue
