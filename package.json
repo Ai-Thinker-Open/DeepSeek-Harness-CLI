@@ -1,0 +1,49 @@
+{
+  "name": "dskharness",
+  "version": "0.1.0",
+  "description": "dskharness — a terminal agent client for DeepSeek Harness. opencode-style TUI with the DeepSeek little-whale thinking animation.",
+  "type": "module",
+  "license": "MIT",
+  "private": true,
+  "bin": {
+    "dskharness": "dist/cli.js"
+  },
+  "main": "dist/cordis.js",
+  "exports": {
+    ".": "./dist/cordis.js",
+    "./cordis": "./dist/cordis.js",
+    "./startup": "./dist/cordis.js",
+    "./client": "./dist/client.js",
+    "./package.json": "./package.json"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "files": [
+    "dist",
+    "cordis.patch.yml"
+  ],
+  "engines": {
+    "node": ">=18.18"
+  },
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "typecheck": "tsc --noEmit",
+    "start": "node dist/cli.js",
+    "dev": "node scripts/build.mjs --watch",
+    "mock": "node scripts/mock-server.mjs",
+    "headless": "node dist/cli.js"
+  },
+  "dependencies": {
+    "ink": "^5.0.1",
+    "react": "^18.3.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/react": "^18.3.3",
+    "esbuild": "^0.23.0",
+    "typescript": "^5.5.0"
+  }
+}
