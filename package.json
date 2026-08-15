@@ -8,7 +8,8 @@
   "bin": {
     "deepseek-harness-cli": "dist/cli.js",
     "dsh-cli": "dist/cli.js",
-    "dsh-tui": "dist/bridge-tui.js"
+    "dsh-tui": "dist/cli.js",
+    "dsh-tui-opencode": "dist/bridge-tui.js"
   },
   "main": "dist/cordis.js",
   "exports": {
@@ -41,7 +42,8 @@
     "bridge:build": "pnpm --filter @dsh/bridge build",
     "bridge:test": "pnpm --filter @dsh/bridge test",
     "tui": "pnpm --filter @dsh/bridge tui",
-    "dsh-tui": "node dist/bridge-tui.js",
+    "dsh-tui": "node dist/cli.js",
+    "dsh-tui:opencode": "node dist/bridge-tui.js",
     "dsh-tui:build": "pnpm --filter @dsh/tui build"
   },
   "dependencies": {

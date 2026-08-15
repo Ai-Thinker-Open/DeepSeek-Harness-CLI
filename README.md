@@ -13,9 +13,9 @@ Two modes:
 
 ## Quick start: the OpenCode-style TUI
 
-`dsh-tui` starts a local OpenCode-compatible bridge and attaches the vendored
-OpenCode TUI to it, so a running DeepSeek Harness session renders as a
-full OpenCode terminal client branded **DeepSeek Harness CLI**.
+`dsh-tui` starts the stable Ink-based terminal client for DeepSeek Harness.
+The experimental vendored OpenCode TUI remains available as
+`dsh-tui-opencode`.
 
 ```sh
 npm run build
@@ -23,6 +23,7 @@ npm link
 dsh-tui                 # start in the current project
 dsh-tui path/to/project # start in a specific project
 dsh-tui --continue      # reopen the most recent session
+dsh-tui-opencode        # experimental OpenCode/MiMo-style renderer
 ```
 
 No `dsh web` process is required first. `dsh-tui` talks directly to DeepSeek
