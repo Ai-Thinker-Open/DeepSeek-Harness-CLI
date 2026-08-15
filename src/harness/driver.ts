@@ -244,6 +244,10 @@ export class HarnessDriver implements SessionDriver {
     this.settleTurn()
   }
 
+  setAutoApprove(value: boolean): void {
+    this.questionCenter.setAutoAllow(value)
+  }
+
   /** Plan mode lives inside the harness; local toggle is a no-op. */
   togglePlanMode(): boolean {
     this.store.handleEvent({ type: 'plan-mode', active: this.planMode })

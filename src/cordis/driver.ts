@@ -120,6 +120,10 @@ export class CordisDriver implements SessionDriver {
     return this.planMode
   }
 
+  setAutoApprove(value: boolean): void {
+    this.questionCenter.setAutoAllow(value)
+  }
+
   setModel(model: string): void {
     this.model = model
     this.store.setModel(model)

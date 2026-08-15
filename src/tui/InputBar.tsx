@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { Box, Text, useInput } from 'ink'
-import { theme } from '../theme.ts'
+import { theme, type Mode, modeBorderColor, modeGlyph } from '../theme.ts'
 
 export interface InputBarProps {
   value: string
@@ -15,6 +15,10 @@ export interface InputBarProps {
   planMode?: boolean
   /** When the slash palette is open, Enter belongs to the palette. */
   suppressEnter?: boolean
+  /** Interaction mode (agent / plan / yolo) frames the input. */
+  mode?: Mode
+  /** Contextual hint shown inside the frame. */
+  hint?: string
 }
 
 /**
@@ -22,7 +26,7 @@ export interface InputBarProps {
  * The cursor is a cyan `▏` bar (Ink trims trailing spaces, so no inverse
  * space cursor).
  */
-export function InputBar({ value, onChange, onSubmit, disabled, busy, placeholder, planMode, suppressEnter }: InputBarProps) {
+export function InputBar({ value, onChange, onSubmit, disabled, busy, placeholder, planMode, suppressEnter, mode = 'agent', hint }: InputBarProps) {
   const [cursor, setCursor] = useState(value.length)
   const valueRef = useRef(value)
   valueRef.current = value
@@ -87,7 +91,7 @@ export function InputBar({ value, onChange, onSubmit, disabled, busy, placeholde
     }
   })
 
-  const frameColor = planMode ? theme.plan : theme.primary
+  const frameColor = mode === 'yolo' ? modeBorderColor(mode) : planMode ? theme.plan : modeBorderColor(mode)
   const display = value.length === 0 && placeholder && !disabled ? placeholder : value
   const before = display.slice(0, cursor)
   const after = display.slice(cursor + 1)
@@ -95,7 +99,7 @@ export function InputBar({ value, onChange, onSubmit, disabled, busy, placeholde
   return (
     <Box borderStyle="round" borderColor={disabled ? 'gray' : frameColor} paddingX={1} flexShrink={0}>
       <Text color={frameColor} bold>
-        ✦{' '}
+        {modeGlyph(mode)}{' '}
       </Text>
       {value.length === 0 && placeholder && !disabled ? (
         <Text dimColor>
@@ -119,6 +123,12 @@ export function InputBar({ value, onChange, onSubmit, disabled, busy, placeholde
           (working…)
         </Text>
       )}
+      {hint && !busy ? (
+        <Text dimColor>
+          {' '}
+          · {hint}
+        </Text>
+      ) : null}
     </Box>
   )
 }

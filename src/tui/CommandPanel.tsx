@@ -37,6 +37,7 @@ export const COMMAND_GROUPS: Array<{ group: string; commands: PaletteCommand[] }
     commands: [
       { name: 'plan', desc: 'toggle plan mode' },
       { name: 'agent', desc: 'turn plan mode off' },
+      { name: 'yolo', desc: 'auto-approve everything' },
     ],
   },
   {
@@ -239,7 +240,7 @@ export function CommandPanel({
             keybindings
           </Text>
           <Text>⏎ send · Ctrl+C stop agent / quit when idle</Text>
-          <Text>/ commands: sessions · new · rename · fork · plan · models · tools · skills · jobs · compact · goal · status · help · exit</Text>
+          <Text>/ commands: sessions · new · rename · fork · plan · agent · yolo · models · tools · skills · jobs · compact · goal · status · help · exit</Text>
           <Text>Ctrl+N new session · Ctrl+E plan mode · Ctrl+M model</Text>
           <Text>↑↓ input history · PageUp/Down scroll · Esc clear / close</Text>
         </Box>

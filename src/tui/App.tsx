@@ -14,7 +14,7 @@ import { InputBar } from './InputBar.tsx'
 import { MiniWhale } from './Whale.tsx'
 import { QuestionModal } from './QuestionModal.tsx'
 import { CommandPanel, PALETTE_COMMANDS, filterCommands, type PaletteMode } from './CommandPanel.tsx'
-import { theme } from '../theme.ts'
+import { footerHint, theme, type Mode, modeIndicator } from '../theme.ts'
 
 /** In-process cordis mode (dsh --profile cli): drive the host agent directly. */
 export interface CordisMode {
@@ -210,6 +210,7 @@ export function App({
   const [panelText, setPanelText] = useState<string | null>(null)
   const [modelsList, setModelsList] = useState<Array<{ provider: string; id: string }>>([])
   const [clearSignal, setClearSignal] = useState(0)
+  const [mode, setMode] = useState<Mode>('agent')
 
   const showCommands = input.startsWith('/') && !panel
   const panelLen = panel
@@ -262,8 +263,29 @@ export function App({
 
   const togglePlan = useCallback(() => {
     if (busy) return
-    driverRef.current?.togglePlanMode()
+    const driver = driverRef.current
+    if (!driver) return
+    const now = driver.togglePlanMode()
+    setMode(now ? 'plan' : 'agent')
   }, [busy])
+
+  /** Shift+Tab cycles agent → plan → yolo (MiMo-style mode switch). */
+  const cycleMode = useCallback(() => {
+    const next: Mode = mode === 'agent' ? 'plan' : mode === 'plan' ? 'yolo' : 'agent'
+    setMode(next)
+    const driver = driverRef.current
+    if (!driver) return
+    if (next === 'plan') {
+      if (!driver.planMode) driver.togglePlanMode()
+      driver.setAutoApprove?.(false)
+    } else if (next === 'yolo') {
+      if (driver.planMode) driver.togglePlanMode()
+      driver.setAutoApprove?.(true)
+    } else {
+      if (driver.planMode) driver.togglePlanMode()
+      driver.setAutoApprove?.(false)
+    }
+  }, [mode])
 
   const toggleTodo = useCallback(
     (id: string) => {
@@ -313,7 +335,14 @@ export function App({
         togglePlan()
         break
       case 'agent':
+        setMode('agent')
         if (driver?.planMode) driver.togglePlanMode()
+        driver?.setAutoApprove?.(false)
+        break
+      case 'yolo':
+        setMode('yolo')
+        if (driver?.planMode) driver.togglePlanMode()
+        driver?.setAutoApprove?.(true)
         break
       case 'models': {
         setModelsList([])
@@ -414,6 +443,10 @@ export function App({
   }, [panel, state.sessionList, state.todos, modelsList, mountSession, toggleTodo, setInputBoth])
 
   useInput((inputKey, key) => {
+    if (key.shift && key.tab) {
+      cycleMode()
+      return
+    }
     if (key.ctrl && inputKey === 'c') {
       const driver = driverRef.current
       if (driver && (busy || hasQuestion || state.status === 'question')) {
@@ -495,11 +528,10 @@ export function App({
             {' · '}
             {state.title || 'new session'}
           </Text>
-          {state.planMode && (
-            <Text color={theme.plan} bold>
-              {' '}◆ PLAN
-            </Text>
-          )}
+          <Text color={mode === 'yolo' ? theme.error : theme.plan} bold>
+            {' '}
+            {modeIndicator(mode)}
+          </Text>
           <Text dimColor>
             {' · '}
             {state.model || config.model}
@@ -543,6 +575,8 @@ export function App({
           placeholder={'Ask anything… ( / for commands )'}
           planMode={state.planMode}
           suppressEnter={showCommands || !!panel}
+          mode={mode}
+          hint={busy ? footerHint('running') : footerHint('default')}
         />
       </Box>
       {activeQuestion ? <QuestionModal question={activeQuestion} /> : null}

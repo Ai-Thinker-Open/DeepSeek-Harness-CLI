@@ -30,6 +30,11 @@ export class QuestionCenter {
     return this.auto === 'answer'
   }
 
+  /** YOLO mode: auto-approve permission questions even in interactive mode. */
+  setAutoAllow(value: boolean): void {
+    this.autoAllow = value
+  }
+
   ask(q: Omit<Question, 'id' | 'resolve' | 'cancel'>, requester?: string): Promise<string> {
     const title = requester ? `[${requester}] ${q.title}` : q.title
     return new Promise<string>((resolve) => {
@@ -41,6 +46,11 @@ export class QuestionCenter {
         } else {
           resolve(q.options[0] as string)
         }
+        return
+      }
+      if (q.kind === 'permission' && this.autoAllow) {
+        // YOLO mode: approve permissions without a prompt
+        resolve(q.options[0] as string)
         return
       }
       const id = `q-${++qCounter}`
@@ -186,6 +196,10 @@ export class Agent implements SessionDriver {
       }
     }
     if (this.messages.some((m) => m.role === 'user')) this.titleSet = true
+  }
+
+  setAutoApprove(value: boolean): void {
+    this.autoApprove = value
   }
 
   /** Flip plan mode; returns the new state. */

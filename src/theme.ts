@@ -55,6 +55,82 @@ export const ROLE_LABELS = {
   error: 'error',
 } as const
 
+/** Map a tool name to a short verb (MiMo-style "Reading…", "Running…"). */
+export function verbForTool(toolName: string): string {
+  const map: Record<string, string> = {
+    bash: 'Running',
+    fs_read: 'Reading',
+    fs_write: 'Writing',
+    fs_edit: 'Editing',
+    fs_ls: 'Listing',
+    fs_glob: 'Searching',
+    fs_grep: 'Searching',
+    fs_delete: 'Deleting',
+    web_fetch: 'Fetching',
+    web_search: 'Searching',
+    todo_write: 'Updating todos',
+    todo_list: 'Reading todos',
+    goal: 'Managing goal',
+    subagent: 'Delegating',
+    workflow: 'Orchestrating',
+    skill_list: 'Listing skills',
+    skill_load: 'Loading skill',
+    jobs_list: 'Listing jobs',
+    job_output: 'Reading job',
+    job_kill: 'Killing job',
+  }
+  return map[toolName] ?? 'Working'
+}
+
+/** Interaction modes (agent / plan / yolo), MiMo-style. */
+export type Mode = 'agent' | 'plan' | 'yolo'
+
+export function modeIndicator(mode: Mode): string {
+  if (mode === 'plan') return '◆ PLAN'
+  if (mode === 'yolo') return '▲ YOLO'
+  return '◆ AGENT'
+}
+
+export function modeGlyph(mode: Mode): string {
+  if (mode === 'plan') return '◇'
+  if (mode === 'yolo') return '▲'
+  return '✦'
+}
+
+export function modeBorderColor(mode: Mode): string {
+  if (mode === 'yolo') return 'red'
+  return 'blue'
+}
+
+/** Contextual hint shown inside the input frame (MiMo-style). */
+export function footerHint(intent: string): string {
+  switch (intent) {
+    case 'running':
+      return 'Ctrl+C interrupt · typing is kept'
+    case 'completion':
+      return '↑↓ select · Enter run · Esc close'
+    case 'approval':
+      return '↑↓ choose · Enter confirm · Esc deny'
+    default:
+      return 'Enter send · / for commands · /help'
+  }
+}
+
+/** Keep the last `maxLines` lines of text with an "earlier" marker (MiMo tailText). */
+export function tailText(text: string, maxLines: number): string {
+  const lines = text.split('\n')
+  if (lines.length <= maxLines) return text
+  return [`… ${lines.length - maxLines} earlier line(s)`, ...lines.slice(-maxLines)].join('\n')
+}
+
+/** Indent reasoning lines with a `│` gutter (MiMo formatReasoning). */
+export function formatReasoning(text: string): string {
+  return text
+    .split('\n')
+    .map((line) => `  ${line ? `│ ${line}` : '│'}`)
+    .join('\n')
+}
+
 /** Decoration (sigil + color) for a message role/kind. */
 export function decoration(kind: keyof typeof SIGILS): { sigil: string; color: string } {
   switch (kind) {

@@ -182,4 +182,6 @@ export interface SessionDriver {
   listTools?(): string
   listSkills?(): string
   listJobs?(): string
+  /** Toggle auto-approval of dangerous tools (yolo mode). */
+  setAutoApprove?(value: boolean): void
 }
