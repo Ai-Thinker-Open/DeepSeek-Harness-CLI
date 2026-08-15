@@ -10,7 +10,7 @@ import { KeyHint } from './ui.tsx'
 const EmptyState = memo(function EmptyState({ width }: { width: number }) {
   return (
     <Box flexDirection="column" alignItems="center" marginTop={1}>
-      <Text color={theme.brand}>{width >= 44 ? whaleBanner() : '✦'}</Text>
+      <Text color={theme.brand}>{width >= 44 ? whaleBanner() : '(oᴗo)'}</Text>
       <Text bold color={theme.labelCaption}>
         DeepSeek Harness CLI
       </Text>

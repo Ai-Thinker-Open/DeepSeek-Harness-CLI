@@ -27,7 +27,7 @@ export function StatusBar({
   return (
     <Box borderBottom borderBottomColor={theme.border1} paddingX={1} height={1} flexShrink={0} flexDirection="row">
       <Text color={theme.brand} bold>
-        ✦{' '}
+        (oᴗo){' '}
       </Text>
       <Text bold color={theme.labelPrimary}>
         {truncate(left, Math.max(8, Math.floor(width * 0.3)))}

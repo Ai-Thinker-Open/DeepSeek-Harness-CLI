@@ -80,10 +80,13 @@ export function modeIndicator(mode: Mode): string {
   return '◆ AGENT'
 }
 
+/** The DeepSeek little-whale brand mark (FishLogo equivalent in one line). */
+export const BRAND_WHALE = '(oᴗo)'
+
 export function modeGlyph(mode: Mode): string {
   if (mode === 'plan') return '◇'
   if (mode === 'yolo') return '▲'
-  return '✦'
+  return BRAND_WHALE
 }
 
 export function modeBorderColor(mode: Mode): string {
