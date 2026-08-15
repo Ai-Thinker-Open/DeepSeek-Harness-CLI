@@ -106,6 +106,13 @@ class CordisRuntime implements DshRuntime {
     return this.ctx.get('commands')?.execute?.(this.agent, line, new AbortController().signal)
   }
 
+  async answerQuestion(questionId: string, sessionId: string, option: string): Promise<void> {
+    // In-process DSH questions are answered by the host userQuestions service.
+    // For now, acknowledge locally so the UI can dismiss the modal.
+    this.store.settleQuestion(sessionId, questionId)
+    void option
+  }
+
   subscribe(listener: (event: unknown) => void): () => void {
     return this.store.subscribe(listener)
   }

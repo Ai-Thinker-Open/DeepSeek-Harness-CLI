@@ -1,5 +1,5 @@
 import type { HistoryEntry, SessionEvent, SessionSummary } from './harness.ts'
-import type { OpenCodeMessage, OpenCodePart, OpenCodeSession, OpenCodeTodo, OpenCodeToolPart } from './types.ts'
+import type { OpenCodeMessage, OpenCodePart, OpenCodeQuestion, OpenCodeSession, OpenCodeTodo, OpenCodeToolPart } from './types.ts'
 
 interface DshBlock {
   type?: string
@@ -31,6 +31,7 @@ export interface BridgeSessionState {
   todos: OpenCodeTodo[]
   plan: { active: boolean }
   status: { type: 'busy' | 'idle'; message?: string }
+  questions: OpenCodeQuestion[]
 }
 
 export class BridgeStore {
@@ -72,6 +73,24 @@ export class BridgeStore {
     return this.sessions.get(sessionId)?.status ?? { type: 'idle' }
   }
 
+  getQuestions(sessionId: string): OpenCodeQuestion[] {
+    return this.sessions.get(sessionId)?.questions ?? []
+  }
+
+  pushQuestion(question: OpenCodeQuestion): void {
+    const state = this.ensure(question.sessionID)
+    state.questions = state.questions.filter((item) => item.id !== question.id)
+    state.questions.push(question)
+    this.emit({ type: 'question.asked', sessionID: question.sessionID, question })
+  }
+
+  settleQuestion(sessionId: string, questionId: string): void {
+    const state = this.sessions.get(sessionId)
+    if (!state) return
+    state.questions = state.questions.filter((item) => item.id !== questionId)
+    this.emit({ type: 'question.settled', sessionID: sessionId, questionID: questionId })
+  }
+
   upsertSession(summary: SessionSummary): OpenCodeSession {
     const existing = this.sessions.get(summary.sessionId)
     const session: OpenCodeSession = {
@@ -87,6 +106,7 @@ export class BridgeStore {
       todos: existing?.todos ?? [],
       plan: existing?.plan ?? { active: false },
       status: existing?.status ?? { type: summary.running ? 'busy' : 'idle' },
+      questions: existing?.questions ?? [],
     })
     this.emit({ type: 'session.updated', sessionID: summary.sessionId, info: session })
     return session
@@ -201,6 +221,7 @@ export class BridgeStore {
         todos: [],
         plan: { active: false },
         status: { type: 'idle' },
+        questions: [],
       }
       this.sessions.set(sessionId, state)
     }

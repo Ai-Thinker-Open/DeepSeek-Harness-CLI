@@ -66,3 +66,14 @@ export interface OpenCodeCommand {
   description: string
   input?: { hint: string }
 }
+
+export type OpenCodeQuestionKind = 'question' | 'permission' | 'plan-approval'
+
+export interface OpenCodeQuestion {
+  id: string
+  sessionID: string
+  kind: OpenCodeQuestionKind
+  title: string
+  body?: string
+  options: string[]
+}

@@ -3,6 +3,7 @@ import {
   DshRemoteClient,
   HarnessClient,
   type OpenCodeCommand,
+  type OpenCodeQuestion,
   type OpenCodeSession,
   type ServerRequest,
   type SessionSummary,
@@ -23,6 +24,7 @@ export interface DshRuntime {
   abort(sessionId: string): Promise<void>
   listCommands(sessionId: string): Promise<OpenCodeCommand[]>
   executeCommand(sessionId: string, line: string): Promise<unknown>
+  answerQuestion(questionId: string, sessionId: string, option: string): Promise<void>
   subscribe(listener: (event: unknown) => void): () => void
   stop(): void
 }
@@ -33,6 +35,7 @@ export class DshTui implements DshRuntime {
   readonly store: BridgeStore
   private readonly abortController = new AbortController()
   private listening = false
+  private readonly pendingQuestionRpc = new Map<string, string>()
 
   constructor(options: DshTuiOptions) {
     this.client = new HarnessClient(options.harnessUrl)
@@ -108,6 +111,15 @@ export class DshTui implements DshRuntime {
     return this.remote.executeCommand(sessionId, line)
   }
 
+  async answerQuestion(questionId: string, sessionId: string, option: string): Promise<void> {
+    const rpcId = this.pendingQuestionRpc.get(questionId)
+    this.pendingQuestionRpc.delete(questionId)
+    this.store.settleQuestion(sessionId, questionId)
+    if (rpcId) {
+      await this.client.respond(rpcId, sessionId, [{ id: questionId, selected: [option] }])
+    }
+  }
+
   subscribe(listener: (event: unknown) => void): () => void {
     return this.store.subscribe(listener)
   }
@@ -149,6 +161,38 @@ export class DshTui implements DshRuntime {
 
     if (frame.method === 'host/session-status') {
       this.store.setStatus(sessionId, { type: payload.running ? 'busy' : 'idle' })
+      return
+    }
+
+    if (frame.method === 'question/requested') {
+      const request = payload as unknown as {
+        questions?: Array<{
+          id: string
+          question: string
+          header?: string
+          detail?: string
+          options?: Array<{ label: string; description?: string }>
+          intent?: { kind: 'plan-review'; approve: string }
+        }>
+      }
+      const item = request.questions?.[0]
+      if (!item) return
+      const options = item.options?.length ? item.options.map((option) => option.label) : ['Yes', 'No']
+      const kind: OpenCodeQuestion['kind'] =
+        item.intent?.kind === 'plan-review'
+          ? 'plan-approval'
+          : /allow|permission|deny/i.test(`${item.header ?? ''} ${item.question} ${options.join(' ')}`)
+            ? 'permission'
+            : 'question'
+      this.pendingQuestionRpc.set(item.id, frame.rpcId)
+      this.store.pushQuestion({
+        id: item.id,
+        sessionID: sessionId,
+        kind,
+        title: item.question,
+        body: item.detail ?? item.header,
+        options,
+      })
     }
   }
 }

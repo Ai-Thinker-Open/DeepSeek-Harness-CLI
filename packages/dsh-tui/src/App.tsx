@@ -1,14 +1,16 @@
 import { createEffect, createSignal, For, onCleanup } from 'solid-js'
 import { useKeyboard } from '@opentui/solid'
 import type { DshRuntime } from './dsh.ts'
-import type { OpenCodeMessage, OpenCodePart, OpenCodeSession } from '@dsh/core'
+import type { OpenCodeMessage, OpenCodePart, OpenCodeQuestion, OpenCodeSession } from '@dsh/core'
 import { MessageView } from './MessageView.tsx'
+import { QuestionDialog } from './QuestionDialog.tsx'
 
 export function App(props: { dsh: DshRuntime }) {
   const [sessions, setSessions] = createSignal<OpenCodeSession[]>([])
   const [sessionId, setSessionId] = createSignal<string>('')
   const [messages, setMessages] = createSignal<OpenCodeMessage[]>([])
   const [parts, setParts] = createSignal<Map<string, OpenCodePart[]>>(new Map())
+  const [questions, setQuestions] = createSignal<OpenCodeQuestion[]>([])
   const [prompt, setPrompt] = createSignal('')
   const [busy, setBusy] = createSignal(false)
   const [commands, setCommands] = createSignal<Array<{ name: string; description: string; input?: { hint: string } }>>([])
@@ -29,6 +31,7 @@ export function App(props: { dsh: DshRuntime }) {
       next.set(message.id, props.dsh.store.getParts(id, message.id))
     }
     setParts(next)
+    setQuestions(props.dsh.store.getQuestions(id))
   }
 
   const selectSession = async (id: string) => {
@@ -77,6 +80,16 @@ export function App(props: { dsh: DshRuntime }) {
       return
     }
     await send()
+  }
+
+  const answerQuestion = async (question: OpenCodeQuestion, option: string) => {
+    await props.dsh.answerQuestion(question.id, question.sessionID, option)
+    syncCurrent()
+  }
+
+  const cancelQuestion = (question: OpenCodeQuestion) => {
+    props.dsh.store.settleQuestion(question.sessionID, question.id)
+    syncCurrent()
   }
 
   useKeyboard((key) => {
@@ -146,8 +159,11 @@ export function App(props: { dsh: DshRuntime }) {
 
   onCleanup(() => unsubscribe())
 
+  const activeQuestion = questions()[0]
+
   return (
-    <box flexDirection="row" height="100%">
+    <>
+      <box flexDirection="row" height="100%">
       <box
         width={32}
         flexDirection="column"
@@ -237,6 +253,14 @@ export function App(props: { dsh: DshRuntime }) {
           </box>
         </box>
       </box>
-    </box>
+      </box>
+      {activeQuestion ? (
+        <QuestionDialog
+          question={activeQuestion}
+          onAnswer={(option) => void answerQuestion(activeQuestion, option)}
+          onCancel={() => cancelQuestion(activeQuestion)}
+        />
+      ) : null}
+    </>
   )
 }
