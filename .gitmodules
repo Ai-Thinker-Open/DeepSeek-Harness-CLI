@@ -1,0 +1,3 @@
+[submodule "vendor/mimo-code"]
+	path = vendor/mimo-code
+	url = https://github.com/XiaomiMiMo/MiMo-Code.git
