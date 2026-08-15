@@ -9,13 +9,13 @@ import { theme } from '../theme.ts'
 const EmptyState = memo(function EmptyState() {
   return (
     <Box flexDirection="column" alignItems="center" marginTop={2}>
-      <Text color={theme.whale}>{whaleBanner()}</Text>
-      <Text bold color={theme.text}>
+      <Text color={theme.primary}>{whaleBanner()}</Text>
+      <Text bold>
         dskharness — DeepSeek Harness terminal agent
       </Text>
-      <Text color={theme.textDim}>Ask me to build, debug, or explore your workspace.</Text>
+      <Text dimColor>Ask me to build, debug, or explore your workspace.</Text>
       <Box marginTop={1} flexDirection="column" alignItems="center">
-        <Text color={theme.subtle}>⏎ send · Ctrl+C stop/quit · Ctrl+E plan · Tab sidebar · Ctrl+N new · Ctrl+M model</Text>
+        <Text dimColor>⏎ send · / for commands · Ctrl+C stop/quit</Text>
       </Box>
     </Box>
   )
@@ -89,13 +89,20 @@ export function ChatPane({
         {messages.length === 0 ? (
           <EmptyState />
         ) : (
-          messages.map((m) => <MessageView key={m.id} m={m} />)
+          messages.map((m, i) => (
+            <Box key={m.id} flexDirection="column">
+              {i > 0 && m.role === 'user' && (
+                <Text dimColor>{'─'.repeat(40)}</Text>
+              )}
+              <MessageView m={m} />
+            </Box>
+          ))
         )}
         {status === 'thinking' && !hasStreamingEmpty && <Whale />}
       </Box>
       {!atBottom && messages.length > 0 && (
         <Box>
-          <Text color={theme.subtle}>↑ PageUp / Shift+↑ to scroll · End snap</Text>
+          <Text dimColor>↑ PageUp / Shift+↑ to scroll</Text>
         </Box>
       )}
     </Box>

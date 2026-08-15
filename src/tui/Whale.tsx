@@ -17,16 +17,16 @@ export function Whale({ label = 'thinking…' }: { label?: string }) {
     <Box flexDirection="row" marginY={1}>
       <Box flexDirection="column" marginRight={2}>
         {frame.split('\n').map((line, idx) => (
-          <Text key={idx} color={theme.whale}>
+          <Text key={idx} color={theme.primary}>
             {line}
           </Text>
         ))}
       </Box>
       <Box flexDirection="column" justifyContent="center">
-        <Text color={theme.textDim} italic>
+        <Text dimColor italic>
           {label}
         </Text>
-        <Text color={theme.subtle} dimColor>
+        <Text dimColor>
           DeepSeek 小鲸鱼 · diving for answers
         </Text>
       </Box>
@@ -43,7 +43,7 @@ export function MiniWhale({ label }: { label?: string }) {
     return () => clearInterval(t)
   }, [frames.length])
   return (
-    <Text color={theme.whale}>
+    <Text color={theme.primary}>
       {frames[i]}
       {label ? ` ${label}` : ''}
     </Text>

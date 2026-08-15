@@ -36,8 +36,8 @@ export function QuestionModal({ question }: { question: Question }) {
     question.kind === 'permission'
       ? theme.warn
       : question.kind === 'plan-approval'
-        ? theme.accent
-        : theme.cyan
+        ? theme.plan
+        : theme.primary
 
   return (
     <Box height="100%" flexDirection="column" alignItems="center" justifyContent="center">
@@ -52,7 +52,7 @@ export function QuestionModal({ question }: { question: Question }) {
         <Text bold color={kindColor}>
           {question.kind === 'permission' ? '🔒 Permission' : question.kind === 'plan-approval' ? '📋 Plan review' : '❓ Question'}
         </Text>
-        <Text bold color={theme.text} wrap="wrap">
+        <Text bold wrap="wrap">
           {question.title}
         </Text>
         {question.body ? (
@@ -60,7 +60,7 @@ export function QuestionModal({ question }: { question: Question }) {
             {truncateBody(question.body)
               .split('\n')
               .map((l, i) => (
-                <Text key={i} color={theme.textDim} wrap="wrap">
+                <Text key={i} dimColor wrap="wrap">
                   {l}
                 </Text>
               ))}
@@ -70,14 +70,14 @@ export function QuestionModal({ question }: { question: Question }) {
           {question.options.map((o, i) => {
             const active = i === sel
             return (
-              <Text key={i} color={active ? '#0B0D12' : theme.text} backgroundColor={active ? kindColor : undefined} wrap="wrap">
+              <Text key={i} color={active ? '#000000' : undefined} backgroundColor={active ? kindColor : undefined} wrap="wrap">
                 {active ? '› ' : '  '}
                 {o}
               </Text>
             )
           })}
         </Box>
-        <Text color={theme.subtle} dimColor>
+        <Text dimColor>
           ↑↓ choose · ⏎ confirm · Esc cancel
         </Text>
       </Box>

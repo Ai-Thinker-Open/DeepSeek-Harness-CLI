@@ -10,8 +10,8 @@ import { appendEvent, createSession, listSessions, replaySession } from '../sess
 import type { ToolDef } from '../tools/types.ts'
 import type { SessionDriver, SessionMeta, TodoItem } from '../types.ts'
 import { ChatPane } from './ChatPane.tsx'
-import { StatusBar } from './StatusBar.tsx'
 import { InputBar } from './InputBar.tsx'
+import { MiniWhale } from './Whale.tsx'
 import { QuestionModal } from './QuestionModal.tsx'
 import { CommandPanel, PALETTE_COMMANDS, type PaletteMode } from './CommandPanel.tsx'
 import { theme } from '../theme.ts'
@@ -374,21 +374,34 @@ export function App({
 
   return (
     <Box flexDirection="column" height="100%">
-      <Box borderBottom={true} borderColor={theme.border} paddingX={1} height={1} flexShrink={0}>
-        <Text color={theme.whale} bold>
-          🐳 dskharness
-        </Text>
-        <Text color={theme.textDim}>
-          {' '}
-          · {state.title || 'new session'}
-        </Text>
-        <Box flexGrow={1} />
-        {state.planMode && (
-          <Text color={theme.warn} bold>
-            PLAN{' '}
+      <Box paddingX={1} height={1} flexShrink={0}>
+        <Text>
+          <Text color={theme.primary} bold>
+            ✦ dskharness
           </Text>
-        )}
-        <Text color={theme.textDim}>{state.model || config.model}</Text>
+          <Text dimColor>
+            {' · '}
+            {state.title || 'new session'}
+          </Text>
+          {state.planMode && (
+            <Text color={theme.plan} bold>
+              {' '}◆ PLAN
+            </Text>
+          )}
+          <Text dimColor>
+            {' · '}
+            {state.model || config.model}
+            {' · '}
+            {shortPath(config.cwd)}
+          </Text>
+          {busy && (
+            <Text dimColor>
+              {' · '}
+              {state.status}
+            </Text>
+          )}
+          {busy ? <MiniWhale /> : null}
+        </Text>
       </Box>
       <ChatPane messages={state.messages} focused status={state.status} />
       {showCommands || panel ? (
@@ -406,7 +419,7 @@ export function App({
           />
         </Box>
       ) : null}
-      <Box paddingX={1} flexShrink={0}>
+      <Box paddingX={1} flexGrow={1} flexShrink={0}>
         <InputBar
           value={input}
           onChange={setInput}
@@ -414,17 +427,9 @@ export function App({
           disabled={busy || hasQuestion}
           busy={busy}
           placeholder={'Ask anything… ( / for commands )'}
+          planMode={state.planMode}
         />
       </Box>
-      <StatusBar
-        model={state.model || config.model}
-        status={state.status}
-        detail={state.statusDetail}
-        planMode={state.planMode}
-        usage={state.usage}
-        cwd={config.cwd}
-        sessionTitle={state.title}
-      />
       {activeQuestion ? <QuestionModal question={activeQuestion} /> : null}
     </Box>
   )
@@ -441,4 +446,10 @@ export function buildApp(
   return (
     <App store={store} config={config} initialSessionId={initialSessionId} tools={tools} harness={harness} cordis={cordis} />
   )
+}
+
+function shortPath(cwd: string): string {
+  const home = process.env.HOME ?? ''
+  if (home && cwd.startsWith(home)) return `~${cwd.slice(home.length)}`
+  return cwd
 }

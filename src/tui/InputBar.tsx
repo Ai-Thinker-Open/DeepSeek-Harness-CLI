@@ -11,19 +11,20 @@ export interface InputBarProps {
   placeholder?: string
   /** When busy, Enter is ignored and Ctrl+C interrupts instead. */
   busy?: boolean
+  /** Plan mode frames the input in blue. */
+  planMode?: boolean
 }
 
 /**
- * A single-line text input with a visible cursor, readline-style editing.
- * Up/Down (history) and Ctrl+C are handled by the parent via `onHistory*`
- * props — those keys are not consumed here.
+ * MiMo-style input: a round-bordered frame with a `✦` prompt glyph.
+ * The cursor is a cyan `▏` bar (Ink trims trailing spaces, so no inverse
+ * space cursor).
  */
-export function InputBar({ value, onChange, onSubmit, disabled, busy, placeholder }: InputBarProps) {
+export function InputBar({ value, onChange, onSubmit, disabled, busy, placeholder, planMode }: InputBarProps) {
   const [cursor, setCursor] = useState(value.length)
   const valueRef = useRef(value)
   valueRef.current = value
 
-  // keep cursor within bounds when value changes externally
   useEffect(() => {
     setCursor((c) => Math.min(c, value.length))
   }, [value.length])
@@ -83,31 +84,38 @@ export function InputBar({ value, onChange, onSubmit, disabled, busy, placeholde
     }
   })
 
+  const frameColor = planMode ? theme.plan : theme.primary
   const display = value.length === 0 && placeholder && !disabled ? placeholder : value
   const before = display.slice(0, cursor)
-  const at = display[cursor]
   const after = display.slice(cursor + 1)
 
   return (
-    <Box>
-      <Text color={theme.cyan}>❯ </Text>
+    <Box borderStyle="round" borderColor={disabled ? 'gray' : frameColor} paddingX={1} flexShrink={0}>
+      <Text color={frameColor} bold>
+        ✦{' '}
+      </Text>
       {value.length === 0 && placeholder && !disabled ? (
         <Text dimColor>
           {placeholder}
-          <Text color={theme.accent} bold>
+          <Text color={frameColor} bold>
             ▏
           </Text>
         </Text>
       ) : (
-        <Text color={theme.text}>
+        <Text>
           {before}
-          <Text color={theme.accent} bold>
+          <Text color={frameColor} bold>
             ▏
           </Text>
           {after}
         </Text>
       )}
-      {busy && <Text color={theme.textDim}> (working…)</Text>}
+      {busy && (
+        <Text dimColor>
+          {' '}
+          (working…)
+        </Text>
+      )}
     </Box>
   )
 }
