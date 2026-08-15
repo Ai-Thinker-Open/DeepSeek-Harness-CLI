@@ -68,26 +68,14 @@ export const ToolCard = function ToolCard({
   )
 }
 
-const ThinkingBlock = function ThinkingBlock({ text, streaming }: { text: string; streaming?: boolean }) {
-  const lines = text.split('\n')
-  const preview = lines.length > 4 ? [...lines.slice(0, 4), `… ${lines.length - 4} more`] : lines
+/** Collapsed thinking indicator (opencode-style): one quiet line, no content. */
+const ThinkingBlock = function ThinkingBlock({ streaming }: { streaming?: boolean }) {
   return (
-    <Box flexDirection="column" marginY={0}>
-      <Box>
-        <Text color={theme.cyan}>💭</Text>
-        <Text bold color={theme.cyanDim}>
-          {' '}
-          thinking
-        </Text>
-        {streaming && <MiniWhale />}
-      </Box>
-      <Box paddingLeft={2} flexDirection="column" borderLeft={true} borderColor={theme.subtle}>
-        {preview.map((l, i) => (
-          <Text key={i} color={theme.textDim} wrap="wrap">
-            {l}
-          </Text>
-        ))}
-      </Box>
+    <Box flexDirection="row">
+      <Text color={theme.subtle} dimColor>
+        ┆ thinking
+      </Text>
+      {streaming ? <MiniWhale /> : null}
     </Box>
   )
 }
@@ -113,7 +101,7 @@ export const MessageView = function MessageView({ m }: { m: ChatMessage }) {
       <Text color={theme.whale} bold>
         🐳
       </Text>
-      {m.thinking ? <ThinkingBlock text={m.thinking} streaming={m.streaming} /> : null}
+      {m.thinking ? <ThinkingBlock streaming={m.streaming} /> : null}
       {showWhale ? <Whale label={m.thinking ? 'still thinking…' : 'thinking…'} /> : null}
       {m.content ? (
         <Box paddingLeft={1}>
