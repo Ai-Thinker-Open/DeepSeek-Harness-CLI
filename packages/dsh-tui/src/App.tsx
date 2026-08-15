@@ -1,4 +1,5 @@
 import { createEffect, createSignal, For, onCleanup } from 'solid-js'
+import { useKeyboard } from '@opentui/solid'
 import type { DshRuntime } from './dsh.ts'
 import type { OpenCodeMessage, OpenCodePart, OpenCodeSession } from '@dsh/core'
 import { MessageView } from './MessageView.tsx'
@@ -11,6 +12,7 @@ export function App(props: { dsh: DshRuntime }) {
   const [prompt, setPrompt] = createSignal('')
   const [busy, setBusy] = createSignal(false)
   const [commands, setCommands] = createSignal<Array<{ name: string; description: string; input?: { hint: string } }>>([])
+  const [commandSel, setCommandSel] = createSignal(0)
 
   const refreshSessions = async () => {
     await props.dsh.refreshSessions()
@@ -75,6 +77,25 @@ export function App(props: { dsh: DshRuntime }) {
     }
     await send()
   }
+
+  useKeyboard((key) => {
+    if (!prompt().startsWith('/') || !sessionId() || commands().length === 0) return
+    if (key.name === 'up') {
+      setCommandSel((index) => Math.max(0, index - 1))
+    } else if (key.name === 'down') {
+      setCommandSel((index) => Math.min(commands().length - 1, index + 1))
+    } else if (key.name === 'escape') {
+      setPrompt('')
+      setCommandSel(0)
+    } else if (key.name === 'return') {
+      const selected = commands()[commandSel()]
+      if (selected) {
+        void executeLine(`/${selected.name}`)
+        setPrompt('')
+        setCommandSel(0)
+      }
+    }
+  })
 
   const unsubscribe = props.dsh.subscribe(() => {
     void refreshSessions().catch(() => {})
@@ -148,8 +169,12 @@ export function App(props: { dsh: DshRuntime }) {
               commands
             </text>
             <For each={commands()}>
-              {(command) => (
-                <text fg="#A1A1AA">
+              {(command, index) => (
+                <text
+                  fg={index() === commandSel() ? '#111111' : '#A1A1AA'}
+                  backgroundColor={index() === commandSel() ? '#FF7A1A' : undefined}
+                >
+                  {index() === commandSel() ? '› ' : '  '}
                   /{command.name}
                   {command.input?.hint ? ` ${command.input.hint}` : ''} — {command.description}
                 </text>
