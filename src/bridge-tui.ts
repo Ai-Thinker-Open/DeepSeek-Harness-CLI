@@ -51,6 +51,7 @@ const child = spawn(args[0] as string, args.slice(1), {
   stdio: 'inherit',
   env: {
     ...process.env,
+    MIMOCODE_TUI_PLAIN: process.env.MIMOCODE_TUI_PLAIN ?? '1',
     MIMOCODE_DISABLE_MOUSE: process.env.MIMOCODE_DISABLE_MOUSE ?? '1',
     MIMOCODE_DISABLE_TERMINAL_TITLE: process.env.MIMOCODE_DISABLE_TERMINAL_TITLE ?? '1',
   },
