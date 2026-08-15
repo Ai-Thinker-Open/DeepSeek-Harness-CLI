@@ -9,6 +9,7 @@ export function App(props: { dsh: DshTui }) {
   const [parts, setParts] = createSignal<Map<string, OpenCodePart[]>>(new Map())
   const [prompt, setPrompt] = createSignal('')
   const [busy, setBusy] = createSignal(false)
+  const [commands, setCommands] = createSignal<Array<{ name: string; description: string; input?: { hint: string } }>>([])
 
   const refreshSessions = async () => {
     await props.dsh.refreshSessions()
@@ -84,6 +85,14 @@ export function App(props: { dsh: DshTui }) {
     syncCurrent()
   })
 
+  createEffect(() => {
+    if (!sessionId() || !prompt().startsWith('/')) {
+      setCommands([])
+      return
+    }
+    void props.dsh.listCommands(sessionId()).then(setCommands)
+  })
+
   onCleanup(() => unsubscribe())
 
   return (
@@ -137,6 +146,31 @@ export function App(props: { dsh: DshTui }) {
             )}
           </For>
         </box>
+
+        {prompt().startsWith('/') && sessionId() ? (
+          <box
+            flexShrink={0}
+            border="round"
+            borderColor="#FF7A1A"
+            paddingLeft={2}
+            paddingRight={2}
+            paddingTop={1}
+            paddingBottom={1}
+            marginBottom={1}
+          >
+            <text fg="#FF7A1A" bold>
+              commands
+            </text>
+            <For each={commands()}>
+              {(command) => (
+                <text fg="#A1A1AA">
+                  /{command.name}
+                  {command.input?.hint ? ` ${command.input.hint}` : ''} — {command.description}
+                </text>
+              )}
+            </For>
+          </box>
+        ) : null}
 
         <box
           flexShrink={0}
