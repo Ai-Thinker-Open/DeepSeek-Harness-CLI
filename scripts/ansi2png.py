@@ -103,7 +103,7 @@ def render(data, cols, rows, font_path, font_size, cell_w, cell_h):
                                     grid[rr][cc] = {'ch': ' ', 'fg': None, 'bg': None, 'bold': False, 'inv': False}
                     elif term == 'K':
                         code = int(params) if params else 0
-                        if code == 0 or code == 2:
+                        if (code == 0 or code == 2) and 0 <= r < rows:
                             for cc in range(c, cols):
                                 grid[r][cc] = {'ch': ' ', 'fg': None, 'bg': None, 'bold': False, 'inv': False}
                     elif term == 'A':  # cursor up

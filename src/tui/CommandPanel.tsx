@@ -251,7 +251,7 @@ export function CommandPanel({
       ) : null}
 
       <Text color={theme.labelCaption}>
-        {query ? `/${query}` : 'type to filter'} · plan {planMode ? 'on' : 'off'} · {model}
+        {query || 'type to filter'} · plan {planMode ? 'on' : 'off'} · {model}
       </Text>
     </Box>
   )

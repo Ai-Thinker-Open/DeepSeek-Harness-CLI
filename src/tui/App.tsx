@@ -13,7 +13,6 @@ import { ChatPane } from './ChatPane.tsx'
 import { InputBar } from './InputBar.tsx'
 import { QuestionModal } from './QuestionModal.tsx'
 import { CommandPanel, PALETTE_COMMANDS, filterCommands, type PaletteMode } from './CommandPanel.tsx'
-import { Sidebar } from './Sidebar.tsx'
 import { StatusBar } from './StatusBar.tsx'
 import { FooterBar } from './FooterBar.tsx'
 import { DetailsBar, type DetailsTab } from './DetailsBar.tsx'
@@ -217,8 +216,8 @@ export function App({
   const [modelsList, setModelsList] = useState<Array<{ provider: string; id: string }>>([])
   const [clearSignal, setClearSignal] = useState(0)
   const [mode, setMode] = useState<Mode>('agent')
-  const [detailsTab, setDetailsTab] = useState<DetailsTab | null>('tasks')
-  const [focus, setFocus] = useState<'chat' | 'sidebar' | 'details'>('chat')
+  const [detailsTab, setDetailsTab] = useState<DetailsTab | null>(null)
+  const [focus, setFocus] = useState<'chat' | 'details'>('chat')
   const [selIndex, setSelIndex] = useState(0)
 
   const showCommands = input.startsWith('/') && !panel
@@ -471,7 +470,7 @@ export function App({
       return
     }
     if (key.tab) {
-      setFocus((f) => (f === 'chat' ? (showSidebar ? 'sidebar' : 'details') : f === 'sidebar' ? 'details' : 'chat'))
+      setFocus((f) => (f === 'chat' ? 'details' : 'chat'))
       setSelIndex(0)
       return
     }
@@ -548,11 +547,9 @@ export function App({
   })
 
   const activeQuestion = hasQuestion ? (state.questions[0] as NonNullable<typeof state.questions[0]>) : null
-  const showSidebar = columns >= 72
-  const sidebarWidth = showSidebar ? Math.max(22, Math.min(32, Math.floor(columns * 0.3))) : 0
-  const showDetails = detailsTab !== null && columns >= 96
+  const showDetails = detailsTab !== null && columns >= 88
   const detailsWidth = showDetails ? 26 : 0
-  const chatWidth = Math.max(20, columns - sidebarWidth - detailsWidth)
+  const chatWidth = Math.max(20, columns - detailsWidth)
   const chatViewportH = Math.max(5, rows - 9)
   const timeline = useMemo(
     () =>
@@ -589,29 +586,6 @@ export function App({
       />
 
       <Box flexDirection="row" flexGrow={1}>
-        {showSidebar ? (
-          <Sidebar
-            width={sidebarWidth}
-            title={state.title}
-            sessionId={sessionId}
-            model={state.model || config.model}
-            cwd={config.cwd}
-            todos={state.todos}
-            sessions={state.sessionList}
-            currentSessionId={sessionId}
-            planMode={state.planMode}
-            mode={mode}
-            busy={busy}
-            focused={focus === 'sidebar'}
-            selIndex={selIndex}
-            onSelect={setSelIndex}
-            onOpenSession={(id) => {
-              mountSession(id)
-              setFocus('chat')
-            }}
-          />
-        ) : null}
-
         <Box flexDirection="column" flexGrow={1}>
           <ChatPane
             messages={state.messages}
