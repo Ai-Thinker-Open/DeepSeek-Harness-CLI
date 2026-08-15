@@ -1,4 +1,4 @@
-# 🐳 dskharness
+# DeepSeek Harness CLI
 
 A terminal agent for **DeepSeek Harness (DSH)**. An opencode-style TUI with the
 DeepSeek **小鲸鱼 (little whale)** thinking animation.
@@ -24,15 +24,15 @@ Two modes:
 
 ## Use it as a DeepSeek Harness component
 
-dskharness is packaged as a **Cordis plugin** (like `dsh-headless`), so it can be
+DeepSeek Harness CLI is packaged as a **Cordis plugin** (like `dsh-headless`), so it can be
 mounted as a profile bundle inside the harness process — plus a standalone
-`dskharness` binary and a reusable `./client` library.
+`dsh-cli` binary and a reusable `./client` library.
 
 | Entry | Purpose |
 |---|---|
-| `dskharness` (bin) | standalone CLI: auto-connects to a local harness, or runs its own agent |
-| `dskharness/cordis` (`.` / `./startup`) | Cordis plugin `{name, inject, apply}` for `dsh --profile cli` |
-| `dskharness/client` | `HarnessClient` + event folding for other tools |
+| `dsh-cli` (bin) | standalone CLI: auto-connects to a local harness, or runs its own agent |
+| `dsh-cli/cordis` (`.` / `./startup`) | Cordis plugin `{name, inject, apply}` for `dsh --profile cli` |
+| `dsh-cli/client` | `HarnessClient` + event folding for other tools |
 
 As a plugin it runs **in-process** (like headless): it creates a host agent
 through `agents.create`, drives it with `followup`/`whenIdle`, folds the host
@@ -45,7 +45,7 @@ API key — sessions, tools, permissions and history are the harness's own.
 npm publish                     # or: npm pack
 
 # 2. create a profile that mounts the bundle
-dsh plugin --profile cli add dskharness
+dsh plugin --profile cli add deepseek-harness-cli
 
 # 3. run it like any harness app
 dsh --profile cli "refactor this module"   # one-shot headless run
@@ -53,21 +53,21 @@ dsh --profile cli                          # interactive TUI
 ```
 
 The bundle's `cordis.patch.yml` inserts the `cli-startup` loader row
-(`dskharness/startup`) over `@deepseek-ai/dsh-base`; the launcher hands inner
+(`dsh-cli/startup`) over `@deepseek-ai/dsh-base`; the launcher hands inner
 arguments through `ctx.cmdlineArgs`, so `--resume`/`--new` style flags belong
 to the app just like `dsh --profile web --port 8080`.
 
 ## Connected mode (drive a running harness)
 
-If a DeepSeek Harness web instance is running locally, `dskharness` auto-detects
+If a DeepSeek Harness web instance is running locally, `dsh-cli` auto-detects
 it and connects — just run it:
 
 ```sh
-dskharness                    # auto-detect → connected TUI
-dskharness "refactor this"    # connected headless
-dskharness --connect          # explicit (default http://127.0.0.1:3080)
-dskharness --connect http://host:8080   # remote harness
-dskharness --standalone       # force the local agent instead
+dsh-cli                    # auto-detect → connected TUI
+dsh-cli "refactor this"    # connected headless
+dsh-cli --connect          # explicit (default http://127.0.0.1:3080)
+dsh-cli --connect http://host:8080   # remote harness
+dsh-cli --standalone       # force the local agent instead
 ```
 
 The CLI implements the harness `/api` client contract: unary RPC
@@ -90,29 +90,29 @@ permission questions surface as the same TUI modal as standalone mode
 | Planning | `todo_write`/`todo_list`, plan mode (`exit_plan_mode` with approve/revision/reject review), `goal` (create/get/update) |
 | Delegation | `subagent` (foreground/background), `jobs_list`/`job_output`/`job_kill` |
 | Orchestration | `workflow` — sandboxed JS scripts with `agent`/`pipeline`/`parallel`/`phase`/`log`/`args` |
-| Skills | `skill_list`/`skill_load` from `~/.dskharness/skills/<name>/SKILL.md` |
+| Skills | `skill_list`/`skill_load` from `~/.dsh-cli/skills/<name>/SKILL.md` |
 | MCP | stdio MCP servers via config (`mcpServers`), tools exposed as `mcp__<server>__<tool>` (standalone only) |
 | Reasoning | `deepseek-reasoner` support — `reasoning_content` streams into a 💭 thinking block |
 | Sessions | JSONL history (standalone) / harness history (connected), `--resume`, `--continue`, `--list-sessions`, title auto-naming |
-| Modes | Interactive TUI, headless (`dskharness "prompt"`), piped stdin |
+| Modes | Interactive TUI, headless (`dsh-cli "prompt"`), piped stdin |
 
 ## Install & run
 
 ```sh
 npm install
 npm run build          # bundles dist/cli.js
-export DEEPSEEK_API_KEY=sk-...      # or put it in ~/.dskharness/config.json
+export DEEPSEEK_API_KEY=sk-...      # or put it in ~/.dsh-cli/config.json
 node dist/cli.js                     # interactive TUI
 node dist/cli.js "write the tests"   # headless
 ```
 
-Or link it: `npm link` → `dskharness` on your PATH.
+Or link it: `npm link` → `dsh-cli` on your PATH.
 
 ## TUI
 
 ```
 ┌──────────────┬──────────────────────────────────────────────┐
-│ 🐳 dskharness│  You · 8:07 PM                               │
+│ 🐳 DeepSeek Harness CLI│  You · 8:07 PM                    │
 │ [Sessions]   │  fix the flaky test                          │
 │  Todos  Plan │                                              │
 │ ● hello      │  🐳 · 8:07 PM                                │
@@ -137,7 +137,7 @@ tail wiggles, and it blinks — `DeepSeek 小鲸鱼 · diving for answers`.
 ## CLI
 
 ```
-dskharness [options] [prompt]
+dsh-cli [options] [prompt]
 
   -p, --prompt <text>    headless run
   -m, --model <name>     deepseek-chat | deepseek-reasoner
@@ -157,7 +157,7 @@ dskharness [options] [prompt]
       --base-url <url>   default https://api.deepseek.com
 ```
 
-## Configuration (`~/.dskharness/config.json`)
+## Configuration (`~/.dsh-cli/config.json`)
 
 ```json
 {

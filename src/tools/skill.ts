@@ -9,7 +9,7 @@ export interface Skill {
   body: string
 }
 
-/** Load skills from ~/.dskharness/skills/<name>/SKILL.md (front-matter: name, description). */
+/** Load skills from ~/.dsh-cli/skills/<name>/SKILL.md (front-matter: name, description). */
 export function loadSkill(name: string): Skill | null {
   const p = path.join(dshHome(), 'skills', name, 'SKILL.md')
   try {
@@ -61,7 +61,7 @@ export const skillListTool: ToolDef = {
   summary: () => 'skill_list',
   async execute() {
     const skills = listSkills()
-    if (!skills.length) return 'No skills installed. Add them under ~/.dskharness/skills/<name>/SKILL.md'
+    if (!skills.length) return 'No skills installed. Add them under ~/.dsh-cli/skills/<name>/SKILL.md'
     return skills.map((s) => `${s.name}: ${s.description}`).join('\n')
   },
 }

@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
-import { Box, Text, useApp, useInput } from 'ink'
+import { Box, Text, useApp, useInput, useStdout } from 'ink'
 import { Store } from '../store.ts'
 import { Agent, QuestionCenter } from '../agent.ts'
 import { HarnessDriver } from '../harness/driver.ts'
@@ -11,10 +11,12 @@ import type { ToolDef } from '../tools/types.ts'
 import type { SessionDriver, SessionMeta, TodoItem } from '../types.ts'
 import { ChatPane } from './ChatPane.tsx'
 import { InputBar } from './InputBar.tsx'
-import { MiniWhale } from './Whale.tsx'
 import { QuestionModal } from './QuestionModal.tsx'
 import { CommandPanel, PALETTE_COMMANDS, filterCommands, type PaletteMode } from './CommandPanel.tsx'
-import { footerHint, theme, type Mode, modeIndicator } from '../theme.ts'
+import { Sidebar } from './Sidebar.tsx'
+import { StatusBar } from './StatusBar.tsx'
+import { FooterBar } from './FooterBar.tsx'
+import { footerHint, theme, type Mode } from '../theme.ts'
 
 /** In-process cordis mode (dsh --profile cli): drive the host agent directly. */
 export interface CordisMode {
@@ -49,6 +51,9 @@ export function App({
 }) {
   const state = useSyncExternalStore(store.subscribe.bind(store), store.getSnapshot.bind(store))
   const { exit } = useApp()
+  const { stdout } = useStdout()
+  const columns = stdout.columns && stdout.columns > 0 ? stdout.columns : 80
+  const rows = stdout.rows && stdout.rows > 0 ? stdout.rows : 24
 
   const [input, setInput] = useState('')
   const inputRef = useRef('')
@@ -516,70 +521,105 @@ export function App({
   })
 
   const activeQuestion = hasQuestion ? (state.questions[0] as NonNullable<typeof state.questions[0]>) : null
+  const showSidebar = columns >= 72
+  const sidebarWidth = showSidebar ? Math.max(22, Math.min(32, Math.floor(columns * 0.3))) : 0
+  const chatWidth = Math.max(20, columns - sidebarWidth)
+  const chatViewportH = Math.max(5, rows - 9)
+  const promptHint = busy
+    ? footerHint('running')
+    : showCommands || panel
+      ? footerHint('completion')
+      : hasQuestion
+        ? footerHint('approval')
+        : footerHint('default')
+
+  if (activeQuestion) {
+    return <QuestionModal question={activeQuestion} />
+  }
 
   return (
     <Box flexDirection="column" height="100%">
-      <Box paddingX={1} height={1} flexShrink={0}>
-        <Text>
-          <Text color={theme.primary} bold>
-            ✦ dskharness
-          </Text>
-          <Text dimColor>
-            {' · '}
-            {state.title || 'new session'}
-          </Text>
-          <Text color={mode === 'yolo' ? theme.error : theme.plan} bold>
-            {' '}
-            {modeIndicator(mode)}
-          </Text>
-          <Text dimColor>
-            {' · '}
-            {state.model || config.model}
-            {' · '}
-            {shortPath(config.cwd)}
-          </Text>
-          {busy && (
-            <Text dimColor>
-              {' · '}
-              {state.status}
-            </Text>
-          )}
-          {busy ? <MiniWhale /> : null}
-        </Text>
-      </Box>
-      <ChatPane messages={state.messages} focused status={state.status} clearSignal={clearSignal} />
-      {showCommands || panel ? (
-        <Box paddingX={1} flexShrink={0}>
-          <CommandPanel
-            mode={panel?.mode ?? 'command'}
-            query={input}
-            selected={panel?.selected ?? cmdSel}
-            groups={filteredGroups}
-            sessions={state.sessionList}
+      <StatusBar
+        width={columns}
+        title={state.title}
+        sessionId={sessionId}
+        model={state.model || config.model}
+        cwd={config.cwd}
+        mode={mode}
+        planMode={state.planMode}
+        busy={busy}
+        status={state.status}
+      />
+
+      <Box flexDirection="row" flexGrow={1}>
+        {showSidebar ? (
+          <Sidebar
+            width={sidebarWidth}
+            title={state.title}
+            sessionId={sessionId}
+            model={state.model || config.model}
+            cwd={config.cwd}
             todos={state.todos}
+            sessions={state.sessionList}
             currentSessionId={sessionId}
             planMode={state.planMode}
-            model={state.model || config.model}
-            panelText={panelText ?? undefined}
-            modelsList={modelsList}
+            mode={mode}
+            busy={busy}
           />
+        ) : null}
+
+        <Box flexDirection="column" flexGrow={1}>
+          <ChatPane
+            messages={state.messages}
+            focused
+            status={state.status}
+            clearSignal={clearSignal}
+            viewportH={chatViewportH}
+            width={chatWidth}
+          />
+          {showCommands || panel ? (
+            <Box paddingX={1} flexShrink={0}>
+              <CommandPanel
+                mode={panel?.mode ?? 'command'}
+                query={input}
+                selected={panel?.selected ?? cmdSel}
+                groups={filteredGroups}
+                sessions={state.sessionList}
+                todos={state.todos}
+                currentSessionId={sessionId}
+                planMode={state.planMode}
+                model={state.model || config.model}
+                panelText={panelText ?? undefined}
+                modelsList={modelsList}
+              />
+            </Box>
+          ) : null}
+          <Box paddingX={1} flexShrink={0}>
+            <InputBar
+              value={input}
+              onChange={setInputBoth}
+              onSubmit={send}
+              disabled={busy || hasQuestion}
+              busy={busy}
+              placeholder={'Ask anything…  ( / for commands )'}
+              planMode={state.planMode}
+              suppressEnter={showCommands || !!panel}
+              mode={mode}
+              hint={promptHint}
+            />
+          </Box>
         </Box>
-      ) : null}
-      <Box paddingX={1} flexGrow={1} flexShrink={0}>
-        <InputBar
-          value={input}
-          onChange={setInputBoth}
-          onSubmit={send}
-          disabled={busy || hasQuestion}
-          busy={busy}
-          placeholder={'Ask anything… ( / for commands )'}
-          planMode={state.planMode}
-          suppressEnter={showCommands || !!panel}
-          mode={mode}
-          hint={busy ? footerHint('running') : footerHint('default')}
-        />
       </Box>
-      {activeQuestion ? <QuestionModal question={activeQuestion} /> : null}
+
+      <FooterBar
+        width={columns}
+        cwd={config.cwd}
+        model={state.model || config.model}
+        mode={mode}
+        usage={state.usage}
+        hint={promptHint}
+      />
+
     </Box>
   )
 }
@@ -595,10 +635,4 @@ export function buildApp(
   return (
     <App store={store} config={config} initialSessionId={initialSessionId} tools={tools} harness={harness} cordis={cordis} />
   )
-}
-
-function shortPath(cwd: string): string {
-  const home = process.env.HOME ?? ''
-  if (home && cwd.startsWith(home)) return `~${cwd.slice(home.length)}`
-  return cwd
 }

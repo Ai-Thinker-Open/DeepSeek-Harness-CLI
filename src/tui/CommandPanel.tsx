@@ -1,7 +1,7 @@
 import React from 'react'
 import { Box, Text } from 'ink'
 import type { SessionMeta, TodoItem } from '../types.ts'
-import { theme } from '../theme.ts'
+import { theme, truncate } from '../theme.ts'
 
 export type PaletteMode =
   | 'command'
@@ -20,7 +20,6 @@ export interface PaletteCommand {
   arg?: string
 }
 
-/** Commands grouped by purpose; the panel renders them under group headers. */
 export const COMMAND_GROUPS: Array<{ group: string; commands: PaletteCommand[] }> = [
   {
     group: 'sessions',
@@ -73,14 +72,13 @@ export const COMMAND_GROUPS: Array<{ group: string; commands: PaletteCommand[] }
     group: 'help',
     commands: [
       { name: 'help', desc: 'show keybindings' },
-      { name: 'exit', desc: 'quit dskharness' },
+      { name: 'exit', desc: 'quit dsh-cli' },
     ],
   },
 ]
 
 export const PALETTE_COMMANDS: PaletteCommand[] = COMMAND_GROUPS.flatMap((g) => g.commands)
 
-/** Filter commands by the first word of a slash query, preserving group order. */
 export function filterCommands(query: string): Array<{ group: string; commands: PaletteCommand[] }> {
   const q = (query.split(/\s+/)[0] ?? '').toLowerCase()
   if (!q) return COMMAND_GROUPS
@@ -100,10 +98,17 @@ function timeAgo(ts: number): string {
   return `${Math.floor(h / 24)}d`
 }
 
-/**
- * The `/` command overlay (MiMo/opencode style): a grouped command palette
- * that turns into session / todo / capability pickers once a command runs.
- */
+function PanelTitle({ children }: { children: React.ReactNode }) {
+  return (
+    <Box flexDirection="row" justifyContent="space-between" marginBottom={0}>
+      <Text bold color={theme.primary}>
+        {children}
+      </Text>
+      <Text color={theme.dim}>↑↓ choose · ⏎ run · Esc close</Text>
+    </Box>
+  )
+}
+
 export function CommandPanel({
   mode,
   query,
@@ -126,127 +131,127 @@ export function CommandPanel({
   currentSessionId: string
   planMode: boolean
   model: string
-  /** Text for the read-only capability/status panels. */
   panelText?: string
-  /** Model list for the models picker: {provider, id} pairs. */
   modelsList?: Array<{ provider: string; id: string }>
 }) {
   return (
-    <Box flexDirection="column" borderStyle="round" borderColor={theme.primary} paddingX={1} paddingY={0}>
-      {mode === 'command' && (
+    <Box flexDirection="column" borderStyle="round" borderColor={theme.primary} paddingX={1} flexShrink={0}>
+      {mode === 'command' ? (
         <Box flexDirection="column">
-          <Text bold color={theme.primary}>
-            commands <Text dimColor>· slash palette</Text>
-          </Text>
-          {groups.length === 0 && <Text dimColor>no matching command</Text>}
-          {groups.map((g) => (
-            <Box key={g.group} flexDirection="column">
-              <Text dimColor>
-                {'  '}
-                {g.group}
-              </Text>
-              {g.commands.map((c) => {
-                const globalIdx = indexOfCommand(groups, g.group, c.name)
-                const active = globalIdx === selected
-                return (
-                  <Text key={c.name} color={active ? '#000000' : undefined} backgroundColor={active ? theme.primary : undefined}>
-                    {active ? '› ' : '  '}/{c.name}
-                    {c.arg ? <Text dimColor> {c.arg}</Text> : null}
-                    <Text dimColor> — {c.desc}</Text>
-                  </Text>
-                )
-              })}
-            </Box>
-          ))}
-          <Text dimColor>↑↓ choose · ⏎ run · Esc close</Text>
+          <PanelTitle>command palette</PanelTitle>
+          <Box flexDirection="column" marginTop={0}>
+            {groups.length === 0 ? <Text color={theme.dim}>no matching command</Text> : null}
+            {groups.map((g) => (
+              <Box key={g.group} flexDirection="column" marginBottom={0}>
+                <Text color={theme.dim} bold>
+                  {g.group}
+                </Text>
+                {g.commands.map((c) => {
+                  const globalIdx = indexOfCommand(groups, g.group, c.name)
+                  const active = globalIdx === selected
+                  return (
+                    <Text
+                      key={c.name}
+                      color={active ? theme.selectedFg : theme.muted}
+                      backgroundColor={active ? theme.selectedBg : undefined}
+                    >
+                      {active ? '› ' : '  '}/{c.name}
+                      {c.arg ? <Text color={active ? theme.selectedFg : theme.dim}> {c.arg}</Text> : null}
+                      <Text color={active ? theme.selectedFg : theme.dim}> — {c.desc}</Text>
+                    </Text>
+                  )
+                })}
+              </Box>
+            ))}
+          </Box>
         </Box>
-      )}
-      {mode === 'sessions' && (
+      ) : null}
+
+      {mode === 'sessions' ? (
         <Box flexDirection="column">
-          <Text bold color={theme.primary}>
-            /sessions
-          </Text>
-          {sessions.length === 0 && <Text dimColor>no sessions yet</Text>}
+          <PanelTitle>sessions</PanelTitle>
+          {sessions.length === 0 ? <Text color={theme.dim}>no sessions yet</Text> : null}
           {sessions.slice(0, 20).map((s, i) => {
             const active = i === selected
             const current = s.id === currentSessionId
             return (
-              <Text key={s.id} color={active ? '#000000' : current ? theme.primary : undefined} backgroundColor={active ? theme.primary : undefined}>
+              <Text
+                key={s.id}
+                color={active ? theme.selectedFg : current ? theme.primary : theme.muted}
+                backgroundColor={active ? theme.selectedBg : undefined}
+              >
                 {active ? '› ' : current ? '● ' : '  '}
-                {s.title} <Text dimColor>{timeAgo(s.updatedAt)}</Text>
+                {truncate(s.title || s.id.slice(0, 12), 52)}
+                <Text color={active ? theme.selectedFg : theme.dim}> {timeAgo(s.updatedAt)}</Text>
               </Text>
             )
           })}
-          {sessions.length > 20 && (
-            <Text dimColor>
-              … {sessions.length - 20} more
-            </Text>
-          )}
+          {sessions.length > 20 ? <Text color={theme.dim}>… {sessions.length - 20} more</Text> : null}
         </Box>
-      )}
-      {mode === 'models' && (
+      ) : null}
+
+      {mode === 'models' ? (
         <Box flexDirection="column">
-          <Text bold color={theme.primary}>
-            /models
-          </Text>
-          {!modelsList?.length && <Text dimColor>no models available</Text>}
+          <PanelTitle>models</PanelTitle>
+          {!modelsList?.length ? <Text color={theme.dim}>no models available</Text> : null}
           {(modelsList ?? []).map((m, i) => {
             const active = i === selected
             const current = m.id === model
             return (
-              <Text key={`${m.provider}:${m.id}`} color={active ? '#000000' : current ? theme.primary : undefined} backgroundColor={active ? theme.primary : undefined}>
+              <Text
+                key={`${m.provider}:${m.id}`}
+                color={active ? theme.selectedFg : current ? theme.primary : theme.muted}
+                backgroundColor={active ? theme.selectedBg : undefined}
+              >
                 {active ? '› ' : current ? '● ' : '  '}
-                {m.id} <Text dimColor>{m.provider}</Text>
+                {truncate(m.id, 52)} <Text color={active ? theme.selectedFg : theme.dim}>{m.provider}</Text>
               </Text>
             )
           })}
         </Box>
-      )}
-      {mode === 'todos' && (
+      ) : null}
+
+      {mode === 'todos' ? (
         <Box flexDirection="column">
-          <Text bold color={theme.primary}>
-            /todos
-          </Text>
-          {todos.length === 0 && <Text dimColor>no todos — ask the agent to plan work</Text>}
+          <PanelTitle>todos</PanelTitle>
+          {todos.length === 0 ? <Text color={theme.dim}>no todos — ask the agent to plan work</Text> : null}
           {todos.map((t, i) => {
             const active = i === selected
-            const icon = t.status === 'completed' ? '☑' : t.status === 'in_progress' ? '→' : '☐'
-            const color = t.status === 'completed' ? theme.success : t.status === 'in_progress' ? theme.warn : 'gray'
+            const icon = t.status === 'completed' ? '✓' : t.status === 'in_progress' ? '›' : '·'
+            const color = t.status === 'completed' ? theme.success : t.status === 'in_progress' ? theme.warn : theme.muted
             return (
-              <Text key={t.id} color={active ? '#000000' : color} backgroundColor={active ? theme.primary : undefined}>
+              <Text key={t.id} color={active ? theme.selectedFg : color} backgroundColor={active ? theme.selectedBg : undefined}>
                 {active ? '› ' : '  '}
-                {icon} {t.content}
+                {icon} {truncate(t.content, 56)}
               </Text>
             )
           })}
         </Box>
-      )}
-      {(mode === 'tools' || mode === 'skills' || mode === 'jobs' || mode === 'status') && (
+      ) : null}
+
+      {(mode === 'tools' || mode === 'skills' || mode === 'jobs' || mode === 'status') ? (
         <Box flexDirection="column">
-          <Text bold color={theme.primary}>
-            /{mode}
-          </Text>
+          <PanelTitle>/{mode}</PanelTitle>
           {(panelText ?? '—').split('\n').map((l, i) => (
-            <Text key={i} wrap="wrap">
+            <Text key={i} wrap="wrap" color={theme.muted}>
               {l}
             </Text>
           ))}
-          <Text dimColor>Esc close</Text>
         </Box>
-      )}
-      {mode === 'help' && (
+      ) : null}
+
+      {mode === 'help' ? (
         <Box flexDirection="column">
-          <Text bold color={theme.primary}>
-            keybindings
-          </Text>
-          <Text>⏎ send · Ctrl+C stop agent / quit when idle</Text>
-          <Text>/ commands: sessions · new · rename · fork · plan · agent · yolo · models · tools · skills · jobs · compact · goal · status · help · exit</Text>
-          <Text>Ctrl+N new session · Ctrl+E plan mode · Ctrl+M model</Text>
-          <Text>↑↓ input history · PageUp/Down scroll · Esc clear / close</Text>
+          <PanelTitle>keybindings</PanelTitle>
+          <Text color={theme.muted}>⏎ send · Ctrl+C stop agent / quit when idle</Text>
+          <Text color={theme.muted}>/ commands: sessions · new · rename · fork · plan · agent · yolo · models · tools · skills · jobs · compact · goal · status · help · exit</Text>
+          <Text color={theme.muted}>Ctrl+N new session · Ctrl+E plan mode · Ctrl+M model</Text>
+          <Text color={theme.muted}>↑↓ input history · PageUp/Down scroll · Esc clear / close</Text>
         </Box>
-      )}
-      <Text dimColor>
-        {query} · plan {planMode ? 'on' : 'off'} · {model}
+      ) : null}
+
+      <Text color={theme.dim}>
+        {query ? `/${query}` : 'type to filter'} · plan {planMode ? 'on' : 'off'} · {model}
       </Text>
     </Box>
   )

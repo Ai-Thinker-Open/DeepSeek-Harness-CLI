@@ -5,28 +5,33 @@ import { theme, type Mode, modeBorderColor, modeGlyph } from '../theme.ts'
 export interface InputBarProps {
   value: string
   onChange: (v: string) => void
-  /** Called with the final text (which may differ from `value` when text and Enter arrive in one chunk). */
   onSubmit: (text: string) => void
   disabled?: boolean
   placeholder?: string
-  /** When busy, Enter is ignored and Ctrl+C interrupts instead. */
   busy?: boolean
-  /** Plan mode frames the input in blue. */
   planMode?: boolean
-  /** When the slash palette is open, Enter belongs to the palette. */
   suppressEnter?: boolean
-  /** Interaction mode (agent / plan / yolo) frames the input. */
   mode?: Mode
-  /** Contextual hint shown inside the frame. */
   hint?: string
 }
 
 /**
- * MiMo-style input: a round-bordered frame with a `✦` prompt glyph.
- * The cursor is a cyan `▏` bar (Ink trims trailing spaces, so no inverse
- * space cursor).
+ * The prompt bar is the main interactive surface. It keeps the original
+ * single-line editing model, but gives it clearer mode/status signaling and a
+ * calmer, more deliberate frame.
  */
-export function InputBar({ value, onChange, onSubmit, disabled, busy, placeholder, planMode, suppressEnter, mode = 'agent', hint }: InputBarProps) {
+export function InputBar({
+  value,
+  onChange,
+  onSubmit,
+  disabled,
+  busy,
+  placeholder,
+  planMode,
+  suppressEnter,
+  mode = 'agent',
+  hint,
+}: InputBarProps) {
   const [cursor, setCursor] = useState(value.length)
   const valueRef = useRef(value)
   valueRef.current = value
@@ -37,7 +42,6 @@ export function InputBar({ value, onChange, onSubmit, disabled, busy, placeholde
 
   useInput((input, key) => {
     if (disabled) return
-    // Pasted text and Enter can arrive in one chunk ("text\r"). Split it.
     let text = input
     let submit = false
     while (text.endsWith('\r') || text.endsWith('\n')) {
@@ -45,7 +49,7 @@ export function InputBar({ value, onChange, onSubmit, disabled, busy, placeholde
       text = text.slice(0, -1)
     }
     if (key.return) submit = true
-    if (submit && suppressEnter) return // the slash palette owns Enter
+    if (submit && suppressEnter) return
     if (submit) {
       const cur = valueRef.current
       const pos = Math.min(cursor, cur.length)
@@ -81,7 +85,7 @@ export function InputBar({ value, onChange, onSubmit, disabled, busy, placeholde
       return
     }
     if (key.pageUp || key.pageDown || key.upArrow || key.downArrow || key.tab || key.escape) {
-      return // handled by parent
+      return
     }
     if (input) {
       const pos = Math.min(cursor, cur.length)
@@ -91,44 +95,54 @@ export function InputBar({ value, onChange, onSubmit, disabled, busy, placeholde
     }
   })
 
-  const frameColor = mode === 'yolo' ? modeBorderColor(mode) : planMode ? theme.plan : modeBorderColor(mode)
+  const frameColor = disabled ? theme.dim : planMode ? theme.plan : modeBorderColor(mode)
   const display = value.length === 0 && placeholder && !disabled ? placeholder : value
   const before = display.slice(0, cursor)
   const after = display.slice(cursor + 1)
+  const modeLabel = mode === 'yolo' ? 'YOLO' : mode === 'plan' ? 'PLAN' : 'AGENT'
 
   return (
-    <Box borderStyle="round" borderColor={disabled ? 'gray' : frameColor} paddingX={1} flexShrink={0}>
-      <Text color={frameColor} bold>
-        {modeGlyph(mode)}{' '}
-      </Text>
-      {value.length === 0 && placeholder && !disabled ? (
-        <Text dimColor>
-          {placeholder}
-          <Text color={frameColor} bold>
-            ▏
-          </Text>
+    <Box flexDirection="column" flexShrink={0}>
+      <Box
+        borderStyle="round"
+        borderColor={frameColor}
+        paddingX={1}
+        flexDirection="row"
+        alignItems="center"
+        gap={1}
+      >
+        <Text color={frameColor} bold>
+          {modeGlyph(mode)}
         </Text>
-      ) : (
-        <Text>
-          {before}
-          <Text color={frameColor} bold>
-            ▏
-          </Text>
-          {after}
+        <Text color={theme.dim} bold>
+          {modeLabel}
         </Text>
-      )}
-      {busy && (
-        <Text dimColor>
-          {' '}
-          (working…)
-        </Text>
-      )}
-      {hint && !busy ? (
-        <Text dimColor>
-          {' '}
-          · {hint}
-        </Text>
-      ) : null}
+        <Box flexGrow={1} flexDirection="row">
+          {value.length === 0 && placeholder && !disabled ? (
+            <Text color={theme.dim}>
+              {placeholder}
+              <Text color={frameColor} bold>
+                ▏
+              </Text>
+            </Text>
+          ) : (
+            <Text>
+              {before}
+              <Text color={frameColor} bold>
+                ▏
+              </Text>
+              {after}
+            </Text>
+          )}
+        </Box>
+        {busy ? (
+          <Text color={theme.warn}>working…</Text>
+        ) : null}
+      </Box>
+      <Box flexDirection="row" justifyContent="space-between" paddingX={1} height={1}>
+        <Text color={theme.dim}>{hint || 'Enter send · / commands'}</Text>
+        <Text color={theme.dim}>{planMode ? 'plan mode' : ''}</Text>
+      </Box>
     </Box>
   )
 }

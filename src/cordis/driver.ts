@@ -1,5 +1,5 @@
 /**
- * CordisDriver: in-process session driver used when dskharness runs as a Cordis
+ * CordisDriver: in-process session driver used when dsh-cli runs as a Cordis
  * plugin inside a `dsh --profile cli` launch. Drives the host's real agent
  * directly (agents.create / followup / whenIdle) and folds its session events
  * into the store — no HTTP, no local agent loop.

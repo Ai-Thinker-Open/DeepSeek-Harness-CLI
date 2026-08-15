@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from 'react'
-import { Box, Text, useInput } from 'ink'
+import { Box, Text, useInput, useStdout } from 'ink'
 import type { Question } from '../types.ts'
 import { theme } from '../theme.ts'
+import { Badge } from './ui.tsx'
 
 function truncateBody(body: string, maxChars = 1200, maxLines = 14): string {
   let b = body
@@ -13,13 +14,10 @@ function truncateBody(body: string, maxChars = 1200, maxLines = 14): string {
   return b
 }
 
-/**
- * Renders a question (ask_user / permission / plan approval) as the whole view.
- * The App swaps to this component while a question is open, so every key here
- * belongs to the modal.
- */
 export function QuestionModal({ question }: { question: Question }) {
+  const { stdout } = useStdout()
   const [sel, setSel] = useState(0)
+  const width = Math.max(36, Math.min(78, (stdout.columns || 80) - 4))
 
   useEffect(() => {
     setSel(0)
@@ -39,28 +37,33 @@ export function QuestionModal({ question }: { question: Question }) {
         ? theme.plan
         : theme.primary
 
+  const kindLabel =
+    question.kind === 'permission'
+      ? 'PERMISSION'
+      : question.kind === 'plan-approval'
+        ? 'PLAN REVIEW'
+        : 'QUESTION'
+
   return (
-    <Box height="100%" flexDirection="column" alignItems="center" justifyContent="center">
-      <Box
-        width={72}
-        flexDirection="column"
-        borderStyle="round"
-        borderColor={kindColor}
-        paddingX={2}
-        paddingY={1}
-      >
-        <Text bold color={kindColor}>
-          {question.kind === 'permission' ? '🔒 Permission' : question.kind === 'plan-approval' ? '📋 Plan review' : '❓ Question'}
-        </Text>
-        <Text bold wrap="wrap">
-          {question.title}
-        </Text>
+    <Box height="100%" flexDirection="column" alignItems="center" justifyContent="center" paddingX={1}>
+      <Box width={width} flexDirection="column" borderStyle="round" borderColor={kindColor} paddingX={2} paddingY={1}>
+        <Box flexDirection="row" justifyContent="space-between">
+          <Badge color={theme.selectedFg} bg={kindColor}>
+            {kindLabel}
+          </Badge>
+          <Text color={theme.dim}>Esc cancel</Text>
+        </Box>
+        <Box marginTop={1}>
+          <Text bold color={kindColor} wrap="wrap">
+            {question.title}
+          </Text>
+        </Box>
         {question.body ? (
-          <Box flexDirection="column" marginTop={1} marginBottom={1}>
+          <Box flexDirection="column" marginY={1} borderTop borderTopColor={theme.border} paddingTop={1}>
             {truncateBody(question.body)
               .split('\n')
               .map((l, i) => (
-                <Text key={i} dimColor wrap="wrap">
+                <Text key={i} color={theme.muted} wrap="wrap">
                   {l}
                 </Text>
               ))}
@@ -70,16 +73,22 @@ export function QuestionModal({ question }: { question: Question }) {
           {question.options.map((o, i) => {
             const active = i === sel
             return (
-              <Text key={i} color={active ? '#000000' : undefined} backgroundColor={active ? kindColor : undefined} wrap="wrap">
+              <Text
+                key={i}
+                color={active ? theme.selectedFg : theme.muted}
+                backgroundColor={active ? kindColor : undefined}
+                wrap="wrap"
+              >
                 {active ? '› ' : '  '}
                 {o}
               </Text>
             )
           })}
         </Box>
-        <Text dimColor>
-          ↑↓ choose · ⏎ confirm · Esc cancel
-        </Text>
+        <Box flexDirection="row" justifyContent="space-between" marginTop={1}>
+          <Text color={theme.dim}>↑↓ choose</Text>
+          <Text color={theme.dim}>⏎ confirm</Text>
+        </Box>
       </Box>
     </Box>
   )

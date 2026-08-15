@@ -81,7 +81,7 @@ export class McpClient {
     const init = await this.request('initialize', {
       protocolVersion: '2024-11-05',
       capabilities: {},
-      clientInfo: { name: 'dskharness', version: '0.1.0' },
+      clientInfo: { name: 'dsh-cli', version: '0.1.0' },
     })
     const proto = (init as { protocolVersion?: string })?.protocolVersion ?? '2024-11-05'
     this.notify('notifications/initialized', {})

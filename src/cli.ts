@@ -104,19 +104,19 @@ function applyArgs(config: CliConfig, args: CliArgs): CliConfig {
   return next
 }
 
-const HELP = `dskharness — a terminal agent for DeepSeek Harness (DSH)
+const HELP = `DeepSeek Harness CLI (dsh-cli) — a terminal client for DeepSeek Harness (DSH)
 
 ${whaleBanner()}
 
 USAGE
-  dskharness [options] [prompt]
+  dsh-cli [options] [prompt]
 
 Modes
-  Interactive TUI        dskharness                     opencode-style terminal UI
-  Headless               dskharness "write the tests"   run one prompt, print the answer
-                         echo "hi" | dskharness         read the prompt from stdin
-  Resume                 dskharness --resume <id>       open a session in the TUI
-                         dskharness --continue          resume the most recent session
+  Interactive TUI        dsh-cli                     opencode-style terminal UI
+  Headless               dsh-cli "write the tests"   run one prompt, print the answer
+                         echo "hi" | dsh-cli         read the prompt from stdin
+  Resume                 dsh-cli --resume <id>       open a session in the TUI
+                         dsh-cli --continue          resume the most recent session
 
 OPTIONS
   -p, --prompt <text>    Run headless with this prompt
@@ -154,8 +154,8 @@ TUI KEYS
   PageUp/Down    scroll chat     Esc       clear input
 
 CONFIG
-  ~/.dskharness/config.json   { "apiKey", "model", "baseUrl", "autoApprove", "instructions", "mcpServers" }
-  Sessions: ~/.dskharness/sessions/   Skills: ~/.dskharness/skills/<name>/SKILL.md
+  ~/.dsh-cli/config.json   { "apiKey", "model", "baseUrl", "autoApprove", "instructions", "mcpServers" }
+  Sessions: ~/.dsh-cli/sessions/   Skills: ~/.dsh-cli/skills/<name>/SKILL.md
 
 FEATURES (DSH surface)
   bash · fs_read/write/edit/ls/glob/grep/delete · web_search/web_fetch ·
@@ -288,13 +288,13 @@ async function main(): Promise<void> {
   try {
     args = parseArgs(process.argv.slice(2))
   } catch (e) {
-    console.error(`dskharness: ${(e as Error).message}\nTry --help`)
+    console.error(`dsh-cli: ${(e as Error).message}\nTry --help`)
     process.exitCode = 1
     return
   }
 
   if (args.version) {
-    console.log(`dskharness ${pkg.version}`)
+    console.log(`DeepSeek Harness CLI ${pkg.version}`)
     return
   }
   if (args.help) {
@@ -331,7 +331,7 @@ async function main(): Promise<void> {
       prompt = Buffer.concat(chunks).toString('utf8').trim()
     }
     if (!prompt) {
-      console.error('dskharness: no prompt given (pass a prompt argument or pipe stdin)')
+      console.error('dsh-cli: no prompt given (pass a prompt argument or pipe stdin)')
       process.exitCode = 1
       return
     }
@@ -385,6 +385,6 @@ async function main(): Promise<void> {
 }
 
 main().catch((e) => {
-  console.error(`dskharness: ${(e as Error).stack ?? e}`)
+  console.error(`dsh-cli: ${(e as Error).stack ?? e}`)
   process.exitCode = 1
 })

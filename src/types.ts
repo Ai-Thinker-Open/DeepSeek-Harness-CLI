@@ -1,5 +1,5 @@
 /**
- * Shared types for dskharness.
+ * Shared types for DeepSeek Harness CLI.
  *
  * The model-facing surface mirrors the DeepSeek Harness tool suite
  * (bash, fs, web, ask-user, todo, goal, jobs/subagent, workflow, skill,

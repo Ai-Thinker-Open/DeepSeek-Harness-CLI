@@ -2,9 +2,9 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 
-/** Where dskharness keeps config, sessions, skills. */
+/** Where DeepSeek Harness CLI keeps config, sessions, skills. */
 export function dshHome(): string {
-  return process.env.DSH_CLI_HOME || path.join(os.homedir(), '.dskharness')
+  return process.env.DSH_CLI_HOME || path.join(os.homedir(), '.dsh-cli')
 }
 
 export interface CliConfig {

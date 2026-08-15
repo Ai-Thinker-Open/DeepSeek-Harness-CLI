@@ -33,7 +33,7 @@ Plan mode is OFF. You may act freely, subject to tool permission prompts.
 Toggle it with Ctrl+E in the TUI; while active you must only plan.
 `
 
-  return `You are dskharness, a terminal agent for DeepSeek Harness (DSH). You help the user work in their workspace.
+  return `You are DeepSeek Harness CLI (dsh-cli), a terminal agent for DeepSeek Harness (DSH). You help the user work in their workspace.
 
 # Environment
 

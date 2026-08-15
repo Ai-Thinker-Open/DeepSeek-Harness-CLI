@@ -1,7 +1,7 @@
 /**
- * Cordis plugin entry for dskharness.
+ * Cordis plugin entry for DeepSeek Harness CLI (dsh-cli).
  *
- * Lets `dsh --profile cli` boot the dskharness terminal client inside the harness
+ * Lets `dsh --profile cli` boot the dsh-cli terminal client inside the harness
  * process: the launcher hands the inner arguments through `ctx.cmdlineArgs`
  * (`dsh --profile cli "task"` → `['task']`), the plugin creates a host agent
  * in-process, bridges permission/ask questions to the TUI modal, and drives
@@ -22,7 +22,7 @@ export function apply(ctx: any): void {
   const exit = ctx.get('appExit')
   const args = (ctx.get('cmdlineArgs')?.get?.() ?? []) as string[]
   void run(ctx, args).catch((e) => {
-    console.error(`dskharness: ${(e as Error).message}`)
+    console.error(`dsh-cli: ${(e as Error).message}`)
     exit?.(1)
   })
 }
@@ -35,7 +35,7 @@ async function run(ctx: any, args: string[]): Promise<void> {
   const agents = ctx.get('agents')
   const defaultModel = ctx.get('agentDefaultModel')
   const sessions = ctx.get('sessions')
-  if (!agents || !defaultModel) throw new Error('dskharness plugin requires agents + agentDefaultModel services')
+  if (!agents || !defaultModel) throw new Error('dsh-cli plugin requires agents + agentDefaultModel services')
   const selection = defaultModel.currentSelection()
   const sessionId = `session-${randomUUID()}`
   const { agent } = await agents.create({
@@ -73,7 +73,7 @@ async function run(ctx: any, args: string[]): Promise<void> {
 
   if (prompt) {
     // ── headless: run one turn, print the answer, exit ──
-    process.stderr.write(`  🐳 dskharness (in-process harness agent) · ${selection.model}\n`)
+    process.stderr.write(`  🐳 DeepSeek Harness CLI (in-process harness agent) · ${selection.model}\n`)
     await driver.sendUser(prompt)
     await sessions?.flush?.(agent.session).catch(() => {})
     const answer = driver.getLastAnswer()

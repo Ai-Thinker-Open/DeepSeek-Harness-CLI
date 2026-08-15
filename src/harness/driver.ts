@@ -350,7 +350,7 @@ export class HarnessDriver implements SessionDriver {
   }
 
   listSkills(): string {
-    return 'skills live in the harness — ask the model with skill_list, or check ~/.dskharness/skills/'
+    return 'skills live in the harness — ask the model with skill_list, or check ~/.dsh-cli/skills/'
   }
 
   listJobs(): string {

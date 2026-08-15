@@ -297,7 +297,7 @@ export class Agent implements SessionDriver {
     const skills = listSkills()
     return skills.length
       ? skills.map((s) => `${s.name}: ${s.description}`).join('\n')
-      : 'no skills installed (~/.dskharness/skills/)'
+      : 'no skills installed (~/.dsh-cli/skills/)'
   }
 
   listJobs(): string {

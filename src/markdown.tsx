@@ -31,7 +31,7 @@ function InlineView({ nodes }: { nodes: Inline[] }) {
             )
           case 'code':
             return (
-              <Text key={i} color={theme.primary}>
+              <Text key={i} color={theme.warn} backgroundColor={theme.codeBg}>
                 {n.text}
               </Text>
             )
@@ -52,13 +52,14 @@ function CodeBlock({ lang, text }: { lang: string; text: string }) {
   return (
     <Box flexDirection="column" marginY={0}>
       <Box>
-        <Text dimColor>
-          {` ${lang || 'code'} `}
+        <Text color={theme.muted} backgroundColor={theme.chipBg}>
+          {' '}
+          {lang || 'code'}{' '}
         </Text>
       </Box>
-      <Box borderStyle="round" borderColor="gray" flexDirection="column" paddingX={1}>
+      <Box borderStyle="round" borderColor={theme.border} flexDirection="column" paddingX={1}>
         {lines.map((line, i) => (
-          <Text key={i} dimColor>
+          <Text key={i} color={theme.muted}>
             {line || ' '}
           </Text>
         ))}
@@ -90,7 +91,7 @@ const BlockView = memo(function BlockView({ block, depth = 0 }: { block: Block; 
       return <CodeBlock lang={block.lang} text={block.text} />
     case 'quote':
       return (
-        <Box flexDirection="column" borderLeft={true} borderColor="gray" paddingLeft={1} marginLeft={0}>
+        <Box flexDirection="column" borderLeft borderLeftColor={theme.plan} paddingLeft={1} marginLeft={0}>
           {block.children.map((b, i) => (
             <BlockView key={i} block={b} depth={depth + 1} />
           ))}
@@ -102,7 +103,7 @@ const BlockView = memo(function BlockView({ block, depth = 0 }: { block: Block; 
           {block.items.map((item, i) => (
             <Box key={i} flexDirection="column">
               <Box>
-                <Text color={theme.primary}>{block.ordered ? item.marker : '•'}</Text>
+                <Text color={theme.primary}>{block.ordered ? item.marker : '›'}</Text>
                 <Box paddingLeft={1} flexDirection="column">
                   {item.children.map((b, j) => (
                     <BlockView key={j} block={b} depth={depth + 1} />

@@ -75,7 +75,7 @@ export async function streamChat(
     }
     const hint =
       res.status === 401
-        ? ' (set DEEPSEEK_API_KEY or add apiKey to ~/.dskharness/config.json)'
+        ? ' (set DEEPSEEK_API_KEY or add apiKey to ~/.dsh-cli/config.json)'
         : res.status === 402
           ? ' (DeepSeek balance insufficient)'
           : res.status === 429

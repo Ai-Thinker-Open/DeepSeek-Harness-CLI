@@ -1,0 +1,16 @@
+export {
+  DSH_COMMANDS,
+  DSH_PERMISSION_PRESETS,
+  commandDescriptors,
+  compactCommand,
+  goalCommand,
+  parseDshCommand,
+  permissionCommand,
+  planCommand,
+  type DshCommandDescriptor,
+  type DshCommandName,
+  type GoalCommand,
+  type ParsedDshCommand,
+  type PermissionCommand,
+  type PlanCommand,
+} from '../../../src/opencode-bridge/dsh-commands.ts'

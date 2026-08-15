@@ -1,37 +1,51 @@
 /**
- * dskharness palette — semantic design tokens.
- * Blue is the emphasis color for important information (brand, session title,
- * links, command highlight, input frame); cyan marks the assistant; green the
- * user; gray keeps tool/thinking chrome in the background. All values are
- * terminal-safe named colors so the UI sits well on any theme.
+ * DeepSeek Harness CLI palette — semantic design tokens.
+ *
+ * The visual system is deliberately original: a warm graphite workspace with
+ * one brand accent for actions, an indigo accent for the assistant, green for
+ * the user, and quiet gray chrome for tool/thinking details. Hex values are
+ * supported by Ink/Chalk on modern terminals and degrade gracefully to the
+ * nearest ANSI color where the terminal cannot render truecolor.
  */
 export const theme = {
-  /** Brand and emphasis (important information). */
-  brand: 'blue',
+  /** Brand and emphasis (actions, links, selected command). */
+  brand: '#FF7A1A',
   /** Primary chrome: input frame, command highlight, links, headings. */
-  primary: 'blue',
+  primary: '#FF7A1A',
   /** Assistant role bar / messages. */
-  assistant: 'cyan',
+  assistant: '#8B9EFF',
   /** User role bar. */
-  user: 'green',
+  user: '#4ADE80',
   /** Thinking marker. */
-  thinking: 'gray',
+  thinking: '#8A8A8E',
   /** Tool call / result chrome. */
-  tool: 'gray',
+  tool: '#9CA3AF',
   /** Success / completed. */
-  success: 'green',
+  success: '#4ADE80',
   /** Errors. */
-  error: 'red',
+  error: '#FB7185',
   /** Warnings / approvals. */
-  warn: 'yellow',
+  warn: '#FBBF24',
   /** Plan mode. */
-  plan: 'blue',
+  plan: '#8B9EFF',
   /** Model name in the status line. */
-  model: 'yellow',
+  model: '#FACC15',
   /** Diff / branch markers. */
-  diff: 'magenta',
+  diff: '#D8B4FE',
   /** Neutral dim text. */
-  dim: 'gray',
+  dim: '#6B7280',
+  /** Slightly brighter secondary text. */
+  muted: '#A1A1AA',
+  /** Borders and separators. */
+  border: '#3F3F46',
+  /** Inline code background. */
+  codeBg: '#27272A',
+  /** Selected item background. */
+  selectedBg: '#FF7A1A',
+  /** Selected item foreground. */
+  selectedFg: '#111111',
+  /** Neutral surface tint used for small chips. */
+  chipBg: '#3F3F46',
 }
 
 /** Sigils used as left-hand markers for transcript entries (MiMo-Code style). */
@@ -48,11 +62,21 @@ export const SIGILS = {
 /** Headline labels shown next to each sigil. */
 export const ROLE_LABELS = {
   user: 'you',
-  assistant: 'mimo',
+  assistant: 'dsh-cli',
   thinking: 'thinking',
   tool: '',
   toolResult: '',
   error: 'error',
+} as const
+
+/** Uppercase role labels used in the transcript chips. */
+export const ROLE_CHIPS = {
+  user: 'YOU',
+  assistant: 'DSK',
+  thinking: 'THINKING',
+  tool: 'TOOL',
+  toolResult: 'RESULT',
+  error: 'ERROR',
 } as const
 
 /** Map a tool name to a short verb (MiMo-style "Reading…", "Running…"). */
@@ -86,20 +110,21 @@ export function verbForTool(toolName: string): string {
 export type Mode = 'agent' | 'plan' | 'yolo'
 
 export function modeIndicator(mode: Mode): string {
-  if (mode === 'plan') return '◆ PLAN'
-  if (mode === 'yolo') return '▲ YOLO'
-  return '◆ AGENT'
+  if (mode === 'plan') return 'PLAN'
+  if (mode === 'yolo') return 'YOLO'
+  return 'AGENT'
 }
 
 export function modeGlyph(mode: Mode): string {
-  if (mode === 'plan') return '◇'
+  if (mode === 'plan') return '◆'
   if (mode === 'yolo') return '▲'
   return '✦'
 }
 
 export function modeBorderColor(mode: Mode): string {
-  if (mode === 'yolo') return 'red'
-  return 'blue'
+  if (mode === 'yolo') return theme.error
+  if (mode === 'plan') return theme.plan
+  return theme.primary
 }
 
 /** Contextual hint shown inside the input frame (MiMo-style). */
@@ -148,4 +173,29 @@ export function decoration(kind: keyof typeof SIGILS): { sigil: string; color: s
     default:
       return { sigil: SIGILS.system, color: theme.dim }
   }
+}
+
+/** Truncate a string to a display width without splitting wide characters. */
+export function truncate(text: string, max: number): string {
+  if (max <= 0) return ''
+  const chars = Array.from(text)
+  let width = 0
+  const out: string[] = []
+  for (const ch of chars) {
+    const w = ch.codePointAt(0)! > 0xffff || /[\u1100-\u115f\u2e80-\ua4cf\uac00-\ud7a3\uf900-\ufaff\ufe30-\ufe4f\uff00-\uff60\uffe0-\uffe6]/.test(ch) ? 2 : 1
+    if (width + w > max) break
+    out.push(ch)
+    width += w
+  }
+  const result = out.join('')
+  return result === text ? text : `${result.slice(0, Math.max(0, max - 1))}…`
+}
+
+/** Shorten a path relative to the user's home directory. */
+export function shortPath(cwd: string): string {
+  const home = process.env.HOME ?? ''
+  if (home && (cwd === home || cwd.startsWith(home + '/'))) {
+    return `~${cwd.slice(home.length)}`
+  }
+  return cwd
 }
