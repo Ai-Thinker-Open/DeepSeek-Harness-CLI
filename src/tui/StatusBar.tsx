@@ -27,10 +27,10 @@ export function StatusBar({
   return (
     <Box borderBottom borderBottomColor={theme.border1} paddingX={1} height={1} flexShrink={0} flexDirection="row">
       <Text color={theme.brand} bold>
-        (oᴗo){' '}
+        DeepSeek{'  '}
       </Text>
-      <Text bold color={theme.labelPrimary}>
-        {truncate(left, Math.max(8, Math.floor(width * 0.3)))}
+      <Text color={theme.labelSecondary}>
+        {truncate(left, Math.max(8, Math.floor(width * 0.28)))}
       </Text>
       <Text color={theme.labelCaption} dimColor>
         {' '}

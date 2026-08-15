@@ -86,7 +86,7 @@ export const BRAND_WHALE = '(oᴗo)'
 export function modeGlyph(mode: Mode): string {
   if (mode === 'plan') return '◇'
   if (mode === 'yolo') return '▲'
-  return BRAND_WHALE
+  return '›'
 }
 
 export function modeBorderColor(mode: Mode): string {
