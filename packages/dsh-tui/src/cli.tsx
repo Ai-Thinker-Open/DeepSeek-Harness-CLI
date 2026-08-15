@@ -24,10 +24,12 @@ const continueLatest = process.argv.includes('--continue')
 const renderer = await createCliRenderer({
   externalOutputMode: 'passthrough',
   targetFps: 30,
-  exitOnCtrlC: false,
+  exitOnCtrlC: true,
   openConsoleOnError: false,
   autoFocus: true,
   useMouse: false,
+  useKittyKeyboard: null,
+  useThread: false,
 })
 
 await render(
