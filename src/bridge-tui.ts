@@ -51,7 +51,7 @@ const childEnv = {
   MIMOCODE_TUI_PLAIN: process.env.MIMOCODE_TUI_PLAIN ?? '1',
   MIMOCODE_DISABLE_MOUSE: process.env.MIMOCODE_DISABLE_MOUSE ?? '1',
   MIMOCODE_DISABLE_TERMINAL_TITLE: process.env.MIMOCODE_DISABLE_TERMINAL_TITLE ?? '1',
-}
+} as Record<string, string | undefined>
 // OpenTUI 0.1.101 has broken Windows Terminal detection. Removing WT_SESSION
 // makes it fall back to the standard Linux terminal path under WSL/Windows
 // Terminal instead of taking the broken Windows-specific branch.

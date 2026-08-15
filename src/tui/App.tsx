@@ -218,6 +218,8 @@ export function App({
   const [clearSignal, setClearSignal] = useState(0)
   const [mode, setMode] = useState<Mode>('agent')
   const [detailsTab, setDetailsTab] = useState<DetailsTab | null>('tasks')
+  const [focus, setFocus] = useState<'chat' | 'sidebar' | 'details'>('chat')
+  const [selIndex, setSelIndex] = useState(0)
 
   const showCommands = input.startsWith('/') && !panel
   const panelLen = panel
@@ -455,10 +457,22 @@ export function App({
       return
     }
     if (detailsTab) {
-      if (inputKey === '[' || (key.ctrl && inputKey === '[')) setDetailsTab('tasks')
-      else if (inputKey === ']' || (key.ctrl && inputKey === ']')) {
+      if (focus === 'details') {
+        if (key.leftArrow || inputKey === '[') setDetailsTab('tasks')
+        else if (key.rightArrow || inputKey === ']') {
+          setDetailsTab((t) => (t === 'tasks' ? 'settings' : t === 'settings' ? 'trace' : 'tasks'))
+        }
+        if (key.escape) setDetailsTab(null)
+      } else if (inputKey === ']') {
         setDetailsTab((t) => (t === 'tasks' ? 'settings' : t === 'settings' ? 'trace' : 'tasks'))
-      } else if (key.escape) setDetailsTab(null)
+      } else if (key.escape) {
+        setDetailsTab(null)
+      }
+      return
+    }
+    if (key.tab) {
+      setFocus((f) => (f === 'chat' ? (showSidebar ? 'sidebar' : 'details') : f === 'sidebar' ? 'details' : 'chat'))
+      setSelIndex(0)
       return
     }
     if (key.shift && key.tab) {
@@ -591,6 +605,13 @@ export function App({
             planMode={state.planMode}
             mode={mode}
             busy={busy}
+            focused={focus === 'sidebar'}
+            selIndex={selIndex}
+            onSelect={setSelIndex}
+            onOpenSession={(id) => {
+              mountSession(id)
+              setFocus('chat')
+            }}
           />
         ) : null}
 
@@ -625,7 +646,7 @@ export function App({
               value={input}
               onChange={setInputBoth}
               onSubmit={send}
-              disabled={busy || hasQuestion}
+              disabled={busy || hasQuestion || focus !== 'chat'}
               busy={busy}
               placeholder={'Ask anything…  ( / for commands )'}
               planMode={state.planMode}

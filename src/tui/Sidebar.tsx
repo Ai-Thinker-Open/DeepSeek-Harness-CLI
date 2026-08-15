@@ -1,5 +1,5 @@
 import React from 'react'
-import { Box, Text } from 'ink'
+import { Box, Text, useInput } from 'ink'
 import type { SessionMeta, TodoItem } from '../types.ts'
 import { shortPath, theme, truncate, type Mode } from '../theme.ts'
 import { Badge, Divider, SectionLabel, StatusDot } from './ui.tsx'
@@ -38,6 +38,10 @@ export function Sidebar({
   planMode,
   mode,
   busy,
+  focused,
+  selIndex,
+  onSelect,
+  onOpenSession,
 }: {
   width: number
   title: string
@@ -50,8 +54,22 @@ export function Sidebar({
   planMode: boolean
   mode: Mode
   busy: boolean
+  focused: boolean
+  selIndex: number
+  onSelect: (i: number) => void
+  onOpenSession: (id: string) => void
 }) {
   const innerWidth = Math.max(8, width - 4)
+
+  useInput((input, key) => {
+    if (!focused) return
+    if (key.upArrow) onSelect(Math.max(0, selIndex - 1))
+    else if (key.downArrow) onSelect(Math.min(Math.max(0, sessions.length - 1), selIndex + 1))
+    else if (key.return || input.includes('\r') || input.includes('\n')) {
+      const s = sessions[selIndex]
+      if (s && s.id !== currentSessionId) onOpenSession(s.id)
+    } else if (key.escape) onSelect(-1)
+  })
 
   return (
     <Box
@@ -90,17 +108,18 @@ export function Sidebar({
           {sessions.length === 0 ? (
             <Text color={theme.labelCaption}>no local sessions</Text>
           ) : (
-            sessions.slice(0, 4).map((s) => {
+            sessions.slice(0, 10).map((s, i) => {
               const active = s.id === currentSessionId
+              const selected = focused && i === selIndex
               return (
                 <Text
                   key={s.id}
-                  color={active ? theme.labelPrimary : theme.labelSecondary}
-                  backgroundColor={active ? theme.bgLayer3 : undefined}
+                  color={selected ? '#000000' : active ? theme.labelPrimary : theme.labelSecondary}
+                  backgroundColor={selected ? theme.brand : active ? theme.bgLayer3 : undefined}
                 >
-                  {active ? `${'▎'} ` : '  '}
+                  {active ? `${'▎'} ` : selected ? '› ' : '  '}
                   {truncate(s.title || s.id.slice(0, 8), innerWidth - 8)}
-                  <Text color={theme.labelCaption}> {timeAgo(s.updatedAt)}</Text>
+                  <Text color={selected ? '#000000' : theme.labelCaption}> {timeAgo(s.updatedAt)}</Text>
                 </Text>
               )
             })
