@@ -1,7 +1,20 @@
 import { HarnessClient, type ServerRequest, type SessionSummary } from './harness.ts'
 import { DshRemoteClient } from './remote.ts'
 import { BridgeStore } from './store.ts'
-import type { OpenCodeCommand, OpenCodeGlobalEvent, OpenCodeSession } from './types.ts'
+import {
+  compactCommand,
+  goalCommand,
+  parseDshCommand,
+  permissionCommand,
+  planCommand,
+} from '../../../src/opencode-bridge/dsh-commands.ts'
+import type {
+  OpenCodeCommand,
+  OpenCodeGlobalEvent,
+  OpenCodePermissionRequest,
+  OpenCodeQuestionRequest,
+  OpenCodeSession,
+} from './types.ts'
 
 const DSH_FALLBACK_COMMANDS: OpenCodeCommand[] = [
   { name: 'plan', description: 'Enter or leave plan mode', input: { hint: '[off|message]' } },
@@ -9,6 +22,14 @@ const DSH_FALLBACK_COMMANDS: OpenCodeCommand[] = [
   { name: 'compact', description: 'Compact older conversation history' },
   { name: 'permission', description: 'Switch the permission preset (sandbox mode + approval policy)', input: { hint: '<preset>' } },
 ]
+
+interface PendingDshQuestion {
+  rpcId: string
+  sessionId: string
+  id: string
+  options: string[]
+  kind: 'permission' | 'question'
+}
 
 export interface BridgeOptions {
   harnessUrl: string
@@ -22,6 +43,7 @@ export class DshOpenCodeBridge {
   private abortController = new AbortController()
   private listening = false
   private readonly directory: string
+  private readonly pendingQuestions = new Map<string, PendingDshQuestion>()
 
   constructor(options: BridgeOptions) {
     this.client = new HarnessClient(options.harnessUrl)
@@ -92,7 +114,101 @@ export class DshOpenCodeBridge {
   }
 
   async executeCommand(sessionId: string, line: string): Promise<unknown> {
-    return this.remote.executeCommand(sessionId, line)
+    try {
+      const remote = await this.remote.executeCommand(sessionId, line)
+      if (remote) return remote
+    } catch {
+      // Fall through to the local DSH command contract so the TUI stays
+      // usable when the host command registry is not reachable.
+    }
+
+    const parsed = parseDshCommand(line)
+    if (!parsed) throw new Error(`unknown command: ${line}`)
+
+    if (parsed.name === 'plan') {
+      const plan = planCommand(parsed.rawInput)
+      this.store.applyProjection(sessionId, 'plan', { active: plan.kind === 'on' })
+      return { ok: true, plan }
+    }
+
+    if (parsed.name === 'goal') {
+      const goal = goalCommand(parsed.rawInput)
+      const objective =
+        goal.kind === 'create' || goal.kind === 'edit' ? goal.objective : undefined
+      this.store.applyProjection(sessionId, 'goal', objective ? { condition: objective } : {})
+      return { ok: true, goal }
+    }
+
+    if (parsed.name === 'compact') {
+      const compact = compactCommand(parsed.rawInput)
+      if (!compact.ok) throw new Error(compact.error ?? 'Invalid /compact')
+      this.store.emit({
+        directory: this.directory,
+        payload: { type: 'session.compacted', properties: { sessionID: sessionId } },
+      })
+      return { ok: true }
+    }
+
+    if (parsed.name === 'permission') {
+      const permission = permissionCommand(parsed.rawInput)
+      if (permission.kind === 'unknown') throw new Error(`Unknown permission preset: ${permission.preset}`)
+      return { ok: true, permission }
+    }
+
+    return { ok: true }
+  }
+
+  listPermissions(): OpenCodePermissionRequest[] {
+    return []
+  }
+
+  listQuestions(): OpenCodeQuestionRequest[] {
+    return []
+  }
+
+  async replyPermission(requestID: string, reply: 'once' | 'always' | 'reject'): Promise<void> {
+    const pending = this.pendingQuestions.get(requestID)
+    this.pendingQuestions.delete(requestID)
+    if (!pending) return
+    const selected = this.permissionChoice(pending.options, reply)
+    await this.client.respond(pending.rpcId, pending.sessionId, [{ id: pending.id, selected: [selected] }])
+    this.store.emit({
+      directory: this.directory,
+      payload: {
+        type: 'permission.replied',
+        properties: { sessionID: pending.sessionId, requestID, reply },
+      },
+    })
+  }
+
+  async replyQuestion(requestID: string, answers: string[][]): Promise<void> {
+    const pending = this.pendingQuestions.get(requestID)
+    this.pendingQuestions.delete(requestID)
+    if (!pending) return
+    const selected = answers[0]?.[0] ?? pending.options[0] ?? 'Yes'
+    await this.client.respond(pending.rpcId, pending.sessionId, [{ id: pending.id, selected: [selected] }])
+    this.store.emit({
+      directory: this.directory,
+      payload: {
+        type: 'question.replied',
+        properties: { sessionID: pending.sessionId, requestID, answers },
+      },
+    })
+  }
+
+  async rejectQuestion(requestID: string): Promise<void> {
+    const pending = this.pendingQuestions.get(requestID)
+    this.pendingQuestions.delete(requestID)
+    if (!pending) return
+    const selected = pending.options.at(-1) ?? 'No'
+    await this.client.respond(pending.rpcId, pending.sessionId, [{ id: pending.id, selected: [selected] }])
+    this.store.emit({
+      directory: this.directory,
+      payload: {
+        type: 'question.rejected',
+        properties: { sessionID: pending.sessionId, requestID },
+      },
+    })
   }
 
   subscribe(listener: (event: OpenCodeGlobalEvent) => void): () => void {
@@ -134,8 +250,85 @@ export class DshOpenCodeBridge {
       return
     }
 
+    if (frame.method === 'question/requested') {
+      this.handleQuestionRequested(frame, sessionId)
+      return
+    }
+
     if (frame.method === 'host/session-status') {
       this.store.setStatus(sessionId, { type: payload.running ? 'busy' : 'idle' })
     }
+  }
+
+  private handleQuestionRequested(frame: ServerRequest, sessionId: string): void {
+    const payload = frame.payload as {
+      questions?: Array<{
+        id: string
+        question: string
+        header?: string
+        detail?: string
+        options?: Array<{ label: string; description?: string }>
+        intent?: { kind: 'plan-review'; approve: string }
+      }>
+    }
+    const item = payload.questions?.[0]
+    if (!item) return
+    const options = item.options?.length ? item.options.map((option) => option.label) : ['Yes', 'No']
+    const isPermission =
+      item.intent?.kind !== 'plan-review' &&
+      /allow|permission|deny/i.test(`${item.header ?? ''} ${item.question} ${options.join(' ')}`)
+    const requestID = item.id
+    this.pendingQuestions.set(requestID, {
+      rpcId: frame.rpcId,
+      sessionId,
+      id: item.id,
+      options,
+      kind: isPermission ? 'permission' : 'question',
+    })
+
+    if (isPermission) {
+      this.store.emit({
+        directory: this.directory,
+        payload: {
+          type: 'permission.asked',
+          properties: {
+            id: item.id,
+            sessionID: sessionId,
+            permission: item.header ?? item.question,
+            patterns: [],
+            metadata: { description: item.detail ?? item.question },
+            always: options,
+          },
+        },
+      })
+      return
+    }
+
+    this.store.emit({
+      directory: this.directory,
+      payload: {
+        type: 'question.asked',
+        properties: {
+          id: item.id,
+          sessionID: sessionId,
+          questions: [
+            {
+              id: item.id,
+              question: item.question,
+              header: item.header ?? item.question,
+              options: options.map((label) => ({ label, description: '' })),
+              multiple: false,
+              custom: false,
+            },
+          ],
+        },
+      },
+    })
+  }
+
+  private permissionChoice(options: string[], reply: 'once' | 'always' | 'reject'): string {
+    if (reply === 'reject') return options.at(-1) ?? 'Deny'
+    if (reply === 'always') return options[1] ?? options[0] ?? 'Allow'
+    return options[0] ?? 'Allow'
   }
 }

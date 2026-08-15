@@ -15,13 +15,19 @@ const dsh = new DshTui({
 })
 await dsh.start()
 
+const sessionArg = arg('--session', '')
+const continueLatest = process.argv.includes('--continue')
+
 const renderer = await createCliRenderer({
   externalOutputMode: 'passthrough',
   targetFps: 30,
-  exitOnCtrlC: true,
+    exitOnCtrlC: false,
   autoFocus: true,
   useMouse: false,
 })
 
-await render(() => <App dsh={dsh} />, renderer)
+await render(
+  () => <App dsh={dsh} initialSessionId={sessionArg || undefined} continueLatest={continueLatest} />,
+  renderer,
+)
 process.on('SIGINT', () => dsh.stop())

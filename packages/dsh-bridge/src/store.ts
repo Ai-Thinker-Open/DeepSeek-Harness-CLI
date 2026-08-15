@@ -1,11 +1,14 @@
 import type { HistoryEntry, SessionEvent, SessionSummary } from './harness.ts'
 import type {
+  OpenCodeAssistantMessage,
   OpenCodeGlobalEvent,
   OpenCodeMessage,
   OpenCodePart,
   OpenCodeSession,
   OpenCodeTodo,
   OpenCodeToolPart,
+  OpenCodeToolState,
+  OpenCodeUserMessage,
 } from './types.ts'
 
 interface DshBlock {
@@ -37,6 +40,23 @@ function reasoningFromBlocks(blocks: DshBlock[] | undefined): string {
     .join('')
 }
 
+function parseInput(raw: string | undefined): Record<string, unknown> {
+  if (!raw) return {}
+  try {
+    const value = JSON.parse(raw)
+    return value && typeof value === 'object' ? (value as Record<string, unknown>) : { raw }
+  } catch {
+    return { raw }
+  }
+}
+
+function toolSummary(tool: string, input: Record<string, unknown>): string {
+  const first = Object.values(input)[0]
+  if (typeof first === 'string' && first) return first.slice(0, 120)
+  const json = JSON.stringify(input)
+  return json && json !== '{}' ? json.slice(0, 120) : tool
+}
+
 export interface BridgeSessionState {
   session: OpenCodeSession
   messages: OpenCodeMessage[]
@@ -44,6 +64,20 @@ export interface BridgeSessionState {
   todos: OpenCodeTodo[]
   plan: { active: boolean }
   status: { type: 'busy' | 'idle'; message?: string }
+}
+
+function emptySession(sessionId: string, directory: string): OpenCodeSession {
+  const now = Date.now()
+  return {
+    id: sessionId,
+    slug: sessionId,
+    projectID: '',
+    directory,
+    title: sessionId.slice(0, 12),
+    version: '0',
+    time: { created: now, updated: now },
+    project: null,
+  }
 }
 
 export class BridgeStore {
@@ -89,13 +123,14 @@ export class BridgeStore {
 
   upsertSession(summary: SessionSummary): OpenCodeSession {
     const existing = this.sessions.get(summary.sessionId)
+    const now = Date.now()
     const session: OpenCodeSession = {
+      ...(existing?.session ?? emptySession(summary.sessionId, summary.cwd ?? this.directory)),
       id: summary.sessionId,
-      title: existing?.session.title ?? summary.sessionId.slice(0, 12),
-      directory: summary.cwd ?? this.directory,
+      directory: summary.cwd ?? existing?.session.directory ?? this.directory,
       time: {
-        created: existing?.session.time.created ?? Date.now(),
-        updated: summary.updatedAt ?? Date.now(),
+        created: existing?.session.time.created ?? now,
+        updated: summary.updatedAt ?? existing?.session.time.updated ?? now,
       },
     }
     this.sessions.set(summary.sessionId, {
@@ -129,13 +164,16 @@ export class BridgeStore {
     const data = event.data as Record<string, unknown>
 
     if (event.type === 'user/message') {
-      const messageId = id('msg')
-      const content = textFromBlocks((data as { content?: DshBlock[] }).content)
-      const message: OpenCodeMessage = {
+      const payload = (data as { id?: string; content?: DshBlock[] }) ?? data
+      const messageId = payload.id ?? id('msg')
+      const content = textFromBlocks(payload.content)
+      const message: OpenCodeUserMessage = {
         id: messageId,
         sessionID: sessionId,
         role: 'user',
         time: { created: event.time },
+        agent: 'build',
+        model: { providerID: 'deepseek', modelID: 'deepseek-chat' },
       }
       state.messages.push(message)
       if (content) {
@@ -157,14 +195,27 @@ export class BridgeStore {
 
     if (event.type === 'assistant/message') {
       const payload = (data.message ?? data) as { id?: string; content?: DshBlock[] }
-      const messageId = id('msg')
+      const messageId = payload.id ?? id('msg')
       const content = textFromBlocks(payload.content)
       const reasoning = reasoningFromBlocks(payload.content)
-      const message: OpenCodeMessage = {
+      const message: OpenCodeAssistantMessage = {
         id: messageId,
         sessionID: sessionId,
         role: 'assistant',
-        time: { created: event.time },
+        time: { created: event.time, completed: event.time },
+        parentID: [...state.messages].reverse().find((message) => message.role === 'user')?.id ?? '',
+        modelID: 'deepseek-chat',
+        providerID: 'deepseek',
+        mode: 'build',
+        agent: 'build',
+        path: { cwd: this.directory, root: this.directory },
+        cost: 0,
+        tokens: {
+          input: 0,
+          output: 0,
+          reasoning: 0,
+          cache: { read: 0, write: 0 },
+        },
       }
       state.messages.push(message)
       if (reasoning) {
@@ -174,6 +225,7 @@ export class BridgeStore {
           messageID: messageId,
           type: 'reasoning',
           text: reasoning,
+          time: { start: event.time, end: event.time },
         })
       }
       if (content) {
@@ -217,20 +269,34 @@ export class BridgeStore {
       if (!block?.toolCallId) return
       const target = [...state.messages].reverse().find((message) => {
         const parts = state.parts.get(message.id) ?? []
-        return parts.some((part) => part.type === 'tool' && part.tool === block.toolCallId)
+        return parts.some((part) => part.type === 'tool' && part.callID === block.toolCallId)
       })
       if (!target) return
       const parts = state.parts.get(target.id) ?? []
-      const part = parts.find((candidate): candidate is OpenCodeToolPart => candidate.type === 'tool' && candidate.tool === block.toolCallId)
+      const part = parts.find((candidate): candidate is OpenCodeToolPart => candidate.type === 'tool' && candidate.callID === block.toolCallId)
       if (!part) return
-      part.state = {
-        ...part.state,
-        status: block.isError ? 'error' : 'completed',
-        output: textFromBlocks(block.content) || block.isError ? textFromBlocks(block.content) : '',
-      }
+      const input = part.state.input
+      const startedAt = part.state.status === 'running' ? part.state.time.start : event.time
+      const output = textFromBlocks(block.content)
+      const nextState: OpenCodeToolState = block.isError
+        ? {
+            status: 'error',
+            input,
+            error: output || 'tool failed',
+            time: { start: startedAt, end: event.time },
+          }
+        : {
+            status: 'completed',
+            input,
+            output,
+            title: toolSummary(part.tool, input as Record<string, unknown>),
+            metadata: {},
+            time: { start: startedAt, end: event.time },
+          }
+      part.state = nextState
       this.emit({
         directory: this.directory,
-        payload: { type: 'message.part.updated', properties: { sessionID: sessionId, part } },
+        payload: { type: 'message.part.updated', properties: { sessionID: sessionId, part, time: event.time } },
       })
       return
     }
@@ -240,6 +306,7 @@ export class BridgeStore {
       if (!title) return
       const session = state.session
       session.title = title
+      session.time.updated = event.time
       this.emit({
         directory: this.directory,
         payload: { type: 'session.updated', properties: { sessionID: sessionId, info: session } },
@@ -263,6 +330,16 @@ export class BridgeStore {
     if (key === 'plan' && value && typeof value === 'object') {
       state.plan = { active: Boolean((value as { active?: boolean }).active) }
     }
+    if (key === 'goal' && value && typeof value === 'object') {
+      const condition = (value as { condition?: string }).condition
+      this.emit({
+        directory: this.directory,
+        payload: {
+          type: 'session.goal',
+          properties: { sessionID: sessionId, ...(condition ? { goal: { condition } } : {}) },
+        },
+      })
+    }
   }
 
   setStatus(sessionId: string, status: BridgeSessionState['status']): void {
@@ -272,18 +349,19 @@ export class BridgeStore {
       directory: this.directory,
       payload: { type: 'session.status', properties: { sessionID: sessionId, status } },
     })
+    if (status.type === 'idle') {
+      this.emit({
+        directory: this.directory,
+        payload: { type: 'session.idle', properties: { sessionID: sessionId } },
+      })
+    }
   }
 
   private ensure(sessionId: string): BridgeSessionState {
     let state = this.sessions.get(sessionId)
     if (!state) {
       state = {
-        session: {
-          id: sessionId,
-          title: sessionId.slice(0, 12),
-          directory: this.directory,
-          time: { created: Date.now(), updated: Date.now() },
-        },
+        session: emptySession(sessionId, this.directory),
         messages: [],
         parts: new Map(),
         todos: [],
@@ -297,28 +375,31 @@ export class BridgeStore {
 
   private addPart(state: BridgeSessionState, messageId: string, part: OpenCodePart): void {
     const parts = state.parts.get(messageId) ?? []
-    parts.push(part)
+    const existingIndex = parts.findIndex((candidate) => candidate.id === part.id)
+    if (existingIndex >= 0) parts[existingIndex] = part
+    else parts.push(part)
     state.parts.set(messageId, parts)
     this.emit({
       directory: this.directory,
-      payload: { type: 'message.part.updated', properties: { sessionID: part.sessionID, part } },
+      payload: { type: 'message.part.updated', properties: { sessionID: part.sessionID, part, time: Date.now() } },
     })
   }
 
   private toolPart(sessionId: string, messageId: string, block: DshBlock, time: number): OpenCodeToolPart {
-    let input: unknown = {}
-    try {
-      input = block.arguments ? JSON.parse(block.arguments) : {}
-    } catch {
-      input = { raw: block.arguments ?? '' }
-    }
+    const input = parseInput(block.arguments)
     return {
       id: block.id ?? id('part'),
       sessionID: sessionId,
       messageID: messageId,
       type: 'tool',
+      callID: block.id ?? id('call'),
       tool: block.name ?? 'tool',
-      state: { status: 'running', input, startedAt: time } as OpenCodeToolPart['state'],
+      state: {
+        status: 'running',
+        input,
+        title: toolSummary(block.name ?? 'tool', input),
+        time: { start: time },
+      },
     }
   }
 

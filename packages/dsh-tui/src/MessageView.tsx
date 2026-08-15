@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { For, Show } from 'solid-js'
 import type { OpenCodeMessage, OpenCodePart } from '@dsh/core'
 

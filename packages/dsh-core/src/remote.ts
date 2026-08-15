@@ -1,12 +1,12 @@
 import { HarnessClient } from './harness.ts'
 
-export interface DshCommandDescriptor {
+export interface RemoteCommandDescriptor {
   name: string
   description: string
   input?: { hint: string }
 }
 
-export interface DshCommandExecution {
+export interface RemoteCommandExecution {
   commandId: string
   result: { kind: 'success' | 'error'; text?: string }
 }
@@ -17,8 +17,8 @@ export class DshRemoteClient {
     public timeoutMs = 60_000,
   ) {}
 
-  async listCommands(sessionId: string): Promise<DshCommandDescriptor[]> {
-    const result = await this.client.call<{ ok: true; value: DshCommandDescriptor[] } | { ok: false; error: unknown }>(
+  async listCommands(sessionId: string): Promise<RemoteCommandDescriptor[]> {
+    const result = await this.client.call<{ ok: true; value: RemoteCommandDescriptor[] } | { ok: false; error: unknown }>(
       'commands/list',
       { args: { agentId: sessionId } },
       AbortSignal.timeout(this.timeoutMs),
@@ -27,7 +27,7 @@ export class DshRemoteClient {
     return result.value
   }
 
-  async executeCommand(sessionId: string, line: string): Promise<DshCommandExecution | undefined> {
+  async executeCommand(sessionId: string, line: string): Promise<RemoteCommandExecution | undefined> {
     const result = await this.client.call<
       { ok: true; value: { commandId: string } | undefined } | { ok: false; error: unknown }
     >(

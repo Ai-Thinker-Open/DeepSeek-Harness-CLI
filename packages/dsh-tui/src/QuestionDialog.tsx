@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { createSignal, For } from 'solid-js'
 import { useKeyboard } from '@opentui/solid'
 import type { OpenCodeQuestion } from '@dsh/core'

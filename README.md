@@ -11,6 +11,23 @@ Two modes:
 - **Standalone**: runs its own agent loop and talks to the DeepSeek API
   directly (needs `DEEPSEEK_API_KEY`), covering the full DSH tool surface.
 
+## Quick start: the OpenCode-style TUI
+
+`dsh-tui` starts a local OpenCode-compatible bridge and attaches the vendored
+OpenCode TUI to it, so a running DeepSeek Harness session renders as a
+full OpenCode terminal client branded **DeepSeek Harness CLI**.
+
+```sh
+npm run build
+npm link
+dsh-tui                 # start in the current project
+dsh-tui path/to/project # start in a specific project
+dsh-tui --continue      # reopen the most recent session
+```
+
+No `dsh web` process is required first. `dsh-tui` talks directly to DeepSeek
+Harness at `DSH_CLI_HARNESS_URL` (default `http://127.0.0.1:3080`).
+
 ```
         o
        o

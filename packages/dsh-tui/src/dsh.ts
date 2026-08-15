@@ -26,8 +26,10 @@ export interface DshRuntime {
   listCommands(sessionId: string): Promise<OpenCodeCommand[]>
   executeCommand(sessionId: string, line: string): Promise<unknown>
   answerQuestion(questionId: string, sessionId: string, option: string): Promise<void>
+  cancelQuestion(questionId: string, sessionId: string): Promise<void>
   listModels(sessionId: string): Promise<OpenCodeModelOption[]>
   selectModel(sessionId: string, provider: string, model: string): Promise<void>
+  renameSession(sessionId: string, title: string): Promise<void>
   subscribe(listener: (event: unknown) => void): () => void
   stop(): void
 }
@@ -39,6 +41,7 @@ export class DshTui implements DshRuntime {
   private readonly abortController = new AbortController()
   private listening = false
   private readonly pendingQuestionRpc = new Map<string, string>()
+  private readonly pendingQuestionOptions = new Map<string, string[]>()
 
   constructor(options: DshTuiOptions) {
     this.client = new HarnessClient(options.harnessUrl)
@@ -117,9 +120,22 @@ export class DshTui implements DshRuntime {
   async answerQuestion(questionId: string, sessionId: string, option: string): Promise<void> {
     const rpcId = this.pendingQuestionRpc.get(questionId)
     this.pendingQuestionRpc.delete(questionId)
+    this.pendingQuestionOptions.delete(questionId)
     this.store.settleQuestion(sessionId, questionId)
     if (rpcId) {
       await this.client.respond(rpcId, sessionId, [{ id: questionId, selected: [option] }])
+    }
+  }
+
+  async cancelQuestion(questionId: string, sessionId: string): Promise<void> {
+    const rpcId = this.pendingQuestionRpc.get(questionId)
+    const options = this.pendingQuestionOptions.get(questionId) ?? []
+    this.pendingQuestionRpc.delete(questionId)
+    this.pendingQuestionOptions.delete(questionId)
+    this.store.settleQuestion(sessionId, questionId)
+    const selected = options.at(-1) ?? 'Deny'
+    if (rpcId) {
+      await this.client.respond(rpcId, sessionId, [{ id: questionId, selected: [selected] }])
     }
   }
 
@@ -145,6 +161,10 @@ export class DshTui implements DshRuntime {
 
   async selectModel(sessionId: string, provider: string, model: string): Promise<void> {
     await this.client.selectModel(sessionId, provider, model)
+  }
+
+  async renameSession(sessionId: string, title: string): Promise<void> {
+    await this.client.rename(sessionId, title)
   }
 
   subscribe(listener: (event: unknown) => void): () => void {
@@ -212,6 +232,7 @@ export class DshTui implements DshRuntime {
             ? 'permission'
             : 'question'
       this.pendingQuestionRpc.set(item.id, frame.rpcId)
+      this.pendingQuestionOptions.set(item.id, options)
       this.store.pushQuestion({
         id: item.id,
         sessionID: sessionId,

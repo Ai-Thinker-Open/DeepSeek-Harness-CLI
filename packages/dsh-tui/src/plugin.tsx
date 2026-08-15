@@ -1,3 +1,4 @@
+/** @jsxImportSource @opentui/solid */
 import { render } from '@opentui/solid'
 import { createCliRenderer } from '@opentui/core'
 import { randomUUID } from 'node:crypto'
@@ -18,6 +19,7 @@ class CordisRuntime implements DshRuntime {
   readonly store: BridgeStore
   private started = false
   private readonly questionResolvers = new Map<string, (option: string) => void>()
+  private readonly questionOptions = new Map<string, string[]>()
 
   constructor(
     private readonly ctx: any,
@@ -113,6 +115,12 @@ class CordisRuntime implements DshRuntime {
     this.store.settleQuestion(sessionId, questionId)
     this.questionResolvers.get(questionId)?.(option)
     this.questionResolvers.delete(questionId)
+    this.questionOptions.delete(questionId)
+  }
+
+  async cancelQuestion(questionId: string, sessionId: string): Promise<void> {
+    const option = this.questionOptions.get(questionId)?.at(-1) ?? 'Deny'
+    await this.answerQuestion(questionId, sessionId, option)
   }
 
   async listModels(_sessionId: string): Promise<OpenCodeModelOption[]> {
@@ -126,6 +134,10 @@ class CordisRuntime implements DshRuntime {
 
   async selectModel(_sessionId: string, _provider: string, _model: string): Promise<void> {
     // In-process model switching belongs to the host agent; leave for profile integration.
+  }
+
+  async renameSession(_sessionId: string, _title: string): Promise<void> {
+    // Host session title is owned by DSH services; leave for profile integration.
   }
 
   subscribe(listener: (event: unknown) => void): () => void {
@@ -156,6 +168,7 @@ class CordisRuntime implements DshRuntime {
           ? 'permission'
           : 'question'
     return new Promise((resolve) => {
+      this.questionOptions.set(item.id, options)
       this.questionResolvers.set(item.id, (option) => {
         resolve([{ id: item.id, selected: [option] }])
       })
@@ -181,6 +194,10 @@ export function apply(ctx: any): void {
 async function run(ctx: any): Promise<void> {
   const exit = ctx.get('appExit')
   await ctx.get('loader')?.await?.()
+  const args = (ctx.get('cmdlineArgs')?.get?.() ?? []) as string[]
+  const sessionArgIndex = args.indexOf('--session')
+  const sessionArg = sessionArgIndex >= 0 && args[sessionArgIndex + 1] ? args[sessionArgIndex + 1] as string : ''
+  const continueLatest = args.includes('--continue')
 
   const agents = ctx.get('agents')
   const defaultModel = ctx.get('agentDefaultModel')
@@ -205,12 +222,15 @@ async function run(ctx: any): Promise<void> {
   const renderer = await createCliRenderer({
     externalOutputMode: 'passthrough',
     targetFps: 30,
-    exitOnCtrlC: true,
+    exitOnCtrlC: false,
     autoFocus: true,
     useMouse: false,
   })
 
-  await render(() => <App dsh={runtime} />, renderer)
+  await render(
+    () => <App dsh={runtime} initialSessionId={sessionArg || undefined} continueLatest={continueLatest} />,
+    renderer,
+  )
   await ctx.get('sessions')?.flush?.(agent.session).catch(() => {})
   exit?.(0)
 }

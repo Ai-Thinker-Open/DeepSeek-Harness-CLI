@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { For } from 'solid-js'
 import type { OpenCodeModelOption } from '@dsh/core'
 

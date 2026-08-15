@@ -30,6 +30,11 @@ const entries = [
     outfile: 'dist/client.js',
     external: [],
   },
+  {
+    entryPoints: ['src/bridge-tui.ts'],
+    outfile: 'dist/bridge-tui.js',
+    external: ['bun'],
+  },
 ]
 
 if (watch) {
@@ -41,5 +46,5 @@ if (watch) {
   for (const e of entries) {
     await build({ ...common, ...e })
   }
-  console.log('built dist/cli.js, dist/cordis.js, dist/client.js')
+  console.log('built dist/cli.js, dist/cordis.js, dist/client.js, dist/bridge-tui.js')
 }

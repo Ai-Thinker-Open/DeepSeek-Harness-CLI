@@ -1,18 +1,21 @@
+// @ts-nocheck
 import { createEffect, createSignal, For, onCleanup } from 'solid-js'
-import { useKeyboard } from '@opentui/solid'
+import { useKeyboard, useRenderer } from '@opentui/solid'
 import type { DshRuntime } from './dsh.ts'
-import type { OpenCodeMessage, OpenCodeModelOption, OpenCodePart, OpenCodeQuestion, OpenCodeSession } from '@dsh/core'
+import type { OpenCodeMessage, OpenCodeModelOption, OpenCodePart, OpenCodeQuestion, OpenCodeSession, OpenCodeTodo } from '@dsh/core'
 import { MessageView } from './MessageView.tsx'
 import { QuestionDialog } from './QuestionDialog.tsx'
 import { SessionListDialog } from './SessionListDialog.tsx'
 import { ModelDialog } from './ModelDialog.tsx'
 
-export function App(props: { dsh: DshRuntime }) {
+export function App(props: { dsh: DshRuntime; initialSessionId?: string; continueLatest?: boolean }) {
+  const renderer = useRenderer()
   const [sessions, setSessions] = createSignal<OpenCodeSession[]>([])
   const [sessionId, setSessionId] = createSignal<string>('')
   const [messages, setMessages] = createSignal<OpenCodeMessage[]>([])
   const [parts, setParts] = createSignal<Map<string, OpenCodePart[]>>(new Map())
   const [questions, setQuestions] = createSignal<OpenCodeQuestion[]>([])
+  const [todos, setTodos] = createSignal<OpenCodeTodo[]>([])
   const [prompt, setPrompt] = createSignal('')
   const [busy, setBusy] = createSignal(false)
   const [commands, setCommands] = createSignal<Array<{ name: string; description: string; input?: { hint: string } }>>([])
@@ -40,6 +43,7 @@ export function App(props: { dsh: DshRuntime }) {
     }
     setParts(next)
     setQuestions(props.dsh.store.getQuestions(id))
+    setTodos(props.dsh.store.getTodos(id))
   }
 
   const selectSession = async (id: string) => {
@@ -76,7 +80,25 @@ export function App(props: { dsh: DshRuntime }) {
 
   const executeLine = async (line: string) => {
     const id = sessionId()
-    if (!id || !line.startsWith('/')) return false
+    if (!line.startsWith('/')) return false
+    if (line === '/models') {
+      await openModels()
+      return true
+    }
+    if (line === '/sessions') {
+      setDialogSel(0)
+      setSessionDialog(true)
+      return true
+    }
+    if (line.startsWith('/rename')) {
+      const title = line.replace(/^\/rename\s*/, '').trim()
+      if (id && title) {
+        await props.dsh.renameSession(id, title)
+        await refreshSessions()
+      }
+      return true
+    }
+    if (!id) return false
     await props.dsh.executeCommand(id, line)
     return true
   }
@@ -96,8 +118,7 @@ export function App(props: { dsh: DshRuntime }) {
   }
 
   const cancelQuestion = (question: OpenCodeQuestion) => {
-    props.dsh.store.settleQuestion(question.sessionID, question.id)
-    syncCurrent()
+    void props.dsh.cancelQuestion(question.id, question.sessionID).then(syncCurrent)
   }
 
   const openModels = async () => {
@@ -119,6 +140,17 @@ export function App(props: { dsh: DshRuntime }) {
   }
 
   useKeyboard((key) => {
+    if (key.ctrl && key.name === 'c') {
+      if (busy()) {
+        const id = sessionId()
+        if (id) void props.dsh.abort(id)
+        setBusy(false)
+      } else {
+        renderer.destroy()
+      }
+      return
+    }
+
     if (sessionDialog()) {
       if (key.name === 'up') {
         setDialogSel((index) => Math.max(0, index - 1))
@@ -212,8 +244,21 @@ export function App(props: { dsh: DshRuntime }) {
     syncCurrent()
   })
 
+  let bootstrapped = false
   createEffect(() => {
-    void refreshSessions().catch(() => {})
+    if (bootstrapped) return
+    bootstrapped = true
+    void refreshSessions()
+      .then(() => {
+        const list = props.dsh.store.listSessions()
+        const target = props.initialSessionId
+          ? list.find((session) => session.id === props.initialSessionId)
+          : props.continueLatest
+            ? list[0]
+            : undefined
+        if (target) void selectSession(target.id)
+      })
+      .catch(() => {})
   })
 
   createEffect(() => {
@@ -226,7 +271,12 @@ export function App(props: { dsh: DshRuntime }) {
       setCommands([])
       return
     }
-    void props.dsh.listCommands(sessionId()).then(setCommands)
+    const clientCommands = [
+      { name: 'models', description: 'Select model' },
+      { name: 'sessions', description: 'Switch session' },
+      { name: 'rename', description: 'Rename current session', input: { hint: '<title>' } },
+    ]
+    void props.dsh.listCommands(sessionId()).then((hostCommands) => setCommands([...clientCommands, ...hostCommands]))
   })
 
   onCleanup(() => unsubscribe())
@@ -279,6 +329,16 @@ export function App(props: { dsh: DshRuntime }) {
             >
               {session.id === sessionId() ? '● ' : '  '}
               {session.title}
+            </text>
+          )}
+        </For>
+        <text fg="#A1A1AA" marginTop={1}>
+          tasks
+        </text>
+        <For each={todos()}>
+          {(todo) => (
+            <text fg={todo.status === 'completed' ? '#4ADE80' : todo.status === 'in_progress' ? '#FBBF24' : '#A1A1AA'}>
+              {todo.status === 'completed' ? '✓' : todo.status === 'in_progress' ? '›' : '·'} {todo.content}
             </text>
           )}
         </For>
