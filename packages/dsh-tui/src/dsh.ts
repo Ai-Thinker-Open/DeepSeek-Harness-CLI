@@ -4,6 +4,7 @@ import {
   HarnessClient,
   type OpenCodeCommand,
   type OpenCodeQuestion,
+  type OpenCodeModelOption,
   type OpenCodeSession,
   type ServerRequest,
   type SessionSummary,
@@ -25,6 +26,8 @@ export interface DshRuntime {
   listCommands(sessionId: string): Promise<OpenCodeCommand[]>
   executeCommand(sessionId: string, line: string): Promise<unknown>
   answerQuestion(questionId: string, sessionId: string, option: string): Promise<void>
+  listModels(sessionId: string): Promise<OpenCodeModelOption[]>
+  selectModel(sessionId: string, provider: string, model: string): Promise<void>
   subscribe(listener: (event: unknown) => void): () => void
   stop(): void
 }
@@ -118,6 +121,30 @@ export class DshTui implements DshRuntime {
     if (rpcId) {
       await this.client.respond(rpcId, sessionId, [{ id: questionId, selected: [option] }])
     }
+  }
+
+  async listModels(sessionId: string): Promise<OpenCodeModelOption[]> {
+    try {
+      const catalog = await this.client.models(sessionId) as {
+        groups?: Array<{ id: string; models: Array<{ id: string; name?: string }> }>
+      }
+      return (catalog.groups ?? []).flatMap((group) =>
+        (group.models ?? []).map((model) => ({
+          provider: group.id,
+          id: model.id,
+          name: model.name,
+        })),
+      )
+    } catch {
+      return [
+        { provider: 'deepseek', id: 'deepseek-chat', name: 'DeepSeek Chat' },
+        { provider: 'deepseek', id: 'deepseek-reasoner', name: 'DeepSeek Reasoner' },
+      ]
+    }
+  }
+
+  async selectModel(sessionId: string, provider: string, model: string): Promise<void> {
+    await this.client.selectModel(sessionId, provider, model)
   }
 
   subscribe(listener: (event: unknown) => void): () => void {

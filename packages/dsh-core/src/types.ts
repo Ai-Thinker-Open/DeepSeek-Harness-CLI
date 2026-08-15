@@ -77,3 +77,9 @@ export interface OpenCodeQuestion {
   body?: string
   options: string[]
 }
+
+export interface OpenCodeModelOption {
+  provider: string
+  id: string
+  name?: string
+}

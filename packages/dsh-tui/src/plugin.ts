@@ -4,6 +4,7 @@ import { randomUUID } from 'node:crypto'
 import {
   BridgeStore,
   type OpenCodeCommand,
+  type OpenCodeModelOption,
   type OpenCodeSession,
 } from '@dsh/core'
 import { App } from './App.tsx'
@@ -111,6 +112,19 @@ class CordisRuntime implements DshRuntime {
     // For now, acknowledge locally so the UI can dismiss the modal.
     this.store.settleQuestion(sessionId, questionId)
     void option
+  }
+
+  async listModels(_sessionId: string): Promise<OpenCodeModelOption[]> {
+    try {
+      const selection = this.ctx.get('agentDefaultModel')?.currentSelection?.() ?? { provider: '', model: '' }
+      return [{ provider: selection.provider, id: selection.model }]
+    } catch {
+      return [{ provider: 'deepseek', id: 'deepseek-chat' }]
+    }
+  }
+
+  async selectModel(_sessionId: string, _provider: string, _model: string): Promise<void> {
+    // In-process model switching belongs to the host agent; leave for profile integration.
   }
 
   subscribe(listener: (event: unknown) => void): () => void {

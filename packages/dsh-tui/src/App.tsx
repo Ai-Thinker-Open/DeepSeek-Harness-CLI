@@ -1,10 +1,11 @@
 import { createEffect, createSignal, For, onCleanup } from 'solid-js'
 import { useKeyboard } from '@opentui/solid'
 import type { DshRuntime } from './dsh.ts'
-import type { OpenCodeMessage, OpenCodePart, OpenCodeQuestion, OpenCodeSession } from '@dsh/core'
+import type { OpenCodeMessage, OpenCodeModelOption, OpenCodePart, OpenCodeQuestion, OpenCodeSession } from '@dsh/core'
 import { MessageView } from './MessageView.tsx'
 import { QuestionDialog } from './QuestionDialog.tsx'
 import { SessionListDialog } from './SessionListDialog.tsx'
+import { ModelDialog } from './ModelDialog.tsx'
 
 export function App(props: { dsh: DshRuntime }) {
   const [sessions, setSessions] = createSignal<OpenCodeSession[]>([])
@@ -19,6 +20,10 @@ export function App(props: { dsh: DshRuntime }) {
   const [sessionSel, setSessionSel] = createSignal(0)
   const [sessionDialog, setSessionDialog] = createSignal(false)
   const [dialogSel, setDialogSel] = createSignal(0)
+  const [modelDialog, setModelDialog] = createSignal(false)
+  const [modelSel, setModelSel] = createSignal(0)
+  const [models, setModels] = createSignal<OpenCodeModelOption[]>([])
+  const [currentModel, setCurrentModel] = createSignal('')
 
   const refreshSessions = async () => {
     await props.dsh.refreshSessions()
@@ -95,6 +100,24 @@ export function App(props: { dsh: DshRuntime }) {
     syncCurrent()
   }
 
+  const openModels = async () => {
+    const id = sessionId()
+    if (!id) return
+    const list = await props.dsh.listModels(id)
+    setModels(list)
+    setModelSel(0)
+    setCurrentModel(props.dsh.store.getSession(id)?.title ?? '')
+    setModelDialog(true)
+  }
+
+  const selectModel = async (model: OpenCodeModelOption) => {
+    const id = sessionId()
+    if (!id) return
+    await props.dsh.selectModel(id, model.provider, model.id)
+    setCurrentModel(model.id)
+    setModelDialog(false)
+  }
+
   useKeyboard((key) => {
     if (sessionDialog()) {
       if (key.name === 'up') {
@@ -113,9 +136,28 @@ export function App(props: { dsh: DshRuntime }) {
       return
     }
 
+    if (modelDialog()) {
+      if (key.name === 'up') {
+        setModelSel((index) => Math.max(0, index - 1))
+      } else if (key.name === 'down') {
+        setModelSel((index) => Math.min(models().length - 1, index + 1))
+      } else if (key.name === 'return') {
+        const selected = models()[modelSel()]
+        if (selected) void selectModel(selected)
+      } else if (key.name === 'escape') {
+        setModelDialog(false)
+      }
+      return
+    }
+
     if (key.ctrl && key.name === 'r') {
       setDialogSel(0)
       setSessionDialog(true)
+      return
+    }
+
+    if (key.ctrl && key.name === 'm') {
+      void openModels()
       return
     }
 
@@ -203,6 +245,15 @@ export function App(props: { dsh: DshRuntime }) {
             void selectSession(session.id)
           }}
           onClose={() => setSessionDialog(false)}
+        />
+      ) : null}
+      {modelDialog() ? (
+        <ModelDialog
+          models={models()}
+          currentModel={currentModel()}
+          selected={modelSel()}
+          onSelect={(model) => void selectModel(model)}
+          onClose={() => setModelDialog(false)}
         />
       ) : null}
       <box flexDirection="row" height="100%">
