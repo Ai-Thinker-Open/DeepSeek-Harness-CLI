@@ -5,6 +5,7 @@ import {
   BridgeStore,
   type OpenCodeCommand,
   type OpenCodeModelOption,
+  type OpenCodeQuestion,
   type OpenCodeSession,
 } from '@dsh/core'
 import { App } from './App.tsx'
@@ -16,6 +17,7 @@ export const inject = ['cmdlineArgs', 'appExit', 'agents', 'sessions', 'agentDef
 class CordisRuntime implements DshRuntime {
   readonly store: BridgeStore
   private started = false
+  private readonly questionResolvers = new Map<string, (option: string) => void>()
 
   constructor(
     private readonly ctx: any,
@@ -108,10 +110,9 @@ class CordisRuntime implements DshRuntime {
   }
 
   async answerQuestion(questionId: string, sessionId: string, option: string): Promise<void> {
-    // In-process DSH questions are answered by the host userQuestions service.
-    // For now, acknowledge locally so the UI can dismiss the modal.
     this.store.settleQuestion(sessionId, questionId)
-    void option
+    this.questionResolvers.get(questionId)?.(option)
+    this.questionResolvers.delete(questionId)
   }
 
   async listModels(_sessionId: string): Promise<OpenCodeModelOption[]> {
@@ -133,6 +134,40 @@ class CordisRuntime implements DshRuntime {
 
   stop(): void {
     // The DSH process owns lifecycle; nothing extra to dispose here.
+  }
+
+  questionFor(request: {
+    questions: Array<{
+      id: string
+      question: string
+      header?: string
+      detail?: string
+      options?: Array<{ label: string; description?: string }>
+      intent?: { kind: 'plan-review'; approve: string }
+    }>
+  }): Promise<Array<{ id: string; selected: string[] }>> {
+    const item = request.questions[0]
+    if (!item) return Promise.resolve([])
+    const options = item.options?.length ? item.options.map((option) => option.label) : ['Yes', 'No']
+    const kind: OpenCodeQuestion['kind'] =
+      item.intent?.kind === 'plan-review'
+        ? 'plan-approval'
+        : /allow|permission|deny/i.test(`${item.header ?? ''} ${item.question} ${options.join(' ')}`)
+          ? 'permission'
+          : 'question'
+    return new Promise((resolve) => {
+      this.questionResolvers.set(item.id, (option) => {
+        resolve([{ id: item.id, selected: [option] }])
+      })
+      this.store.pushQuestion({
+        id: item.id,
+        sessionID: this.sessionId,
+        kind,
+        title: item.question,
+        body: item.detail ?? item.header,
+        options,
+      })
+    })
   }
 }
 
@@ -162,6 +197,10 @@ async function run(ctx: any): Promise<void> {
 
   const runtime = new CordisRuntime(ctx, agent, agent.session.id, process.cwd())
   await runtime.start()
+
+  ctx.get('userQuestions')?.registerProvider?.({
+    ask: (request: { questions: unknown[] }) => runtime.questionFor(request as never),
+  })
 
   const renderer = await createCliRenderer({
     externalOutputMode: 'passthrough',
