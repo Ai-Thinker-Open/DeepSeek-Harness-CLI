@@ -4,6 +4,7 @@ import type { DshRuntime } from './dsh.ts'
 import type { OpenCodeMessage, OpenCodePart, OpenCodeQuestion, OpenCodeSession } from '@dsh/core'
 import { MessageView } from './MessageView.tsx'
 import { QuestionDialog } from './QuestionDialog.tsx'
+import { SessionListDialog } from './SessionListDialog.tsx'
 
 export function App(props: { dsh: DshRuntime }) {
   const [sessions, setSessions] = createSignal<OpenCodeSession[]>([])
@@ -16,6 +17,8 @@ export function App(props: { dsh: DshRuntime }) {
   const [commands, setCommands] = createSignal<Array<{ name: string; description: string; input?: { hint: string } }>>([])
   const [commandSel, setCommandSel] = createSignal(0)
   const [sessionSel, setSessionSel] = createSignal(0)
+  const [sessionDialog, setSessionDialog] = createSignal(false)
+  const [dialogSel, setDialogSel] = createSignal(0)
 
   const refreshSessions = async () => {
     await props.dsh.refreshSessions()
@@ -93,6 +96,29 @@ export function App(props: { dsh: DshRuntime }) {
   }
 
   useKeyboard((key) => {
+    if (sessionDialog()) {
+      if (key.name === 'up') {
+        setDialogSel((index) => Math.max(0, index - 1))
+      } else if (key.name === 'down') {
+        setDialogSel((index) => Math.min(sessions().length - 1, index + 1))
+      } else if (key.name === 'return') {
+        const selected = sessions()[dialogSel()]
+        if (selected) {
+          setSessionDialog(false)
+          void selectSession(selected.id)
+        }
+      } else if (key.name === 'escape') {
+        setSessionDialog(false)
+      }
+      return
+    }
+
+    if (key.ctrl && key.name === 'r') {
+      setDialogSel(0)
+      setSessionDialog(true)
+      return
+    }
+
     if (key.ctrl && key.name === 'n') {
       void createNewSession()
       return
@@ -145,6 +171,10 @@ export function App(props: { dsh: DshRuntime }) {
   })
 
   createEffect(() => {
+    void refreshSessions().catch(() => {})
+  })
+
+  createEffect(() => {
     if (!sessionId()) return
     syncCurrent()
   })
@@ -163,6 +193,18 @@ export function App(props: { dsh: DshRuntime }) {
 
   return (
     <>
+      {sessionDialog() ? (
+        <SessionListDialog
+          sessions={sessions()}
+          currentId={sessionId()}
+          selected={dialogSel()}
+          onSelect={(session) => {
+            setSessionDialog(false)
+            void selectSession(session.id)
+          }}
+          onClose={() => setSessionDialog(false)}
+        />
+      ) : null}
       <box flexDirection="row" height="100%">
       <box
         width={32}

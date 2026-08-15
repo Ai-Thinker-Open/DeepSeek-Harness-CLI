@@ -14,7 +14,8 @@
   "scripts": {
     "dev": "bun run --preload @opentui/solid/preload src/cli.tsx",
     "typecheck": "tsc --noEmit",
-    "build": "bun run scripts/build.ts"
+    "build": "bun run scripts/build.ts",
+    "test": "bun test --preload @opentui/solid/preload"
   },
   "dependencies": {
     "@dsh/core": "workspace:*",
