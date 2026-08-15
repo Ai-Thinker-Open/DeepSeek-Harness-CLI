@@ -1,4 +1,5 @@
 import { createSignal, For } from 'solid-js'
+import { useKeyboard } from '@opentui/solid'
 import type { OpenCodeQuestion } from '@dsh/core'
 
 export function QuestionDialog(props: {
@@ -7,6 +8,18 @@ export function QuestionDialog(props: {
   onCancel: () => void
 }) {
   const [selected, setSelected] = createSignal(0)
+
+  useKeyboard((key) => {
+    if (key.name === 'up') {
+      setSelected((index) => Math.max(0, index - 1))
+    } else if (key.name === 'down') {
+      setSelected((index) => Math.min(props.question.options.length - 1, index + 1))
+    } else if (key.name === 'return') {
+      props.onAnswer(props.question.options[selected()] as string)
+    } else if (key.name === 'escape') {
+      props.onCancel()
+    }
+  })
 
   return (
     <box
