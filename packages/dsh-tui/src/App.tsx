@@ -13,6 +13,7 @@ export function App(props: { dsh: DshRuntime }) {
   const [busy, setBusy] = createSignal(false)
   const [commands, setCommands] = createSignal<Array<{ name: string; description: string; input?: { hint: string } }>>([])
   const [commandSel, setCommandSel] = createSignal(0)
+  const [sessionSel, setSessionSel] = createSignal(0)
 
   const refreshSessions = async () => {
     await props.dsh.refreshSessions()
@@ -79,6 +80,26 @@ export function App(props: { dsh: DshRuntime }) {
   }
 
   useKeyboard((key) => {
+    if (key.ctrl && key.name === 'n') {
+      void createNewSession()
+      return
+    }
+
+    if (prompt() === '') {
+      if (key.name === 'down' && sessions().length > 0) {
+        setSessionSel((index) => Math.min(sessions().length - 1, index + 1))
+        return
+      }
+      if (key.name === 'up' && sessions().length > 0) {
+        setSessionSel((index) => Math.max(0, index - 1))
+        return
+      }
+      if (key.name === 'return' && sessions()[sessionSel()]) {
+        void selectSession(sessions()[sessionSel()]!.id)
+        return
+      }
+    }
+
     if (!prompt().startsWith('/') || !sessionId() || commands().length === 0) return
     if (key.name === 'up') {
       setCommandSel((index) => Math.max(0, index - 1))
@@ -96,6 +117,14 @@ export function App(props: { dsh: DshRuntime }) {
       }
     }
   })
+
+  const createNewSession = async () => {
+    const created = await props.dsh.createSession()
+    setSessionId(created.id)
+    setSessions(props.dsh.store.listSessions())
+    setSessionSel(0)
+    syncCurrent()
+  }
 
   const unsubscribe = props.dsh.subscribe(() => {
     void refreshSessions().catch(() => {})
@@ -133,9 +162,10 @@ export function App(props: { dsh: DshRuntime }) {
         </text>
         <text fg="#A1A1AA">sessions</text>
         <For each={sessions()}>
-          {(session) => (
+          {(session, index) => (
             <text
-              fg={session.id === sessionId() ? '#FF7A1A' : '#A1A1AA'}
+              fg={session.id === sessionId() ? '#FF7A1A' : index() === sessionSel() ? '#FFFFFF' : '#A1A1AA'}
+              backgroundColor={session.id !== sessionId() && index() === sessionSel() ? '#27272A' : undefined}
               onMouseUp={() => void selectSession(session.id)}
             >
               {session.id === sessionId() ? '● ' : '  '}
