@@ -7,3 +7,5 @@ dist/
 *.log
 *.tgz
 tui-*.txt
+.opentui-src/
+.pyfiglet/
