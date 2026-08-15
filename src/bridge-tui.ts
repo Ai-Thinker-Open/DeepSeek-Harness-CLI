@@ -49,7 +49,11 @@ if (has('--fork')) args.push('--fork')
 const child = spawn(args[0] as string, args.slice(1), {
   cwd: process.cwd(),
   stdio: 'inherit',
-  env: process.env,
+  env: {
+    ...process.env,
+    MIMOCODE_DISABLE_MOUSE: process.env.MIMOCODE_DISABLE_MOUSE ?? '1',
+    MIMOCODE_DISABLE_TERMINAL_TITLE: process.env.MIMOCODE_DISABLE_TERMINAL_TITLE ?? '1',
+  },
 })
 
 let closing = false
