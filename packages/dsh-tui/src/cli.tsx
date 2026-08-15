@@ -1,5 +1,6 @@
 import { render } from '@opentui/solid'
 import { createCliRenderer } from '@opentui/core'
+import path from 'node:path'
 import { App } from './App.tsx'
 import { DshTui } from './dsh.ts'
 
@@ -9,9 +10,11 @@ const arg = (name: string, fallback: string) => {
   return fallback
 }
 
+const positional = process.argv.find((item, index) => index >= 2 && !item.startsWith('-'))
+
 const dsh = new DshTui({
   harnessUrl: arg('--dsh-url', process.env.DSH_CLI_HARNESS_URL ?? 'http://127.0.0.1:3080'),
-  directory: arg('--directory', process.cwd()),
+  directory: path.resolve(arg('--directory', positional ?? process.cwd())),
 })
 await dsh.start()
 
