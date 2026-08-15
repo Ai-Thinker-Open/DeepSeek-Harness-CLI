@@ -1,18 +1,25 @@
 /**
- * dskharness palette — MiMo-Code style: deliberately restrained.
- * Primary chrome is terminal-default cyan + dim, with green/red/yellow/blue
- * reserved for roles, errors, warnings, and plan mode. Named colors (not hex)
- * so the UI sits well on any terminal theme.
+ * dskharness palette — semantic design tokens.
+ * Blue is the emphasis color for important information (brand, session title,
+ * links, command highlight, input frame); cyan marks the assistant; green the
+ * user; gray keeps tool/thinking chrome in the background. All values are
+ * terminal-safe named colors so the UI sits well on any theme.
  */
 export const theme = {
-  /** Assistant role bar, input frame, brand. */
-  primary: 'cyan',
+  /** Brand and emphasis (important information). */
+  brand: 'blue',
+  /** Primary chrome: input frame, command highlight, links, headings. */
+  primary: 'blue',
+  /** Assistant role bar / messages. */
+  assistant: 'cyan',
   /** User role bar. */
   user: 'green',
   /** Thinking marker. */
   thinking: 'gray',
   /** Tool call / result chrome. */
   tool: 'gray',
+  /** Success / completed. */
+  success: 'green',
   /** Errors. */
   error: 'red',
   /** Warnings / approvals. */
@@ -21,6 +28,8 @@ export const theme = {
   plan: 'blue',
   /** Model name in the status line. */
   model: 'yellow',
+  /** Diff / branch markers. */
+  diff: 'magenta',
   /** Neutral dim text. */
   dim: 'gray',
 }
@@ -52,7 +61,7 @@ export function decoration(kind: keyof typeof SIGILS): { sigil: string; color: s
     case 'user':
       return { sigil: SIGILS.user, color: theme.user }
     case 'assistant':
-      return { sigil: SIGILS.assistant, color: theme.primary }
+      return { sigil: SIGILS.assistant, color: theme.assistant }
     case 'thinking':
       return { sigil: SIGILS.thinking, color: theme.thinking }
     case 'tool':

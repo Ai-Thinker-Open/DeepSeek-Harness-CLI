@@ -172,6 +172,11 @@ export class HarnessClient {
     return this.call('session.rename', { sessionId, title })
   }
 
+  /** Fork a session at a sequence point; returns the child session id. */
+  fork(sessionId: string, atSeq?: number): Promise<{ sessionId: string }> {
+    return this.call('session.fork', { sessionId, ...(atSeq !== undefined ? { atSeq } : {}) })
+  }
+
   models(sessionId: string): Promise<unknown> {
     return this.call('session.models', { sessionId })
   }

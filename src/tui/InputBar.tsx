@@ -13,6 +13,8 @@ export interface InputBarProps {
   busy?: boolean
   /** Plan mode frames the input in blue. */
   planMode?: boolean
+  /** When the slash palette is open, Enter belongs to the palette. */
+  suppressEnter?: boolean
 }
 
 /**
@@ -20,7 +22,7 @@ export interface InputBarProps {
  * The cursor is a cyan `▏` bar (Ink trims trailing spaces, so no inverse
  * space cursor).
  */
-export function InputBar({ value, onChange, onSubmit, disabled, busy, placeholder, planMode }: InputBarProps) {
+export function InputBar({ value, onChange, onSubmit, disabled, busy, placeholder, planMode, suppressEnter }: InputBarProps) {
   const [cursor, setCursor] = useState(value.length)
   const valueRef = useRef(value)
   valueRef.current = value
@@ -39,6 +41,7 @@ export function InputBar({ value, onChange, onSubmit, disabled, busy, placeholde
       text = text.slice(0, -1)
     }
     if (key.return) submit = true
+    if (submit && suppressEnter) return // the slash palette owns Enter
     if (submit) {
       const cur = valueRef.current
       const pos = Math.min(cursor, cur.length)

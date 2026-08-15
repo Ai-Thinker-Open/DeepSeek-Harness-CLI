@@ -25,10 +25,13 @@ export function ChatPane({
   messages,
   focused,
   status,
+  clearSignal,
 }: {
   messages: ChatMessage[]
   focused: boolean
   status: string
+  /** Bump to reset the scroll to the bottom (the /clear command). */
+  clearSignal?: number
 }) {
   const { stdout } = useStdout()
   const rows = stdout.rows && stdout.rows > 0 ? stdout.rows : 24
@@ -54,6 +57,15 @@ export function ChatPane({
 
   const maxScroll = Math.max(0, contentH - viewportH)
   const atBottom = offset >= maxScroll - 2
+
+  // /clear: reset scroll position
+  useLayoutEffect(() => {
+    if (clearSignal) {
+      offsetRef.current = 0
+      autoPin.current = true
+      setOffset(0)
+    }
+  }, [clearSignal])
 
   // snap to bottom while the agent is streaming, unless the user scrolled up
   useLayoutEffect(() => {

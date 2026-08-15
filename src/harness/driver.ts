@@ -290,6 +290,69 @@ export class HarnessDriver implements SessionDriver {
     // todos are owned by the harness (todo_write tool); the projection syncs them
   }
 
+  // ── slash-command support ─────────────────────────────────────────
+
+  async renameSession(title: string): Promise<void> {
+    this.titleSet = true
+    this.store.handleEvent({ type: 'title', title })
+    this.onTitle?.(title)
+    try {
+      await this.client.rename(this.sessionId, title)
+    } catch {
+      /* rename is best-effort */
+    }
+  }
+
+  async forkSession(): Promise<string | undefined> {
+    try {
+      const { sessionId } = await this.client.fork(this.sessionId)
+      return sessionId
+    } catch (e) {
+      this.store.handleEvent({ type: 'error', message: `fork failed: ${(e as Error).message}` })
+      return undefined
+    }
+  }
+
+  async compactContext(): Promise<string> {
+    try {
+      // the harness recognizes /compact as a slash command and answers via the
+      // command slot; we just relay it as a prompt
+      await this.client.prompt(this.sessionId, '/compact')
+      await this.waitForTurnEnd()
+      return 'sent /compact to the harness'
+    } catch (e) {
+      return `compact failed: ${(e as Error).message}`
+    }
+  }
+
+  async goalText(): Promise<string> {
+    try {
+      await this.client.prompt(this.sessionId, '/goal')
+      await this.waitForTurnEnd()
+      return 'sent /goal to the harness'
+    } catch (e) {
+      return `goal command failed: ${(e as Error).message}`
+    }
+  }
+
+  sessionStatus(): string {
+    const u = this.store.getState().usage
+    const n = this.store.getState().messages.length
+    return `model ${this.model} · ${n} messages · ${u.totalTokens} tokens · session ${this.sessionId.slice(0, 8)}`
+  }
+
+  listTools(): string {
+    return 'bash · fs_read/write/edit/ls/glob/grep/delete · web_search/fetch · ask_user · todo_write/list · goal · subagent · jobs_list/output/kill · workflow · skill_list/load · mcp_*'
+  }
+
+  listSkills(): string {
+    return 'skills live in the harness — ask the model with skill_list, or check ~/.dskharness/skills/'
+  }
+
+  listJobs(): string {
+    return 'jobs run inside the harness (session/jobs projection) — use jobs_list tool or /jobs in the web UI'
+  }
+
   /** Pull the latest assistant answer text (used by headless mode). */
   getLastAnswer(): string {
     const msgs = this.store.getState().messages

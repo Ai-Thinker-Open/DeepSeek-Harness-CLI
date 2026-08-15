@@ -172,4 +172,14 @@ export interface SessionDriver {
   updateTodos(todos: TodoItem[]): void
   getLastAnswer(): string
   loadMessages(msgs: ChatMessage[]): void
+  // ── slash-command support (each optional; the App falls back gracefully) ──
+  renameSession?(title: string): Promise<void> | void
+  /** Fork the session; returns the new session id (or undefined when unsupported). */
+  forkSession?(): Promise<string | undefined> | string | undefined
+  compactContext?(): Promise<string | void> | string | void
+  goalText?(): Promise<string | void> | string | void
+  sessionStatus?(): Promise<string> | string
+  listTools?(): string
+  listSkills?(): string
+  listJobs?(): string
 }

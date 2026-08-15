@@ -13,7 +13,7 @@ import { ChatPane } from './ChatPane.tsx'
 import { InputBar } from './InputBar.tsx'
 import { MiniWhale } from './Whale.tsx'
 import { QuestionModal } from './QuestionModal.tsx'
-import { CommandPanel, PALETTE_COMMANDS, type PaletteMode } from './CommandPanel.tsx'
+import { CommandPanel, PALETTE_COMMANDS, filterCommands, type PaletteMode } from './CommandPanel.tsx'
 import { theme } from '../theme.ts'
 
 /** In-process cordis mode (dsh --profile cli): drive the host agent directly. */
@@ -26,7 +26,7 @@ export interface CordisMode {
 }
 
 interface Panel {
-  mode: 'sessions' | 'todos' | 'help'
+  mode: 'sessions' | 'todos' | 'help' | 'tools' | 'skills' | 'jobs' | 'status' | 'models'
   selected: number
 }
 
@@ -51,6 +51,13 @@ export function App({
   const { exit } = useApp()
 
   const [input, setInput] = useState('')
+  const inputRef = useRef('')
+  /** setInput that keeps a ref in sync (slash commands read it synchronously). */
+  const setInputBoth = useCallback((v: string | ((p: string) => string)) => {
+    const next = typeof v === 'function' ? (v as (p: string) => string)(inputRef.current) : v
+    inputRef.current = next
+    setInput(next)
+  }, [])
   const [history, setHistory] = useState<string[]>([])
   const [histIdx, setHistIdx] = useState(-1)
   const [sessionId, setSessionId] = useState<string>(initialSessionId ?? '')
@@ -196,10 +203,13 @@ export function App({
   const busy = state.busy
   const hasQuestion = state.questions.length > 0
 
-  const filteredCommands = useMemo(() => {
-    const q = input.startsWith('/') ? input.slice(1).toLowerCase() : ''
-    return q ? PALETTE_COMMANDS.filter((c) => c.name.startsWith(q)) : PALETTE_COMMANDS
+  const filteredGroups = useMemo(() => {
+    const q = input.startsWith('/') ? input.slice(1) : ''
+    return filterCommands(q)
   }, [input])
+  const [panelText, setPanelText] = useState<string | null>(null)
+  const [modelsList, setModelsList] = useState<Array<{ provider: string; id: string }>>([])
+  const [clearSignal, setClearSignal] = useState(0)
 
   const showCommands = input.startsWith('/') && !panel
   const panelLen = panel
@@ -207,8 +217,10 @@ export function App({
       ? Math.min(20, state.sessionList.length)
       : panel.mode === 'todos'
         ? state.todos.length
-        : 1
-    : filteredCommands.length
+        : panel.mode === 'models'
+          ? modelsList.length
+          : 1
+    : filteredGroups.flatMap((g) => g.commands).length
 
   const send = useCallback(
     (textOverride?: string) => {
@@ -217,7 +229,7 @@ export function App({
       if (text.startsWith('/')) return // slash commands are handled by the palette
       setHistory((h) => [...h, text])
       setHistIdx(-1)
-      setInput('')
+      setInputBoth('')
       const driver = driverRef.current
       if (driver) void driver.sendUser(text)
     },
@@ -228,7 +240,7 @@ export function App({
     if (history.length === 0) return
     const next = histIdx === -1 ? history.length - 1 : Math.max(0, histIdx - 1)
     setHistIdx(next)
-    setInput(history[next] as string)
+    setInputBoth(history[next] as string)
   }, [history, histIdx])
 
   const histDown = useCallback(() => {
@@ -236,10 +248,10 @@ export function App({
     const next = histIdx + 1
     if (next >= history.length) {
       setHistIdx(-1)
-      setInput('')
+      setInputBoth('')
     } else {
       setHistIdx(next)
-      setInput(history[next] as string)
+      setInputBoth(history[next] as string)
     }
   }, [history, histIdx])
 
@@ -269,11 +281,24 @@ export function App({
   )
 
   /** Run the selected slash command. */
-  const runCommand = useCallback(() => {
-    const cmd = filteredCommands[cmdSel]
+  const runCommand = useCallback(async (rawInput?: string) => {
+    // The keystroke may carry the whole pasted command (text+Enter in one
+    // chunk) before React state catches up; prefer it when it contains a '/'.
+    const src = rawInput && rawInput.includes('/') ? rawInput : inputRef.current
+    // Resolve the command by its name from the static table — this is immune
+    // to stale filteredGroups/cmdSel during same-chunk keystrokes.
+    const name = src.replace(/^\//, '').split(/\s+/)[0]?.toLowerCase() ?? ''
+    const all = filteredGroups.flatMap((g) => g.commands)
+    const cmd = (name ? PALETTE_COMMANDS.find((c) => c.name === name) : undefined) ?? all[cmdSel]
     if (!cmd) return
-    setInput('')
+    const arg = src.replace(/^\/\w+\s*/, '')
+    setInputBoth('')
     setCmdSel(0)
+    const driver = driverRef.current
+    const showText = (text: string, mode: 'status' | 'tools' | 'skills' | 'jobs' = 'status') => {
+      setPanelText(text)
+      setPanel({ mode, selected: 0 })
+    }
     switch (cmd.name) {
       case 'sessions':
         setPanel({ mode: 'sessions', selected: 0 })
@@ -287,8 +312,71 @@ export function App({
       case 'plan':
         togglePlan()
         break
-      case 'models':
-        driverRef.current?.cycleModel()
+      case 'agent':
+        if (driver?.planMode) driver.togglePlanMode()
+        break
+      case 'models': {
+        setModelsList([])
+        setPanel({ mode: 'models', selected: 0 })
+        if (harness) {
+          try {
+            const cat = (await harness.models(currentIdRef.current)) as {
+              groups?: Array<{ id: string; models: Array<{ id: string }> }>
+            }
+            setModelsList(cat.groups?.flatMap((g) => g.models.map((m) => ({ provider: g.id, id: m.id }))) ?? [])
+          } catch {
+            /* keep empty */
+          }
+        } else {
+          setModelsList([
+            { provider: 'deepseek', id: 'deepseek-chat' },
+            { provider: 'deepseek', id: 'deepseek-reasoner' },
+          ])
+        }
+        break
+      }
+      case 'model':
+        if (arg && driver) driver.setModel(arg)
+        else showText('usage: /model <name>')
+        break
+      case 'rename':
+        if (arg && driver?.renameSession) await driver.renameSession(arg)
+        else showText('usage: /rename <title>')
+        break
+      case 'fork': {
+        const id = driver?.forkSession ? await driver.forkSession() : undefined
+        if (id) mountSession(id)
+        else if (!driver?.forkSession) showText('fork is not supported in this mode')
+        break
+      }
+      case 'resume':
+        if (arg) mountSession(arg)
+        else showText('usage: /resume <session-id>')
+        break
+      case 'compact': {
+        const r = driver?.compactContext ? await driver.compactContext() : 'not supported in this mode'
+        showText(String(r))
+        break
+      }
+      case 'clear':
+        setClearSignal((n) => n + 1)
+        break
+      case 'goal': {
+        const r = driver?.goalText ? await driver.goalText() : 'not supported in this mode'
+        showText(String(r))
+        break
+      }
+      case 'tools':
+        showText(driver?.listTools?.() ?? '—', 'tools')
+        break
+      case 'skills':
+        showText(driver?.listSkills?.() ?? '—', 'skills')
+        break
+      case 'jobs':
+        showText(driver?.listJobs?.() ?? '—', 'jobs')
+        break
+      case 'status':
+        showText(String(driver?.sessionStatus?.() ?? '—'))
         break
       case 'help':
         setPanel({ mode: 'help', selected: 0 })
@@ -297,7 +385,7 @@ export function App({
         exit()
         break
     }
-  }, [filteredCommands, cmdSel, newSession, togglePlan, exit])
+  }, [filteredGroups, cmdSel, inputRef, newSession, togglePlan, exit, harness, mountSession, setInputBoth])
 
   /** Confirm the open panel (sessions / todos / help). */
   const confirmPanel = useCallback(() => {
@@ -306,7 +394,7 @@ export function App({
       const s = state.sessionList[panel.selected]
       if (s) mountSession(s.id)
       setPanel(null)
-      setInput('')
+      setInputBoth('')
       return
     }
     if (panel.mode === 'todos') {
@@ -314,9 +402,16 @@ export function App({
       if (t) toggleTodo(t.id)
       return
     }
+    if (panel.mode === 'models') {
+      const m = modelsList[panel.selected]
+      if (m) driverRef.current?.setModel(m.id)
+      setPanel(null)
+      setInputBoth('')
+      return
+    }
     setPanel(null)
-    setInput('')
-  }, [panel, state.sessionList, state.todos, mountSession, toggleTodo])
+    setInputBoth('')
+  }, [panel, state.sessionList, state.todos, modelsList, mountSession, toggleTodo, setInputBoth])
 
   useInput((inputKey, key) => {
     if (key.ctrl && inputKey === 'c') {
@@ -330,21 +425,38 @@ export function App({
     }
     if (hasQuestion) return // modal owns the keys
     if (panel) {
+      // Typing a new slash command while a panel is open leaves the panel and
+      // runs the command instead of confirming the panel selection.
+      const enteringNewCommand = inputRef.current.startsWith('/') || inputKey.startsWith('/')
+      if (enteringNewCommand) {
+        setPanel(null)
+        if (key.return || inputKey.includes('\r') || inputKey.includes('\n')) {
+          runCommand(inputKey.includes('/') ? inputKey : inputRef.current)
+        }
+        return
+      }
       if (key.upArrow) setPanel((p) => (p ? { ...p, selected: Math.max(0, p.selected - 1) } : p))
       else if (key.downArrow) setPanel((p) => (p ? { ...p, selected: Math.min(panelLen - 1, p.selected + 1) } : p))
-      else if (key.return || input.includes('\r') || input.includes('\n')) confirmPanel()
+      else if (key.return || inputKey.includes('\r') || inputKey.includes('\n')) confirmPanel()
       else if (key.escape) {
         setPanel(null)
-        setInput('')
+        setInputBoth('')
       }
       return
     }
-    if (showCommands) {
+    // Slash palette is active when the input (past keystroke or committed
+    // state) starts with '/'. Using the keystroke keeps pasted "cmd\r"
+    // chunks working before React state catches up.
+    const queryActive = inputRef.current.startsWith('/') || inputKey.startsWith('/') || inputKey.includes('/')
+    if (queryActive) {
+      if (key.return || inputKey.includes('\r') || inputKey.includes('\n')) {
+        runCommand(inputKey.includes('/') ? inputKey : inputRef.current)
+        return
+      }
       if (key.upArrow) setCmdSel((s) => Math.max(0, s - 1))
-      else if (key.downArrow) setCmdSel((s) => Math.min(filteredCommands.length - 1, s + 1))
-      else if (key.return || input.includes('\r') || input.includes('\n')) runCommand()
-      else if (key.escape) setInput('')
-      return // other keys edit the query
+      else if (key.downArrow) setCmdSel((s) => Math.min(filteredGroups.flatMap((g) => g.commands).length - 1, s + 1))
+      else if (key.escape) setInputBoth('')
+      return // other keys edit the query via InputBar's onChange
     }
     if (key.ctrl && inputKey === 'n') {
       newSession()
@@ -359,11 +471,11 @@ export function App({
       return
     }
     if (key.ctrl && inputKey === 'l') {
-      setInput('')
+      setInputBoth('')
       return
     }
     if (key.escape) {
-      if (input) setInput('')
+      if (input) setInputBoth('')
       return
     }
     if (key.upArrow && !input) histUp()
@@ -403,31 +515,34 @@ export function App({
           {busy ? <MiniWhale /> : null}
         </Text>
       </Box>
-      <ChatPane messages={state.messages} focused status={state.status} />
+      <ChatPane messages={state.messages} focused status={state.status} clearSignal={clearSignal} />
       {showCommands || panel ? (
         <Box paddingX={1} flexShrink={0}>
           <CommandPanel
             mode={panel?.mode ?? 'command'}
             query={input}
             selected={panel?.selected ?? cmdSel}
-            filteredCommands={filteredCommands}
+            groups={filteredGroups}
             sessions={state.sessionList}
             todos={state.todos}
             currentSessionId={sessionId}
             planMode={state.planMode}
             model={state.model || config.model}
+            panelText={panelText ?? undefined}
+            modelsList={modelsList}
           />
         </Box>
       ) : null}
       <Box paddingX={1} flexGrow={1} flexShrink={0}>
         <InputBar
           value={input}
-          onChange={setInput}
+          onChange={setInputBoth}
           onSubmit={send}
           disabled={busy || hasQuestion}
           busy={busy}
           placeholder={'Ask anything… ( / for commands )'}
           planMode={state.planMode}
+          suppressEnter={showCommands || !!panel}
         />
       </Box>
       {activeQuestion ? <QuestionModal question={activeQuestion} /> : null}

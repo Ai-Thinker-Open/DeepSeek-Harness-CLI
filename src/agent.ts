@@ -8,7 +8,8 @@ import { runToolCall } from './tools/executor.ts'
 import { defaultTools } from './tools/index.ts'
 import { GoalManager } from './tools/goal.ts'
 import type { JobState } from './types.ts'
-import { appendEvent } from './sessions.ts'
+import { appendEvent, createSession } from './sessions.ts'
+import { listSkills } from './tools/skill.ts'
 
 let qCounter = 0
 
@@ -211,6 +212,85 @@ export class Agent implements SessionDriver {
     this.todos = todos
     this.emit({ type: 'todos', todos })
     this.persist({ type: 'todos', todos })
+  }
+
+  // ── slash-command support ─────────────────────────────────────────
+
+  renameSession(title: string): void {
+    this.titleSet = true
+    this.emit({ type: 'title', title })
+    this.persist({ type: 'session', id: this.sessionId, title, model: this.model, cwd: this.cwd, createdAt: Date.now() })
+  }
+
+  /** Copy the current conversation into a fresh session file; returns its id. */
+  forkSession(): string | undefined {
+    try {
+      const { id } = createSession(this.model, this.cwd)
+      for (const m of this.store.getState().messages) {
+        appendEvent(id, { type: 'message', message: m } as never)
+      }
+      appendEvent(id, { type: 'todos', todos: this.todos } as never)
+      return id
+    } catch {
+      return undefined
+    }
+  }
+
+  /** Summarize the older half of the context with the model; keep the tail. */
+  async compactContext(): Promise<string> {
+    if (this.messages.length <= 8) return 'context is short — nothing to compact'
+    const head = this.messages.slice(0, -8)
+    const tail = this.messages.slice(-8)
+    const sys =
+      'You are a context compactor for a coding agent. Compress the following conversation excerpt into a concise factual summary that preserves decisions, file paths, commands, and open questions. Plain text, no preamble.'
+    const text = head
+      .map((m) => `${m.role}: ${typeof m.content === 'string' ? m.content.slice(0, 400) : JSON.stringify(m.content).slice(0, 400)}`)
+      .join('\n---\n')
+    try {
+      const r = await streamChat(this.config.baseUrl, this.config.apiKey, {
+        model: this.model,
+        messages: [
+          { role: 'system', content: sys },
+          { role: 'user', content: text },
+        ],
+        signal: this.abortController.signal,
+      }, {})
+      const summary = r.content.trim()
+      if (!summary) return 'compact produced no summary'
+      this.messages = [{ role: 'system', content: `[compacted context]\n${summary}` }, ...tail]
+      return `compacted ${head.length} messages into a summary (kept last ${tail.length})`
+    } catch (e) {
+      return `compact failed: ${(e as Error).message}`
+    }
+  }
+
+  goalText(): string {
+    return 'goals are managed in-conversation with the goal tool — ask the agent, or use /goal in connected mode'
+  }
+
+  sessionStatus(): string {
+    const u = this.store.getState().usage
+    return `model ${this.model} · ${this.messages.length} messages · ${u.totalTokens} tokens · session ${this.sessionId.slice(0, 8)}`
+  }
+
+  listTools(): string {
+    return defaultTools()
+      .map((t) => t.name)
+      .join(' · ')
+  }
+
+  listSkills(): string {
+    const skills = listSkills()
+    return skills.length
+      ? skills.map((s) => `${s.name}: ${s.description}`).join('\n')
+      : 'no skills installed (~/.dskharness/skills/)'
+  }
+
+  listJobs(): string {
+    const jobs = this.jobs.list()
+    return jobs.length
+      ? jobs.map((j) => `${j.id} [${j.status}] ${j.prompt.slice(0, 50)}`).join('\n')
+      : 'no background jobs'
   }
 
   private emit(ev: AgentEvent): void {

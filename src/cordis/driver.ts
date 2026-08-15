@@ -134,6 +134,48 @@ export class CordisDriver implements SessionDriver {
     // todos are owned by the host agent (todo_write tool)
   }
 
+  // ── slash-command support (host agent owns most of these) ─────────
+
+  renameSession(title: string): void {
+    this.titleSet = true
+    this.store.handleEvent({ type: 'title', title })
+  }
+
+  forkSession(): undefined {
+    // host-side fork would need a new agent; keep it simple for now
+    return undefined
+  }
+
+  async compactContext(): Promise<string> {
+    this.agent.followup(userMessage('/compact'))
+    await this.waitForTurnEnd()
+    return 'sent /compact to the host agent'
+  }
+
+  async goalText(): Promise<string> {
+    this.agent.followup(userMessage('/goal'))
+    await this.waitForTurnEnd()
+    return 'sent /goal to the host agent'
+  }
+
+  sessionStatus(): string {
+    const u = this.store.getState().usage
+    const n = this.store.getState().messages.length
+    return `model ${this.model} · ${n} messages · ${u.totalTokens} tokens · in-process harness agent`
+  }
+
+  listTools(): string {
+    return 'tools are provided by the host agent (bash · fs · web · ask_user · todo · goal · subagent · workflow · …)'
+  }
+
+  listSkills(): string {
+    return 'skills are provided by the host agent (skill_list)'
+  }
+
+  listJobs(): string {
+    return 'jobs are provided by the host agent (jobs_list)'
+  }
+
   getLastAnswer(): string {
     const msgs = this.store.getState().messages
     for (let i = msgs.length - 1; i >= 0; i--) {
