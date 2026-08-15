@@ -306,42 +306,24 @@ export function App(props: { dsh: DshRuntime; initialSessionId?: string; continu
           onClose={() => setModelDialog(false)}
         />
       ) : null}
-      <box flexDirection="row" height="100%">
+      <box flexDirection="column" height="100%">
       <box
-        width={32}
-        flexDirection="column"
-        border="right"
+        flexDirection="row"
+        border="bottom"
         borderColor="#3F3F46"
         paddingLeft={2}
         paddingRight={2}
-        paddingTop={1}
+        flexShrink={0}
       >
         <text fg="#FF7A1A" bold>
-          DeepSeek Harness CLI
+          DeepSeek Harness
         </text>
-        <text fg="#A1A1AA">sessions</text>
-        <For each={sessions()}>
-          {(session, index) => (
-            <text
-              fg={session.id === sessionId() ? '#FF7A1A' : index() === sessionSel() ? '#FFFFFF' : '#A1A1AA'}
-              backgroundColor={session.id !== sessionId() && index() === sessionSel() ? '#27272A' : undefined}
-              onMouseUp={() => void selectSession(session.id)}
-            >
-              {session.id === sessionId() ? '● ' : '  '}
-              {session.title}
-            </text>
-          )}
-        </For>
-        <text fg="#A1A1AA" marginTop={1}>
-          tasks
+        <text fg="#A1A1AA">
+          {'  '}
+          {sessions().find((session) => session.id === sessionId())?.title || 'new session'}
         </text>
-        <For each={todos()}>
-          {(todo) => (
-            <text fg={todo.status === 'completed' ? '#4ADE80' : todo.status === 'in_progress' ? '#FBBF24' : '#A1A1AA'}>
-              {todo.status === 'completed' ? '✓' : todo.status === 'in_progress' ? '›' : '·'} {todo.content}
-            </text>
-          )}
-        </For>
+        <box flexGrow={1} />
+        <text fg="#A1A1AA">{currentModel() || ''}</text>
       </box>
 
       <box flexDirection="column" flexGrow={1} paddingLeft={2} paddingRight={2}>
@@ -401,13 +383,12 @@ export function App(props: { dsh: DshRuntime; initialSessionId?: string; continu
             onSubmit={() => void submit()}
           />
           <box flexDirection="row" justifyContent="space-between">
-            <text fg="#A1A1AA">{busy() ? 'working…' : 'Enter send · / commands · Ctrl+C quit'}</text>
-            <text fg="#6B7280">DeepSeek Harness CLI</text>
+            <text fg="#A1A1AA">{busy() ? 'working…' : 'Enter send · / commands · Ctrl+R sessions · Ctrl+M model · Ctrl+C quit'}</text>
+            <text fg="#6B7280">DeepSeek Harness</text>
           </box>
         </box>
       </box>
-      </box>
-      {activeQuestion ? (
+      </box>      {activeQuestion ? (
         <QuestionDialog
           question={activeQuestion}
           onAnswer={(option) => void answerQuestion(activeQuestion, option)}
