@@ -1,8 +1,9 @@
 import { createEffect, createSignal, For, onCleanup } from 'solid-js'
-import type { DshTui } from './dsh.ts'
+import type { DshRuntime } from './dsh.ts'
 import type { OpenCodeMessage, OpenCodePart, OpenCodeSession } from '@dsh/core'
+import { MessageView } from './MessageView.tsx'
 
-export function App(props: { dsh: DshTui }) {
+export function App(props: { dsh: DshRuntime }) {
   const [sessions, setSessions] = createSignal<OpenCodeSession[]>([])
   const [sessionId, setSessionId] = createSignal<string>('')
   const [messages, setMessages] = createSignal<OpenCodeMessage[]>([])
@@ -127,22 +128,7 @@ export function App(props: { dsh: DshTui }) {
         <box flexGrow={1} flexDirection="column" overflow="hidden">
           <For each={messages()}>
             {(message) => (
-              <box flexDirection="column" marginTop={1}>
-                <text fg={message.role === 'user' ? '#4ADE80' : '#8B9EFF'} bold>
-                  {message.role === 'user' ? 'you' : 'dsh'}
-                </text>
-                <For each={parts().get(message.id) ?? []}>
-                  {(part) => (
-                    <text fg={part.type === 'tool' ? '#9CA3AF' : '#E4E4E7'} wrapMode="word">
-                      {part.type === 'text'
-                        ? part.text
-                        : part.type === 'reasoning'
-                          ? `✢ ${part.text}`
-                          : `· ${part.tool}`}
-                    </text>
-                  )}
-                </For>
-              </box>
+              <MessageView message={message} parts={parts().get(message.id) ?? []} />
             )}
           </For>
         </box>

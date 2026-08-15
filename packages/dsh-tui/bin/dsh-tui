@@ -1,0 +1,2 @@
+#!/usr/bin/env bash
+exec dsh --profile dsh-tui "$@"

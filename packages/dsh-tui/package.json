@@ -4,7 +4,12 @@
   "private": true,
   "type": "module",
   "bin": {
-    "dsh-tui": "./src/cli.tsx"
+    "dsh-tui": "./bin/dsh-tui"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
   },
   "scripts": {
     "dev": "bun run --preload @opentui/solid/preload src/cli.tsx",

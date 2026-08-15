@@ -2,6 +2,7 @@ import {
   BridgeStore,
   DshRemoteClient,
   HarnessClient,
+  type OpenCodeCommand,
   type OpenCodeSession,
   type ServerRequest,
   type SessionSummary,
@@ -12,7 +13,21 @@ export interface DshTuiOptions {
   directory: string
 }
 
-export class DshTui {
+export interface DshRuntime {
+  readonly store: BridgeStore
+  start(): Promise<void>
+  refreshSessions(): Promise<void>
+  createSession(directory?: string): Promise<OpenCodeSession>
+  loadHistory(sessionId: string): Promise<void>
+  prompt(sessionId: string, text: string): Promise<void>
+  abort(sessionId: string): Promise<void>
+  listCommands(sessionId: string): Promise<OpenCodeCommand[]>
+  executeCommand(sessionId: string, line: string): Promise<unknown>
+  subscribe(listener: (event: unknown) => void): () => void
+  stop(): void
+}
+
+export class DshTui implements DshRuntime {
   readonly client: HarnessClient
   readonly remote: DshRemoteClient
   readonly store: BridgeStore
@@ -74,7 +89,7 @@ export class DshTui {
     this.store.setStatus(sessionId, { type: 'idle' })
   }
 
-  async listCommands(sessionId: string) {
+  async listCommands(sessionId: string): Promise<OpenCodeCommand[]> {
     try {
       const commands = await this.remote.listCommands(sessionId)
       if (commands.length) return commands
