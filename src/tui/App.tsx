@@ -551,7 +551,7 @@ export function App({
   const showSidebar = columns >= 72
   const sidebarWidth = showSidebar ? Math.max(22, Math.min(32, Math.floor(columns * 0.3))) : 0
   const showDetails = detailsTab !== null && columns >= 96
-  const detailsWidth = showDetails ? 30 : 0
+  const detailsWidth = showDetails ? 26 : 0
   const chatWidth = Math.max(20, columns - sidebarWidth - detailsWidth)
   const chatViewportH = Math.max(5, rows - 9)
   const timeline = useMemo(
@@ -582,13 +582,10 @@ export function App({
       <StatusBar
         width={columns}
         title={state.title}
-        sessionId={sessionId}
         model={state.model || config.model}
         cwd={config.cwd}
         mode={mode}
-        planMode={state.planMode}
         busy={busy}
-        status={state.status}
       />
 
       <Box flexDirection="row" flexGrow={1}>
@@ -677,9 +674,7 @@ export function App({
         width={columns}
         cwd={config.cwd}
         model={state.model || config.model}
-        mode={mode}
         usage={state.usage}
-        hint={promptHint}
       />
 
     </Box>

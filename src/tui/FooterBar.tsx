@@ -12,21 +12,17 @@ export function FooterBar({
   width,
   cwd,
   model,
-  mode,
   usage,
-  hint,
 }: {
   width: number
   cwd: string
   model: string
-  mode: Mode
   usage: { promptTokens: number; completionTokens: number; totalTokens: number }
-  hint: string
 }) {
   const path = shortPath(cwd)
   const tokens = compactTokens(usage.totalTokens)
   const left = `● ${path}`
-  const right = `${tokens} tok · ${model} · ${mode.toUpperCase()}`
+  const right = `${tokens} tok · ${model}`
 
   return (
     <Box
@@ -39,7 +35,7 @@ export function FooterBar({
       flexShrink={0}
     >
       <Text color={theme.labelCaption}>{truncate(left, Math.max(12, Math.floor(width * 0.5)))}</Text>
-      <Text color={theme.labelCaption}>{truncate(`${hint}  ·  ${right}`, Math.max(18, width - Math.ceil(width * 0.5)))}</Text>
+      <Text color={theme.labelCaption}>{truncate(right, Math.max(18, width - Math.ceil(width * 0.5)))}</Text>
     </Box>
   )
 }

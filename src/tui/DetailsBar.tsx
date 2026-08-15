@@ -46,8 +46,8 @@ export function DetailsBar({
 }) {
   const innerWidth = Math.max(10, width - 4)
   const TABS: Array<{ id: DetailsTab; label: string }> = [
-    { id: 'tasks', label: 'Tasks' },
-    { id: 'settings', label: 'Settings' },
+    { id: 'tasks', label: 'Jobs' },
+    { id: 'settings', label: 'Config' },
     { id: 'trace', label: 'Trace' },
   ]
 
@@ -61,15 +61,13 @@ export function DetailsBar({
       paddingX={1}
       flexShrink={0}
     >
-      <Box flexDirection="row">
+      <Box flexDirection="row" gap={0}>
         {TABS.map((t) => {
           const active = t.id === tab
           return (
-            <Box key={t.id} marginRight={1}>
-              <Text color={active ? theme.brandBright : theme.labelCaption} bold={active}>
-                {active ? `[${t.label}]` : ` ${t.label} `}
-              </Text>
-            </Box>
+            <Text key={t.id} color={active ? theme.brandBright : theme.labelCaption} bold={active}>
+              {active ? `▎${t.label}` : ` ${t.label}`}
+            </Text>
           )
         })}
       </Box>

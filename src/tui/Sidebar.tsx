@@ -83,28 +83,21 @@ export function Sidebar({
       overflowY="hidden"
     >
       <Box flexDirection="column" flexShrink={0}>
-        <Text color={theme.brand} bold>
+        <Text color={theme.labelPrimary} bold>
           {truncate(title || 'new session', innerWidth)}
         </Text>
-        <Text color={theme.labelCaption}>
-          {truncate(sessionId || 'not saved yet', innerWidth)}
-        </Text>
-        <Box flexDirection="row" gap={1} marginTop={1}>
-          <Badge color={'#000000'} bg={mode === 'yolo' ? theme.error : mode === 'plan' ? theme.brand : theme.brand}>
+        <Box flexDirection="row" gap={1} marginTop={0}>
+          <Badge color={'#000000'} bg={mode === 'yolo' ? theme.error : theme.brand}>
             {mode.toUpperCase()}
           </Badge>
           {busy ? <Badge color={theme.warn} bg={theme.bgLayer2}>BUSY</Badge> : null}
-          {planMode ? <Badge color={theme.brand} bg={theme.bgLayer2}>PLAN</Badge> : null}
         </Box>
       </Box>
 
-      <Box marginY={1} flexShrink={0}>
-        <Divider width={innerWidth} />
-      </Box>
-
-      <Box flexDirection="column" flexShrink={0}>
+      <Box marginTop={1} flexShrink={0}>
         <SectionLabel>SESSIONS</SectionLabel>
         <Box flexDirection="column" marginTop={0}>
+          <Text> </Text>
           {sessions.length === 0 ? (
             <Text color={theme.labelCaption}>no local sessions</Text>
           ) : (
@@ -118,7 +111,7 @@ export function Sidebar({
                   backgroundColor={selected ? theme.brand : active ? theme.bgLayer3 : undefined}
                 >
                   {active ? `${'▎'} ` : selected ? '› ' : '  '}
-                  {truncate(s.title || s.id.slice(0, 8), innerWidth - 8)}
+                  {s.id.replace(/^session-/, '').slice(0, 8)}
                   <Text color={selected ? '#000000' : theme.labelCaption}> {timeAgo(s.updatedAt)}</Text>
                 </Text>
               )
@@ -127,13 +120,10 @@ export function Sidebar({
         </Box>
       </Box>
 
-      <Box marginY={1} flexShrink={0}>
-        <Divider width={innerWidth} />
-      </Box>
-
-      <Box flexDirection="column" flexShrink={0}>
+      <Box marginTop={1} flexShrink={0}>
         <SectionLabel>TASKS</SectionLabel>
         <Box flexDirection="column" marginTop={0}>
+          <Text> </Text>
           {todos.length === 0 ? (
             <Text color={theme.labelCaption}>no tracked tasks</Text>
           ) : (
@@ -146,24 +136,7 @@ export function Sidebar({
         </Box>
       </Box>
 
-      <Box marginY={1} flexShrink={0}>
-        <Divider width={innerWidth} />
-      </Box>
-
-      <Box flexDirection="column" flexShrink={0}>
-        <SectionLabel>CONTEXT</SectionLabel>
-        <Text color={theme.labelCaption}>
-          <StatusDot color={theme.success} /> {truncate(model || 'unknown model', innerWidth - 2)}
-        </Text>
-        <Text color={theme.labelCaption}>{truncate(shortPath(cwd), innerWidth)}</Text>
-      </Box>
-
       <Box flexGrow={1} />
-
-      <Box flexDirection="column" flexShrink={0} borderTop borderTopColor={theme.border1} paddingTop={0}>
-        <Text color={theme.labelCaption}>↑↓ history · ⏎ send</Text>
-        <Text color={theme.labelCaption}>/ commands · Ctrl+C stop</Text>
-      </Box>
     </Box>
   )
 }
