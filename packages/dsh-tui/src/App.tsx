@@ -1,9 +1,10 @@
 // @ts-nocheck
-import { createEffect, createSignal, For, onCleanup } from 'solid-js'
+import { createEffect, createSignal, For, Show, onCleanup } from 'solid-js'
 import { useKeyboard, useRenderer } from '@opentui/solid'
 import type { DshRuntime } from './dsh.ts'
 import type { OpenCodeMessage, OpenCodeModelOption, OpenCodePart, OpenCodeQuestion, OpenCodeSession, OpenCodeTodo } from '@dsh/core'
 import { MessageView } from './MessageView.tsx'
+import { HomeScreen } from './HomeScreen.tsx'
 import { QuestionDialog } from './QuestionDialog.tsx'
 import { SessionListDialog } from './SessionListDialog.tsx'
 import { ModelDialog } from './ModelDialog.tsx'
@@ -328,11 +329,9 @@ export function App(props: { dsh: DshRuntime; initialSessionId?: string; continu
 
       <box flexDirection="column" flexGrow={1} paddingLeft={2} paddingRight={2}>
         <box flexGrow={1} flexDirection="column" overflow="hidden">
-          <For each={messages()}>
-            {(message) => (
-              <MessageView message={message} parts={parts().get(message.id) ?? []} />
-            )}
-          </For>
+          <Show when={messages().length === 0} fallback={<For each={messages()}>{(message) => <MessageView message={message} parts={parts().get(message.id) ?? []} />}</For>}>
+            <HomeScreen />
+          </Show>
         </box>
 
         {prompt().startsWith('/') && sessionId() ? (
