@@ -23,7 +23,7 @@ function todoGlyph(status: TodoItem['status']): string {
 function todoColor(status: TodoItem['status']): string {
   if (status === 'completed') return theme.success
   if (status === 'in_progress') return theme.warn
-  return theme.muted
+  return theme.labelCaption
 }
 
 export function Sidebar({
@@ -59,24 +59,24 @@ export function Sidebar({
       height="100%"
       flexDirection="column"
       borderRight
-      borderRightColor={theme.border}
+      borderRightColor={theme.border1}
       paddingX={1}
       paddingTop={0}
       overflowY="hidden"
     >
       <Box flexDirection="column" flexShrink={0}>
-        <Text color={theme.primary} bold>
+        <Text color={theme.brand} bold>
           {truncate(title || 'new session', innerWidth)}
         </Text>
-        <Text color={theme.dim}>
+        <Text color={theme.labelCaption}>
           {truncate(sessionId || 'not saved yet', innerWidth)}
         </Text>
         <Box flexDirection="row" gap={1} marginTop={1}>
-          <Badge color={theme.selectedFg} bg={mode === 'yolo' ? theme.error : mode === 'plan' ? theme.plan : theme.primary}>
+          <Badge color={'#000000'} bg={mode === 'yolo' ? theme.error : mode === 'plan' ? theme.brand : theme.brand}>
             {mode.toUpperCase()}
           </Badge>
-          {busy ? <Badge color={theme.warn} bg={theme.chipBg}>BUSY</Badge> : null}
-          {planMode ? <Badge color={theme.plan} bg={theme.chipBg}>PLAN</Badge> : null}
+          {busy ? <Badge color={theme.warn} bg={theme.bgLayer2}>BUSY</Badge> : null}
+          {planMode ? <Badge color={theme.brand} bg={theme.bgLayer2}>PLAN</Badge> : null}
         </Box>
       </Box>
 
@@ -88,15 +88,19 @@ export function Sidebar({
         <SectionLabel>SESSIONS</SectionLabel>
         <Box flexDirection="column" marginTop={0}>
           {sessions.length === 0 ? (
-            <Text color={theme.dim}>no local sessions</Text>
+            <Text color={theme.labelCaption}>no local sessions</Text>
           ) : (
             sessions.slice(0, 4).map((s) => {
               const active = s.id === currentSessionId
               return (
-                <Text key={s.id} color={active ? theme.primary : theme.muted}>
-                  {active ? '● ' : '  '}
+                <Text
+                  key={s.id}
+                  color={active ? theme.labelPrimary : theme.labelSecondary}
+                  backgroundColor={active ? theme.bgLayer3 : undefined}
+                >
+                  {active ? `${'▎'} ` : '  '}
                   {truncate(s.title || s.id.slice(0, 8), innerWidth - 8)}
-                  <Text color={theme.dim}> {timeAgo(s.updatedAt)}</Text>
+                  <Text color={theme.labelCaption}> {timeAgo(s.updatedAt)}</Text>
                 </Text>
               )
             })
@@ -112,7 +116,7 @@ export function Sidebar({
         <SectionLabel>TASKS</SectionLabel>
         <Box flexDirection="column" marginTop={0}>
           {todos.length === 0 ? (
-            <Text color={theme.dim}>no tracked tasks</Text>
+            <Text color={theme.labelCaption}>no tracked tasks</Text>
           ) : (
             todos.slice(0, 5).map((t) => (
               <Text key={t.id} color={todoColor(t.status)}>
@@ -129,17 +133,17 @@ export function Sidebar({
 
       <Box flexDirection="column" flexShrink={0}>
         <SectionLabel>CONTEXT</SectionLabel>
-        <Text color={theme.muted}>
+        <Text color={theme.labelCaption}>
           <StatusDot color={theme.success} /> {truncate(model || 'unknown model', innerWidth - 2)}
         </Text>
-        <Text color={theme.dim}>{truncate(shortPath(cwd), innerWidth)}</Text>
+        <Text color={theme.labelCaption}>{truncate(shortPath(cwd), innerWidth)}</Text>
       </Box>
 
       <Box flexGrow={1} />
 
-      <Box flexDirection="column" flexShrink={0} borderTop borderTopColor={theme.border} paddingTop={0}>
-        <Text color={theme.dim}>↑↓ history · ⏎ send</Text>
-        <Text color={theme.dim}>/ commands · Ctrl+C stop</Text>
+      <Box flexDirection="column" flexShrink={0} borderTop borderTopColor={theme.border1} paddingTop={0}>
+        <Text color={theme.labelCaption}>↑↓ history · ⏎ send</Text>
+        <Text color={theme.labelCaption}>/ commands · Ctrl+C stop</Text>
       </Box>
     </Box>
   )

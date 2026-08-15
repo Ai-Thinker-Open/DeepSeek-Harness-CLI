@@ -31,13 +31,13 @@ function InlineView({ nodes }: { nodes: Inline[] }) {
             )
           case 'code':
             return (
-              <Text key={i} color={theme.warn} backgroundColor={theme.codeBg}>
+              <Text key={i} color={theme.warn} backgroundColor={theme.bgLayer2}>
                 {n.text}
               </Text>
             )
           case 'link':
             return (
-              <Text key={i} color={theme.primary} underline>
+              <Text key={i} color={theme.brand} underline>
                 {n.text}
               </Text>
             )
@@ -52,14 +52,14 @@ function CodeBlock({ lang, text }: { lang: string; text: string }) {
   return (
     <Box flexDirection="column" marginY={0}>
       <Box>
-        <Text color={theme.muted} backgroundColor={theme.chipBg}>
+        <Text color={theme.labelCaption} backgroundColor={theme.bgLayer2}>
           {' '}
           {lang || 'code'}{' '}
         </Text>
       </Box>
-      <Box borderStyle="round" borderColor={theme.border} flexDirection="column" paddingX={1}>
+      <Box borderStyle="round" borderColor={theme.border1} flexDirection="column" paddingX={1}>
         {lines.map((line, i) => (
-          <Text key={i} color={theme.muted}>
+          <Text key={i} color={theme.labelCaption}>
             {line || ' '}
           </Text>
         ))}
@@ -77,7 +77,7 @@ const BlockView = memo(function BlockView({ block, depth = 0 }: { block: Block; 
         </Text>
       )
     case 'heading': {
-      const color = block.level === 1 ? theme.primary : block.level === 2 ? theme.primary : undefined
+      const color = block.level === 1 ? theme.brand : block.level === 2 ? theme.brand : undefined
       return (
         <Box flexDirection="column" marginTop={block.level === 1 ? 1 : 0}>
           <Text bold color={color}>
@@ -91,7 +91,7 @@ const BlockView = memo(function BlockView({ block, depth = 0 }: { block: Block; 
       return <CodeBlock lang={block.lang} text={block.text} />
     case 'quote':
       return (
-        <Box flexDirection="column" borderLeft borderLeftColor={theme.plan} paddingLeft={1} marginLeft={0}>
+        <Box flexDirection="column" borderLeft borderLeftColor={theme.brand} paddingLeft={1} marginLeft={0}>
           {block.children.map((b, i) => (
             <BlockView key={i} block={b} depth={depth + 1} />
           ))}
@@ -103,7 +103,7 @@ const BlockView = memo(function BlockView({ block, depth = 0 }: { block: Block; 
           {block.items.map((item, i) => (
             <Box key={i} flexDirection="column">
               <Box>
-                <Text color={theme.primary}>{block.ordered ? item.marker : '›'}</Text>
+                <Text color={theme.brand}>{block.ordered ? item.marker : '›'}</Text>
                 <Box paddingLeft={1} flexDirection="column">
                   {item.children.map((b, j) => (
                     <BlockView key={j} block={b} depth={depth + 1} />

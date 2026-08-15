@@ -10,8 +10,8 @@ import { theme, truncate } from '../theme.ts'
 
 export function Badge({
   children,
-  color = theme.primary,
-  bg = theme.chipBg,
+  color = theme.brand,
+  bg = theme.bgLayer2,
 }: {
   children: React.ReactNode
   color?: string
@@ -25,7 +25,7 @@ export function Badge({
   )
 }
 
-export function Divider({ color = theme.border, label, width = 48 }: { color?: string; label?: string; width?: number }) {
+export function Divider({ color = theme.border1, label, width = 48 }: { color?: string; label?: string; width?: number }) {
   const lineWidth = Math.max(1, width)
   if (label) {
     return (
@@ -45,7 +45,7 @@ export function Divider({ color = theme.border, label, width = 48 }: { color?: s
 export function KeyHint({ keys, label }: { keys: string; label: string }) {
   return (
     <Text>
-      <Text color={theme.primary}>{keys}</Text>
+      <Text color={theme.brand}>{keys}</Text>
       <Text dimColor> {label}</Text>
     </Text>
   )
@@ -53,7 +53,7 @@ export function KeyHint({ keys, label }: { keys: string; label: string }) {
 
 export function SectionLabel({ children }: { children: React.ReactNode }) {
   return (
-    <Text color={theme.muted} bold>
+    <Text color={theme.labelCaption} bold>
       {children}
     </Text>
   )
@@ -81,7 +81,7 @@ export function AccentCard({
 }
 
 /** A compact role label rendered as a chip. */
-export function RoleChip({ children, color = theme.primary }: { children: React.ReactNode; color?: string }) {
+export function RoleChip({ children, color = theme.brand }: { children: React.ReactNode; color?: string }) {
   return (
     <Text bold color={color}>
       {children}

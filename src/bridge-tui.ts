@@ -46,15 +46,21 @@ if (has('--continue')) args.push('--continue')
 if (arg('--session', '')) args.push('--session', arg('--session', ''))
 if (has('--fork')) args.push('--fork')
 
+const childEnv = {
+  ...process.env,
+  MIMOCODE_TUI_PLAIN: process.env.MIMOCODE_TUI_PLAIN ?? '1',
+  MIMOCODE_DISABLE_MOUSE: process.env.MIMOCODE_DISABLE_MOUSE ?? '1',
+  MIMOCODE_DISABLE_TERMINAL_TITLE: process.env.MIMOCODE_DISABLE_TERMINAL_TITLE ?? '1',
+}
+// OpenTUI 0.1.101 has broken Windows Terminal detection. Removing WT_SESSION
+// makes it fall back to the standard Linux terminal path under WSL/Windows
+// Terminal instead of taking the broken Windows-specific branch.
+delete childEnv.WT_SESSION
+
 const child = spawn(args[0] as string, args.slice(1), {
   cwd: process.cwd(),
   stdio: 'inherit',
-  env: {
-    ...process.env,
-    MIMOCODE_TUI_PLAIN: process.env.MIMOCODE_TUI_PLAIN ?? '1',
-    MIMOCODE_DISABLE_MOUSE: process.env.MIMOCODE_DISABLE_MOUSE ?? '1',
-    MIMOCODE_DISABLE_TERMINAL_TITLE: process.env.MIMOCODE_DISABLE_TERMINAL_TITLE ?? '1',
-  },
+  env: childEnv,
 })
 
 let closing = false

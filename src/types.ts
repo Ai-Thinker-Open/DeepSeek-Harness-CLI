@@ -109,6 +109,7 @@ export type AgentEvent =
   | { type: 'error'; message: string }
   | { type: 'title'; title: string }
   | { type: 'usage'; usage: { promptTokens: number; completionTokens: number; totalTokens: number } }
+  | { type: 'jobs'; jobs: JobView[] }
 
 /** A question surfaced to the user by ask_user / permission / plan approval. */
 export interface Question {
@@ -152,6 +153,18 @@ export interface JobState {
   startedAt: number
   finishedAt?: number
   model?: string
+}
+
+/** Harness task/job view (session/jobs projection, taskViewSchema). */
+export interface JobView {
+  id: string
+  kind: string
+  label: string
+  status: 'running' | 'stopping' | 'completed' | 'killed' | 'failed'
+  startedAt?: number
+  finishedAt?: number
+  result?: string
+  error?: string
 }
 
 /**

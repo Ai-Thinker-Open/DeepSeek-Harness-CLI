@@ -4,7 +4,7 @@
  * surface the App uses from `Agent` (sendUser / abort / togglePlanMode /
  * setModel / updateTodos / sessionId / model), so the UI is agnostic.
  */
-import type { ChatMessage, Question, SessionDriver, TodoItem } from '../types.ts'
+import type { ChatMessage, JobView, Question, SessionDriver, TodoItem } from '../types.ts'
 import { Store } from '../store.ts'
 import { QuestionCenter } from '../agent.ts'
 import { HarnessClient, type ServerRequest, type SessionEvent } from './client.ts'
@@ -126,6 +126,19 @@ export class HarnessDriver implements SessionDriver {
       case 'session/projection':
         this.onProjection(payload as { key: string; value: unknown })
         break
+      case 'session/jobs': {
+        const jobs = (payload as { jobs: Array<{ id: string; kind: string; label: string; status: string }> }).jobs
+        this.store.handleEvent({
+          type: 'jobs',
+          jobs: jobs.map((j) => ({
+            id: j.id,
+            kind: j.kind,
+            label: j.label,
+            status: (j.status as JobView['status']) ?? 'running',
+          })),
+        })
+        break
+      }
       case 'host/agent-error':
         this.store.handleEvent({ type: 'error', message: String(payload.message ?? 'agent error') })
         this.settleTurn()

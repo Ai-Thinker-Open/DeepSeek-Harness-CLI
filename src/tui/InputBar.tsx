@@ -27,7 +27,7 @@ export function InputBar({
   mode = 'agent',
   hint,
 }: InputBarProps) {
-  const frameColor = disabled ? theme.dim : planMode ? theme.plan : modeBorderColor(mode)
+  const frameColor = disabled ? theme.labelCaption : planMode ? theme.brand : modeBorderColor(mode)
   const modeLabel = mode === 'yolo' ? 'YOLO' : mode === 'plan' ? 'PLAN' : 'AGENT'
 
   return (
@@ -43,7 +43,7 @@ export function InputBar({
         <Text color={frameColor} bold>
           {modeGlyph(mode)}
         </Text>
-        <Text color={theme.dim} bold>
+        <Text color={theme.labelCaption} bold>
           {modeLabel}
         </Text>
         <Box flexGrow={1}>
@@ -61,8 +61,8 @@ export function InputBar({
         ) : null}
       </Box>
       <Box flexDirection="row" justifyContent="space-between" paddingX={1} height={1}>
-        <Text color={theme.dim}>{hint || 'Enter send · / commands'}</Text>
-        <Text color={theme.dim}>{planMode ? 'plan mode' : ''}</Text>
+        <Text color={theme.labelCaption}>{hint || 'Enter send · / commands'}</Text>
+        <Text color={theme.labelCaption}>{planMode ? 'plan mode' : ''}</Text>
       </Box>
     </Box>
   )

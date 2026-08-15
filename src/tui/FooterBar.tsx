@@ -33,13 +33,13 @@ export function FooterBar({
       flexDirection="row"
       justifyContent="space-between"
       borderTop
-      borderTopColor={theme.border}
+      borderTopColor={theme.border1}
       paddingX={1}
       height={1}
       flexShrink={0}
     >
-      <Text color={theme.muted}>{truncate(left, Math.max(12, Math.floor(width * 0.5)))}</Text>
-      <Text color={theme.dim}>{truncate(`${hint}  ·  ${right}`, Math.max(18, width - Math.ceil(width * 0.5)))}</Text>
+      <Text color={theme.labelCaption}>{truncate(left, Math.max(12, Math.floor(width * 0.5)))}</Text>
+      <Text color={theme.labelCaption}>{truncate(`${hint}  ·  ${right}`, Math.max(18, width - Math.ceil(width * 0.5)))}</Text>
     </Box>
   )
 }

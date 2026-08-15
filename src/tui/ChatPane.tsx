@@ -10,13 +10,13 @@ import { KeyHint } from './ui.tsx'
 const EmptyState = memo(function EmptyState({ width }: { width: number }) {
   return (
     <Box flexDirection="column" alignItems="center" marginTop={1}>
-      <Text color={theme.primary}>{width >= 44 ? whaleBanner() : '✦'}</Text>
-      <Text bold color={theme.muted}>
+      <Text color={theme.brand}>{width >= 44 ? whaleBanner() : '✦'}</Text>
+      <Text bold color={theme.labelCaption}>
         DeepSeek Harness CLI
       </Text>
-      <Text color={theme.muted}>Terminal client for DeepSeek Harness</Text>
+      <Text color={theme.labelCaption}>Terminal client for DeepSeek Harness</Text>
       <Box marginTop={1} flexDirection="column" alignItems="center">
-        <Text color={theme.muted}>Ask me to build, debug, or explore your workspace.</Text>
+        <Text color={theme.labelCaption}>Ask me to build, debug, or explore your workspace.</Text>
         <Box flexDirection="row" gap={2} marginTop={0}>
           <KeyHint keys="⏎" label="send" />
           <KeyHint keys="/" label="commands" />
@@ -108,7 +108,7 @@ export function ChatPane({
             <Box key={m.id} flexDirection="column">
               {i > 0 && m.role === 'user' ? (
                 <Box marginY={0}>
-                  <Text color={theme.border}>{separator}</Text>
+                  <Text color={theme.border1}>{separator}</Text>
                 </Box>
               ) : null}
               <MessageView m={m} />
@@ -119,7 +119,7 @@ export function ChatPane({
       </Box>
       {!atBottom && messages.length > 0 ? (
         <Box flexShrink={0}>
-          <Text color={theme.dim}>↑ PageUp / Shift+↑ to scroll</Text>
+          <Text color={theme.labelCaption}>↑ PageUp / Shift+↑ to scroll</Text>
         </Box>
       ) : null}
     </Box>

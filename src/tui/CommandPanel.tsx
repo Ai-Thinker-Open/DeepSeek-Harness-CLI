@@ -101,10 +101,10 @@ function timeAgo(ts: number): string {
 function PanelTitle({ children }: { children: React.ReactNode }) {
   return (
     <Box flexDirection="row" justifyContent="space-between" marginBottom={0}>
-      <Text bold color={theme.primary}>
+      <Text bold color={theme.brand}>
         {children}
       </Text>
-      <Text color={theme.dim}>↑↓ choose · ⏎ run · Esc close</Text>
+      <Text color={theme.labelCaption}>↑↓ choose · ⏎ run · Esc close</Text>
     </Box>
   )
 }
@@ -135,15 +135,15 @@ export function CommandPanel({
   modelsList?: Array<{ provider: string; id: string }>
 }) {
   return (
-    <Box flexDirection="column" borderStyle="round" borderColor={theme.primary} paddingX={1} flexShrink={0}>
+    <Box flexDirection="column" borderStyle="round" borderColor={theme.brand} paddingX={1} flexShrink={0}>
       {mode === 'command' ? (
         <Box flexDirection="column">
           <PanelTitle>command palette</PanelTitle>
           <Box flexDirection="column" marginTop={0}>
-            {groups.length === 0 ? <Text color={theme.dim}>no matching command</Text> : null}
+            {groups.length === 0 ? <Text color={theme.labelCaption}>no matching command</Text> : null}
             {groups.map((g) => (
               <Box key={g.group} flexDirection="column" marginBottom={0}>
-                <Text color={theme.dim} bold>
+                <Text color={theme.labelCaption} bold>
                   {g.group}
                 </Text>
                 {g.commands.map((c) => {
@@ -152,12 +152,12 @@ export function CommandPanel({
                   return (
                     <Text
                       key={c.name}
-                      color={active ? theme.selectedFg : theme.muted}
-                      backgroundColor={active ? theme.selectedBg : undefined}
+                      color={active ? '#000000' : theme.labelCaption}
+                      backgroundColor={active ? theme.brand : undefined}
                     >
                       {active ? '› ' : '  '}/{c.name}
-                      {c.arg ? <Text color={active ? theme.selectedFg : theme.dim}> {c.arg}</Text> : null}
-                      <Text color={active ? theme.selectedFg : theme.dim}> — {c.desc}</Text>
+                      {c.arg ? <Text color={active ? '#000000' : theme.labelCaption}> {c.arg}</Text> : null}
+                      <Text color={active ? '#000000' : theme.labelCaption}> — {c.desc}</Text>
                     </Text>
                   )
                 })}
@@ -170,41 +170,41 @@ export function CommandPanel({
       {mode === 'sessions' ? (
         <Box flexDirection="column">
           <PanelTitle>sessions</PanelTitle>
-          {sessions.length === 0 ? <Text color={theme.dim}>no sessions yet</Text> : null}
+          {sessions.length === 0 ? <Text color={theme.labelCaption}>no sessions yet</Text> : null}
           {sessions.slice(0, 20).map((s, i) => {
             const active = i === selected
             const current = s.id === currentSessionId
             return (
               <Text
                 key={s.id}
-                color={active ? theme.selectedFg : current ? theme.primary : theme.muted}
-                backgroundColor={active ? theme.selectedBg : undefined}
+                color={active ? '#000000' : current ? theme.brand : theme.labelCaption}
+                backgroundColor={active ? theme.brand : undefined}
               >
                 {active ? '› ' : current ? '● ' : '  '}
                 {truncate(s.title || s.id.slice(0, 12), 52)}
-                <Text color={active ? theme.selectedFg : theme.dim}> {timeAgo(s.updatedAt)}</Text>
+                <Text color={active ? '#000000' : theme.labelCaption}> {timeAgo(s.updatedAt)}</Text>
               </Text>
             )
           })}
-          {sessions.length > 20 ? <Text color={theme.dim}>… {sessions.length - 20} more</Text> : null}
+          {sessions.length > 20 ? <Text color={theme.labelCaption}>… {sessions.length - 20} more</Text> : null}
         </Box>
       ) : null}
 
       {mode === 'models' ? (
         <Box flexDirection="column">
           <PanelTitle>models</PanelTitle>
-          {!modelsList?.length ? <Text color={theme.dim}>no models available</Text> : null}
+          {!modelsList?.length ? <Text color={theme.labelCaption}>no models available</Text> : null}
           {(modelsList ?? []).map((m, i) => {
             const active = i === selected
             const current = m.id === model
             return (
               <Text
                 key={`${m.provider}:${m.id}`}
-                color={active ? theme.selectedFg : current ? theme.primary : theme.muted}
-                backgroundColor={active ? theme.selectedBg : undefined}
+                color={active ? '#000000' : current ? theme.brand : theme.labelCaption}
+                backgroundColor={active ? theme.brand : undefined}
               >
                 {active ? '› ' : current ? '● ' : '  '}
-                {truncate(m.id, 52)} <Text color={active ? theme.selectedFg : theme.dim}>{m.provider}</Text>
+                {truncate(m.id, 52)} <Text color={active ? '#000000' : theme.labelCaption}>{m.provider}</Text>
               </Text>
             )
           })}
@@ -214,13 +214,13 @@ export function CommandPanel({
       {mode === 'todos' ? (
         <Box flexDirection="column">
           <PanelTitle>todos</PanelTitle>
-          {todos.length === 0 ? <Text color={theme.dim}>no todos — ask the agent to plan work</Text> : null}
+          {todos.length === 0 ? <Text color={theme.labelCaption}>no todos — ask the agent to plan work</Text> : null}
           {todos.map((t, i) => {
             const active = i === selected
             const icon = t.status === 'completed' ? '✓' : t.status === 'in_progress' ? '›' : '·'
-            const color = t.status === 'completed' ? theme.success : t.status === 'in_progress' ? theme.warn : theme.muted
+            const color = t.status === 'completed' ? theme.success : t.status === 'in_progress' ? theme.warn : theme.labelCaption
             return (
-              <Text key={t.id} color={active ? theme.selectedFg : color} backgroundColor={active ? theme.selectedBg : undefined}>
+              <Text key={t.id} color={active ? '#000000' : color} backgroundColor={active ? theme.brand : undefined}>
                 {active ? '› ' : '  '}
                 {icon} {truncate(t.content, 56)}
               </Text>
@@ -233,7 +233,7 @@ export function CommandPanel({
         <Box flexDirection="column">
           <PanelTitle>/{mode}</PanelTitle>
           {(panelText ?? '—').split('\n').map((l, i) => (
-            <Text key={i} wrap="wrap" color={theme.muted}>
+            <Text key={i} wrap="wrap" color={theme.labelCaption}>
               {l}
             </Text>
           ))}
@@ -243,14 +243,14 @@ export function CommandPanel({
       {mode === 'help' ? (
         <Box flexDirection="column">
           <PanelTitle>keybindings</PanelTitle>
-          <Text color={theme.muted}>⏎ send · Ctrl+C stop agent / quit when idle</Text>
-          <Text color={theme.muted}>/ commands: sessions · new · rename · fork · plan · agent · yolo · models · tools · skills · jobs · compact · goal · status · help · exit</Text>
-          <Text color={theme.muted}>Ctrl+N new session · Ctrl+E plan mode · Ctrl+M model</Text>
-          <Text color={theme.muted}>↑↓ input history · PageUp/Down scroll · Esc clear / close</Text>
+          <Text color={theme.labelCaption}>⏎ send · Ctrl+C stop agent / quit when idle</Text>
+          <Text color={theme.labelCaption}>/ commands: sessions · new · rename · fork · plan · agent · yolo · models · tools · skills · jobs · compact · goal · status · help · exit</Text>
+          <Text color={theme.labelCaption}>Ctrl+N new session · Ctrl+E plan mode · Ctrl+M model</Text>
+          <Text color={theme.labelCaption}>↑↓ input history · PageUp/Down scroll · Esc clear / close</Text>
         </Box>
       ) : null}
 
-      <Text color={theme.dim}>
+      <Text color={theme.labelCaption}>
         {query ? `/${query}` : 'type to filter'} · plan {planMode ? 'on' : 'off'} · {model}
       </Text>
     </Box>

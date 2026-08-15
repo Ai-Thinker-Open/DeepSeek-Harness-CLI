@@ -31,28 +31,28 @@ export function StatusBar({
   const modeColor = modeBorderColor(mode)
 
   return (
-    <Box flexDirection="column" borderBottom borderBottomColor={theme.border} paddingX={1} flexShrink={0}>
+    <Box flexDirection="column" borderBottom borderBottomColor={theme.border1} paddingX={1} flexShrink={0}>
       <Box flexDirection="row" justifyContent="space-between" height={1}>
         <Text>
-          <Text color={theme.primary} bold>
+          <Text color={theme.brand} bold>
             {truncate(left, Math.max(12, Math.floor(width * 0.58)))}
           </Text>
         </Text>
         <Box flexDirection="row" gap={1}>
-          <Badge color={theme.selectedFg} bg={modeColor}>
+          <Badge color={'#000000'} bg={modeColor}>
             {right}
           </Badge>
-          <Badge color={busy ? theme.warn : theme.success} bg={theme.chipBg}>
+          <Badge color={busy ? theme.warn : theme.success} bg={theme.bgLayer2}>
             {busy ? 'RUNNING' : 'READY'}
           </Badge>
         </Box>
       </Box>
       <Box flexDirection="row" justifyContent="space-between" height={1}>
-        <Text color={theme.muted}>
+        <Text color={theme.labelCaption}>
           <StatusDot color={busy ? theme.warn : theme.success} glyph={busy ? '◐' : '●'} />{' '}
           {truncate(meta, Math.max(16, Math.floor(width * 0.62)))}
         </Text>
-        <Text color={theme.dim}>{truncate(state, Math.max(10, width - 4))}</Text>
+        <Text color={theme.labelCaption}>{truncate(state, Math.max(10, width - 4))}</Text>
       </Box>
     </Box>
   )

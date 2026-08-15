@@ -2,6 +2,7 @@ import type {
   AgentEvent,
   AgentStatus,
   ChatMessage,
+  JobView,
   Question,
   SessionMeta,
   TodoItem,
@@ -21,6 +22,7 @@ export interface UiState {
   /** Non-zero when the agent is busy (drives the whale animation). */
   busy: boolean
   usage: { promptTokens: number; completionTokens: number; totalTokens: number }
+  jobs: JobView[]
 }
 
 const initial = (partial: Partial<UiState>): UiState => ({
@@ -36,6 +38,7 @@ const initial = (partial: Partial<UiState>): UiState => ({
   sessionList: [],
   busy: false,
   usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
+  jobs: [],
   ...partial,
 })
 
@@ -192,6 +195,11 @@ export class Store {
       case 'usage':
         this.mutate((s) => {
           s.usage = ev.usage
+        })
+        break
+      case 'jobs':
+        this.mutate((s) => {
+          s.jobs = ev.jobs
         })
         break
     }

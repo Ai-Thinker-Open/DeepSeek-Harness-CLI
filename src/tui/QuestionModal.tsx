@@ -34,8 +34,8 @@ export function QuestionModal({ question }: { question: Question }) {
     question.kind === 'permission'
       ? theme.warn
       : question.kind === 'plan-approval'
-        ? theme.plan
-        : theme.primary
+        ? theme.brand
+        : theme.brand
 
   const kindLabel =
     question.kind === 'permission'
@@ -48,10 +48,10 @@ export function QuestionModal({ question }: { question: Question }) {
     <Box height="100%" flexDirection="column" alignItems="center" justifyContent="center" paddingX={1}>
       <Box width={width} flexDirection="column" borderStyle="round" borderColor={kindColor} paddingX={2} paddingY={1}>
         <Box flexDirection="row" justifyContent="space-between">
-          <Badge color={theme.selectedFg} bg={kindColor}>
+          <Badge color={'#000000'} bg={kindColor}>
             {kindLabel}
           </Badge>
-          <Text color={theme.dim}>Esc cancel</Text>
+          <Text color={theme.labelCaption}>Esc cancel</Text>
         </Box>
         <Box marginTop={1}>
           <Text bold color={kindColor} wrap="wrap">
@@ -59,11 +59,11 @@ export function QuestionModal({ question }: { question: Question }) {
           </Text>
         </Box>
         {question.body ? (
-          <Box flexDirection="column" marginY={1} borderTop borderTopColor={theme.border} paddingTop={1}>
+          <Box flexDirection="column" marginY={1} borderTop borderTopColor={theme.border1} paddingTop={1}>
             {truncateBody(question.body)
               .split('\n')
               .map((l, i) => (
-                <Text key={i} color={theme.muted} wrap="wrap">
+                <Text key={i} color={theme.labelCaption} wrap="wrap">
                   {l}
                 </Text>
               ))}
@@ -75,7 +75,7 @@ export function QuestionModal({ question }: { question: Question }) {
             return (
               <Text
                 key={i}
-                color={active ? theme.selectedFg : theme.muted}
+                color={active ? '#000000' : theme.labelCaption}
                 backgroundColor={active ? kindColor : undefined}
                 wrap="wrap"
               >
@@ -86,8 +86,8 @@ export function QuestionModal({ question }: { question: Question }) {
           })}
         </Box>
         <Box flexDirection="row" justifyContent="space-between" marginTop={1}>
-          <Text color={theme.dim}>↑↓ choose</Text>
-          <Text color={theme.dim}>⏎ confirm</Text>
+          <Text color={theme.labelCaption}>↑↓ choose</Text>
+          <Text color={theme.labelCaption}>⏎ confirm</Text>
         </Box>
       </Box>
     </Box>

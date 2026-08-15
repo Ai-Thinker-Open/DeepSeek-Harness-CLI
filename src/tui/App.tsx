@@ -16,6 +16,7 @@ import { CommandPanel, PALETTE_COMMANDS, filterCommands, type PaletteMode } from
 import { Sidebar } from './Sidebar.tsx'
 import { StatusBar } from './StatusBar.tsx'
 import { FooterBar } from './FooterBar.tsx'
+import { DetailsBar, type DetailsTab } from './DetailsBar.tsx'
 import { footerHint, theme, type Mode } from '../theme.ts'
 
 /** In-process cordis mode (dsh --profile cli): drive the host agent directly. */
@@ -216,6 +217,7 @@ export function App({
   const [modelsList, setModelsList] = useState<Array<{ provider: string; id: string }>>([])
   const [clearSignal, setClearSignal] = useState(0)
   const [mode, setMode] = useState<Mode>('agent')
+  const [detailsTab, setDetailsTab] = useState<DetailsTab | null>('tasks')
 
   const showCommands = input.startsWith('/') && !panel
   const panelLen = panel
@@ -448,6 +450,17 @@ export function App({
   }, [panel, state.sessionList, state.todos, modelsList, mountSession, toggleTodo, setInputBoth])
 
   useInput((inputKey, key) => {
+    if (key.ctrl && inputKey === 'd') {
+      setDetailsTab((t) => (t ? null : 'tasks'))
+      return
+    }
+    if (detailsTab) {
+      if (inputKey === '[' || (key.ctrl && inputKey === '[')) setDetailsTab('tasks')
+      else if (inputKey === ']' || (key.ctrl && inputKey === ']')) {
+        setDetailsTab((t) => (t === 'tasks' ? 'settings' : t === 'settings' ? 'trace' : 'tasks'))
+      } else if (key.escape) setDetailsTab(null)
+      return
+    }
     if (key.shift && key.tab) {
       cycleMode()
       return
@@ -523,8 +536,21 @@ export function App({
   const activeQuestion = hasQuestion ? (state.questions[0] as NonNullable<typeof state.questions[0]>) : null
   const showSidebar = columns >= 72
   const sidebarWidth = showSidebar ? Math.max(22, Math.min(32, Math.floor(columns * 0.3))) : 0
-  const chatWidth = Math.max(20, columns - sidebarWidth)
+  const showDetails = detailsTab !== null && columns >= 96
+  const detailsWidth = showDetails ? 30 : 0
+  const chatWidth = Math.max(20, columns - sidebarWidth - detailsWidth)
   const chatViewportH = Math.max(5, rows - 9)
+  const timeline = useMemo(
+    () =>
+      state.messages
+        .slice(-30)
+        .map((m) => ({
+          time: new Date(m.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          text: (m.role === 'user' ? 'you: ' : m.role === 'assistant' ? 'mimo: ' : 'tool: ') + (m.content || m.toolCalls?.[0]?.name || '').slice(0, 40),
+          kind: m.role,
+        })),
+    [state.messages],
+  )
   const promptHint = busy
     ? footerHint('running')
     : showCommands || panel
@@ -609,6 +635,21 @@ export function App({
             />
           </Box>
         </Box>
+
+        {showDetails ? (
+          <DetailsBar
+            width={detailsWidth}
+            tab={detailsTab ?? 'tasks'}
+            onTab={setDetailsTab}
+            jobs={state.jobs}
+            model={state.model || config.model}
+            mode={mode}
+            autoApprove={mode === 'yolo'}
+            cwd={config.cwd}
+            sessionCount={state.sessionList.length}
+            timeline={timeline}
+          />
+        ) : null}
       </Box>
 
       <FooterBar

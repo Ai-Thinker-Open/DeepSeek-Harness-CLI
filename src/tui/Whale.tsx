@@ -17,7 +17,7 @@ export function Whale({ label = 'thinking…' }: { label?: string }) {
     <Box flexDirection="row" marginY={1}>
       <Box flexDirection="column" marginRight={2}>
         {frame.split('\n').map((line, idx) => (
-          <Text key={idx} color={theme.primary}>
+          <Text key={idx} color={theme.brand}>
             {line}
           </Text>
         ))}
@@ -43,7 +43,7 @@ export function MiniWhale({ label }: { label?: string }) {
     return () => clearInterval(t)
   }, [frames.length])
   return (
-    <Text color={theme.primary}>
+    <Text color={theme.brand}>
       {frames[i]}
       {label ? ` ${label}` : ''}
     </Text>

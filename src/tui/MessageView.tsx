@@ -29,7 +29,7 @@ function statusGlyph(status: ToolCallRecord['status']): { glyph: string; color: 
     case 'error':
       return { glyph: '✗', color: theme.error }
     default:
-      return { glyph: '·', color: theme.dim }
+      return { glyph: '·', color: theme.labelCaption }
   }
 }
 
@@ -42,13 +42,13 @@ function MessageHeader({
   createdAt: number
   streaming?: boolean
 }) {
-  const color = role === 'user' ? theme.user : theme.assistant
+  const color = role === 'user' ? theme.brandBright : theme.brandBright
   const label = role === 'user' ? 'YOU' : 'DSK'
 
   return (
     <Box flexDirection="row" gap={1} alignItems="center" marginBottom={0}>
       <RoleChip color={color}>{label}</RoleChip>
-      <Text color={theme.dim}>{formatClock(createdAt)}</Text>
+      <Text color={theme.labelCaption}>{formatClock(createdAt)}</Text>
       {streaming ? (
         <Text color={theme.warn}>
           <MiniWhale label="streaming" />
@@ -61,12 +61,12 @@ function MessageHeader({
 function ThinkingBlock({ thinking, streaming }: { thinking: string; streaming: boolean }) {
   return (
     <Box flexDirection="column" marginTop={0}>
-      <Text color={theme.thinking}>
+      <Text color={theme.labelCaption}>
         <Text bold>✢ THINKING</Text>
         {streaming ? ' …' : ''}
       </Text>
       {streaming ? (
-        <Text color={theme.thinking} wrap="wrap">
+        <Text color={theme.labelCaption} wrap="wrap">
           {formatReasoning(tailText(thinking, 6))}
         </Text>
       ) : null}
@@ -88,19 +88,19 @@ export function ToolCard({ call, result }: { call: ToolCallRecord; result?: Tool
   const title = call.summary ? `${call.name} — ${truncate(call.summary, 52)}` : call.name
 
   return (
-    <Box flexDirection="column" marginTop={0} borderLeft borderLeftColor={theme.tool} paddingLeft={1}>
+    <Box flexDirection="column" marginTop={0} borderLeft borderLeftColor={theme.labelCaption} paddingLeft={1}>
       <Box flexDirection="row" gap={1}>
-        <Text color={theme.tool}>{status.glyph}</Text>
-        <Text color={theme.muted} bold>
+        <Text color={theme.labelCaption}>{status.glyph}</Text>
+        <Text color={theme.labelCaption} bold>
           {title}
         </Text>
         {call.status === 'running' && elapsed ? (
-          <Text color={theme.tool}>· {elapsed}</Text>
+          <Text color={theme.labelCaption}>· {elapsed}</Text>
         ) : null}
       </Box>
       {call.status === 'running' ? (
         <Box marginTop={0}>
-          <Text color={theme.tool}>
+          <Text color={theme.labelCaption}>
             <MiniWhale label={`${verbForTool(call.name)}…`} />
           </Text>
         </Box>
@@ -111,12 +111,12 @@ export function ToolCard({ call, result }: { call: ToolCallRecord; result?: Tool
             .split('\n')
             .slice(0, 3)
             .map((line, i) => (
-              <Text key={i} color={result.ok ? theme.muted : theme.error}>
+              <Text key={i} color={result.ok ? theme.labelCaption : theme.error}>
                 {line}
               </Text>
             ))}
           {result.output.split('\n').length > 3 ? (
-            <Text color={theme.dim}>… {result.output.split('\n').length - 3} more lines</Text>
+            <Text color={theme.labelCaption}>… {result.output.split('\n').length - 3} more lines</Text>
           ) : null}
         </Box>
       ) : null}
@@ -129,7 +129,7 @@ export function MessageView({ m }: { m: ChatMessage }) {
     return (
       <Box flexDirection="column" marginBottom={1}>
         <MessageHeader role="user" createdAt={m.createdAt} />
-        <AccentCard color={theme.user}>
+        <AccentCard color={theme.brandBright}>
           <Markdown text={m.content} />
         </AccentCard>
       </Box>
@@ -147,7 +147,7 @@ export function MessageView({ m }: { m: ChatMessage }) {
         {showWhale ? <Whale label="thinking…" /> : null}
         {m.content ? <Markdown text={m.content} /> : null}
         {m.streaming && m.content ? (
-          <Text color={theme.primary} bold>
+          <Text color={theme.brand} bold>
             ▍
           </Text>
         ) : null}
