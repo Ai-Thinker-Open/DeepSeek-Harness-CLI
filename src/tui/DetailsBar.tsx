@@ -73,7 +73,7 @@ export function DetailsBar({
           )
         })}
       </Box>
-      <Divider />
+      <Divider width={innerWidth} />
 
       {tab === 'tasks' && (
         <Box flexDirection="column">
@@ -104,7 +104,7 @@ export function DetailsBar({
           </Text>
           <Text color={theme.labelCaption}>sessions {sessionCount}</Text>
           <Text color={theme.labelCaption}>workspace {truncate(shortPath(cwd), innerWidth - 4)}</Text>
-          <Divider />
+          <Divider width={innerWidth} />
           <SectionLabel>Shortcuts</SectionLabel>
           <Text color={theme.labelCaption}>Tab · panels · [ ] width · Shift+Tab mode</Text>
         </Box>
