@@ -7,7 +7,7 @@
     "dsh-tui": "./src/cli.tsx"
   },
   "scripts": {
-    "dev": "bun run src/cli.tsx",
+    "dev": "bun run --preload @opentui/solid/preload src/cli.tsx",
     "typecheck": "tsc --noEmit",
     "build": "bun run scripts/build.ts"
   },

@@ -39,7 +39,9 @@
     "bridge": "pnpm --filter @dsh/bridge dev",
     "bridge:build": "pnpm --filter @dsh/bridge build",
     "bridge:test": "pnpm --filter @dsh/bridge test",
-    "tui": "pnpm --filter @dsh/bridge tui"
+    "tui": "pnpm --filter @dsh/bridge tui",
+    "dsh-tui": "pnpm --filter @dsh/tui dev",
+    "dsh-tui:build": "pnpm --filter @dsh/tui build"
   },
   "dependencies": {
     "ink": "^5.0.1",
