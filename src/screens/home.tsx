@@ -1,16 +1,19 @@
 import { onCleanup, onMount } from "solid-js"
 import { createSignal } from "solid-js"
 import { Logo } from "../components/logo"
+import { ModeHint } from "../components/mode-hint"
 import { Prompt } from "../components/prompt"
 import { Tips } from "../components/tips"
 import { Footer } from "../components/footer"
 import { StartupLoading } from "../components/startup-loading"
 import { deepseek, harness } from "../logo-art"
+import type { PermissionMode } from "../permission"
 import { theme } from "../theme"
 
-export function Home(props: { motion?: boolean; loading?: boolean } = {}) {
+export function Home(props: { motion?: boolean; loading?: boolean; mode?: () => PermissionMode } = {}) {
   const motion = props.motion ?? true
   const showLoading = props.loading ?? true
+  const mode = props.mode ?? (() => "workspace-write" as PermissionMode)
   const [ready, setReady] = createSignal(props.loading === false)
 
   onMount(() => {
@@ -49,6 +52,10 @@ export function Home(props: { motion?: boolean; loading?: boolean } = {}) {
 
         <box width="100%" maxWidth={75} flexShrink={0}>
           <Prompt />
+        </box>
+
+        <box width="100%" maxWidth={75} paddingTop={1} flexShrink={0}>
+          <ModeHint mode={mode} />
         </box>
 
         <box width="100%" maxWidth={75} paddingTop={2} flexShrink={0}>
