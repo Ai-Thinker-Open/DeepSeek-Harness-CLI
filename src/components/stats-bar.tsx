@@ -1,20 +1,46 @@
 // @ts-nocheck
 import { For, Show, createSignal } from "solid-js"
+import { EMPTY_STATS, type SessionStats } from "../session"
 import { theme } from "../theme"
 
-const SHORT_STATS =
-  "30 轮 · 1080 步 | LLM 124m57s · 工具调用 957m23s | 首 token 平均 2.5s · 143 tok/s | 缓存命中 100% | 输入 395M tok.."
+function formatDuration(ms: number): string {
+  if (ms <= 0) return "—"
+  const totalSeconds = Math.round(ms / 1000)
+  if (totalSeconds < 60) return `${totalSeconds}s`
+  return `${Math.floor(totalSeconds / 60)}m${String(totalSeconds % 60).padStart(2, "0")}s`
+}
 
-const FULL_STATS = [
-  "轮次 30 · 步骤 1080",
-  "LLM 用时 124m57s · 工具调用 957m23s",
-  "首 token 平均 2.5s · 143 tok/s",
-  "缓存命中 100%",
-  "输入 395M tokens · 输出 128M tokens",
-]
+function formatTokens(n: number): string {
+  if (n >= 1_000_000_000) return `${(n / 1_000_000_000).toFixed(1)}B`
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`
+  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k`
+  return String(n)
+}
 
-export function StatsBar() {
+function fullStats(s: SessionStats): string[] {
+  const lines = [
+    `轮次 ${s.turns} · 步骤 ${s.steps}`,
+    `LLM 用时 ${formatDuration(s.llmMs)} · 工具调用 ${formatDuration(s.toolMs)}`,
+  ]
+  if (s.firstTokenMs != null) lines.push(`首 token ${formatDuration(s.firstTokenMs)}`)
+  lines.push(`输入 ${formatTokens(s.inTokens)} tokens · 输出 ${formatTokens(s.outTokens)} tokens`)
+  return lines
+}
+
+export function StatsBar(props: { stats?: () => SessionStats; status?: () => string } = {}) {
   const [hover, setHover] = createSignal(false)
+  const stats = props.stats ?? (() => EMPTY_STATS)
+  const status = props.status ?? (() => "")
+
+  const short = () => {
+    const statusText = status()
+    if (statusText) return statusText
+    const s = stats()
+    if (s.turns === 0 && s.steps === 0 && s.inTokens === 0 && s.outTokens === 0) {
+      return "等待对话…"
+    }
+    return `${s.turns} 轮 · ${s.steps} 步 | LLM ${formatDuration(s.llmMs)} · 工具 ${formatDuration(s.toolMs)} | 输入 ${formatTokens(s.inTokens)} · 输出 ${formatTokens(s.outTokens)}`
+  }
 
   return (
     <box width="100%" position="relative" flexShrink={0}>
@@ -24,7 +50,7 @@ export function StatsBar() {
           else if (evt.type === "out") setHover(false)
         }}
       >
-        <text fg={theme.textMuted}>{SHORT_STATS}</text>
+        <text fg={theme.textMuted}>{short()}</text>
       </box>
       <Show when={hover()}>
         <box
@@ -42,7 +68,7 @@ export function StatsBar() {
           flexDirection="column"
           gap={0}
         >
-          <For each={FULL_STATS}>{(line) => <text fg={theme.text}>{line}</text>}</For>
+          <For each={fullStats(stats())}>{(line) => <text fg={theme.text}>{line}</text>}</For>
         </box>
       </Show>
     </box>

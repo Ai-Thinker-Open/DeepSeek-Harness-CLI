@@ -1,23 +1,20 @@
-import { createSignal, onCleanup } from "solid-js"
+import { createEffect, createSignal, onCleanup } from "solid-js"
 import { useKeyboard, useRenderer, useSelectionHandler } from "@opentui/solid"
 import { copySelection } from "./clipboard"
 import { Toast, type ToastMessage } from "./components/toast"
+import { createHarnessSession } from "./harness/session"
+import type { HarnessClientLike } from "./harness/client"
 import { nextMode, type PermissionMode } from "./permission"
 import { Home } from "./screens/home"
 import { SessionScreen } from "./screens/session"
-import type { ChatMessage } from "./session"
 
-export function App() {
+export function App(props: { client?: HarnessClientLike } = {}) {
   const renderer = useRenderer()
   const [mode, setMode] = createSignal<PermissionMode>("workspace-write")
-  const [model, setModel] = createSignal("DeepSeek-V4-Flash")
   const [toast, setToast] = createSignal<ToastMessage | null>(null)
   const [screen, setScreen] = createSignal<"home" | "session">("home")
-  const [messages, setMessages] = createSignal<ChatMessage[]>([])
+  const session = createHarnessSession(props.client)
   let toastTimer: ReturnType<typeof setTimeout> | undefined
-  let messageId = 0
-
-  const nextId = () => `m${++messageId}`
 
   const showToast = (text: string, kind: ToastMessage["kind"] = "success") => {
     setToast({ text, kind })
@@ -27,9 +24,11 @@ export function App() {
 
   onCleanup(() => {
     if (toastTimer) clearTimeout(toastTimer)
+    session.dispose()
   })
 
   useKeyboard((key) => {
+    if (session.question()) return
     if (key.name === "tab") {
       setMode((current) => nextMode(current, key.shift))
     }
@@ -41,14 +40,23 @@ export function App() {
     else if (result === "unsupported") showToast("✕ 终端不支持复制", "error")
   })
 
-  const handleSubmit = (text: string) => {
+  createEffect(() => {
+    const err = session.error()
+    if (err) {
+      showToast(err, "error")
+      session.clearError()
+    }
+  })
+
+  const handleSubmit = async (text: string) => {
     const trimmed = text.trim()
     if (!trimmed) return
     if (screen() === "home") {
-      setMessages([{ id: nextId(), role: "user", content: trimmed }])
+      const ok = await session.start(trimmed)
+      if (!ok) return
       setScreen("session")
     } else {
-      setMessages((list) => [...list, { id: nextId(), role: "user", content: trimmed }])
+      await session.send(trimmed)
     }
   }
 
@@ -64,7 +72,7 @@ export function App() {
       >
         <Home
           mode={mode}
-          model={model}
+          model={session.modelName}
           toast={toast}
           onSubmit={handleSubmit}
           motion={screen() === "home"}
@@ -80,12 +88,16 @@ export function App() {
         visible={screen() === "session"}
       >
         <SessionScreen
-          messages={messages}
+          messages={session.messages}
           mode={mode}
-          model={model}
+          model={session.modelName}
           toast={toast}
+          stats={session.stats}
+          statusText={session.statusText}
+          question={session.question}
           onSend={handleSubmit}
           onBack={() => setScreen("home")}
+          onQuestion={session.answer}
           active={() => screen() === "session"}
         />
       </box>
