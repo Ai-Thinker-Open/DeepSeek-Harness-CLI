@@ -31,8 +31,6 @@ export interface HarnessSessionApi {
   stats: () => SessionStats
   busy: () => boolean
   statusText: () => string
-  /** Live downlink health for the status bar (polled, not a signal). */
-  streamInfo: () => { connected: boolean; lastFrameAt: number; eventCount: number; lastEventType: string }
   question: () => HarnessQuestion | null
   error: () => string | null
   connected: () => boolean
@@ -86,8 +84,6 @@ export function createHarnessSession(
   const stallCheckMs = Math.min(5_000, Math.max(50, Math.floor(stallResyncMs / 3)))
   let lastFrameAt = 0
   let lastResyncAt = 0
-  let eventCount = 0
-  let lastEventType = ""
   let streamAbort: AbortController | null = null
   let stallTimer: ReturnType<typeof setInterval> | undefined
   const usageByStep = new Map<string, { in: number; out: number; cr: number; cw: number; re: number }>()
@@ -644,9 +640,6 @@ export function createHarnessSession(
       try {
         for await (const frame of client.eventStream(streamAbortController.signal)) {
           lastFrameAt = Date.now()
-          eventCount += 1
-          const frameEvent = (frame.payload as { event?: SessionEvent })?.event
-          if (frameEvent?.type) lastEventType = frameEvent.type
           // First frame after a drop: the link is alive again — clear the
           // "连接中断，重连中…" status that would otherwise linger forever.
           if (!connected()) {
@@ -773,7 +766,6 @@ export function createHarnessSession(
     stats,
     busy,
     statusText,
-    streamInfo: () => ({ connected: connected(), lastFrameAt, eventCount, lastEventType }),
     question,
     error,
     connected,

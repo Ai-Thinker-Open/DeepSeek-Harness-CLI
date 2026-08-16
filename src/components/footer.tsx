@@ -1,6 +1,6 @@
 import fs from "node:fs"
 import path from "node:path"
-import { Show, createSignal, onCleanup, onMount } from "solid-js"
+import { createSignal, onMount } from "solid-js"
 import pkg from "../../package.json"
 import { getMcpServers, type McpServerStatus } from "../mcp"
 import { theme } from "../theme"
@@ -47,43 +47,7 @@ function McpStatus() {
   )
 }
 
-export interface StreamSnapshot {
-  connected: boolean
-  lastFrameAt: number
-  eventCount: number
-  lastEventType: string
-}
-
-function StreamStatus(props: { stream: () => StreamSnapshot | null }) {
-  const [snap, setSnap] = createSignal<StreamSnapshot | null>(null)
-
-  onMount(() => {
-    const poll = () => setSnap(props.stream())
-    poll()
-    const timer = setInterval(poll, 1000)
-    onCleanup(() => clearInterval(timer))
-  })
-
-  const state = () => {
-    const s = snap()
-    if (!s) return { color: theme.textMuted, label: "事件流 —" }
-    const age = s.lastFrameAt > 0 ? Math.round((Date.now() - s.lastFrameAt) / 1000) : null
-    if (!s.connected) return { color: theme.error, label: `事件流 断开` }
-    if (age === null) return { color: theme.textMuted, label: "事件流 —" }
-    const color = age < 8 ? theme.success : age < 20 ? theme.warning : theme.error
-    const last = s.lastEventType ? ` · ${s.lastEventType}` : ""
-    return { color, label: `事件流 ${s.eventCount} · ${age}s 前${last}` }
-  }
-
-  return (
-    <text fg={theme.textMuted}>
-      <span style={{ fg: state().color }}>● </span>
-      {state().label}
-    </text>
-  )
-}
-
-export function Footer(props: { stream?: () => StreamSnapshot | null } = {}) {
+export function Footer() {
   const [dir, setDir] = createSignal(abbreviate(process.cwd()))
   const [branch, setBranch] = createSignal("")
 
@@ -110,9 +74,6 @@ export function Footer(props: { stream?: () => StreamSnapshot | null } = {}) {
         {dir()}
         {branch() ? `:${branch()}` : ""}
       </text>
-      <Show when={props.stream}>
-        <StreamStatus stream={props.stream as () => StreamSnapshot | null} />
-      </Show>
       <McpStatus />
       <box flexGrow={1} />
       <text fg={theme.textMuted}>v{pkg.version}</text>

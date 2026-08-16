@@ -7,7 +7,6 @@ import { Toast, type ToastMessage } from "../components/toast"
 import { Tips } from "../components/tips"
 import { Footer } from "../components/footer"
 import { StartupLoading } from "../components/startup-loading"
-import type { StreamSnapshot } from "../components/footer"
 import { deepseek } from "../logo-art"
 import type { PermissionMode } from "../permission"
 import { theme } from "../theme"
@@ -19,7 +18,6 @@ export function Home(props: {
   model?: () => string
   toast?: () => ToastMessage | null
   onSubmit?: (text: string) => void
-  stream?: () => StreamSnapshot | null
   visible?: boolean
   active?: () => boolean
 } = {}) {
@@ -85,7 +83,7 @@ export function Home(props: {
         <box flexGrow={1} minHeight={0} />
       </box>
 
-      <Footer stream={props.stream} />
+      <Footer />
       {showLoading ? <StartupLoading ready={ready} /> : null}
       <Toast toast={toast} />
     </box>
