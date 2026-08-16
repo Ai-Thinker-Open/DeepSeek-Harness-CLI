@@ -1,11 +1,5 @@
 node_modules/
 dist/
-.npm-cache/
-.dsh-cli-test/
-.dsh-test-home/
-.global/
 *.log
-*.tgz
-tui-*.txt
-.opentui-src/
-.pyfiglet/
+.DS_Store
+.env

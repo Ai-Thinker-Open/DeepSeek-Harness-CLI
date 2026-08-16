@@ -1,60 +1,27 @@
 {
   "name": "deepseek-harness-cli",
   "version": "0.1.0",
-  "description": "DeepSeek Harness CLI — an OpenCode-style terminal client for DeepSeek Harness.",
+  "description": "DeepSeek Harness - OpenTUI terminal interface",
   "type": "module",
   "license": "MIT",
   "private": true,
   "bin": {
-    "deepseek-harness-cli": "dist/cli.js",
-    "dsh-cli": "dist/cli.js",
-    "dsh-tui": "bin/dsh-tui",
-    "dsh-tui-opencode": "dist/bridge-tui.js"
-  },
-  "main": "dist/cordis.js",
-  "exports": {
-    ".": "./dist/cordis.js",
-    "./cordis": "./dist/cordis.js",
-    "./startup": "./dist/cordis.js",
-    "./client": "./dist/client.js",
-    "./package.json": "./package.json"
-  },
-  "dsh": {
-    "bundle": {
-      "patch": "./cordis.patch.yml"
-    }
-  },
-  "files": [
-    "dist",
-    "cordis.patch.yml"
-  ],
-  "engines": {
-    "node": ">=18.18"
+    "dsh-tui": "bin/dsh-tui"
   },
   "scripts": {
-    "build": "node scripts/build.mjs",
+    "dev": "bun run --preload @opentui/solid/preload src/cli.tsx",
+    "build": "bun run scripts/build.ts",
     "typecheck": "tsc --noEmit",
-    "start": "node dist/cli.js",
-    "dev": "node scripts/build.mjs --watch",
-    "mock": "node scripts/mock-server.mjs",
-    "headless": "node dist/cli.js",
-    "bridge": "pnpm --filter @dsh/bridge dev",
-    "bridge:build": "pnpm --filter @dsh/bridge build",
-    "bridge:test": "pnpm --filter @dsh/bridge test",
-    "tui": "pnpm --filter @dsh/bridge tui",
-    "dsh-tui": "./bin/dsh-tui",
-    "dsh-tui:opencode": "node dist/bridge-tui.js",
-    "dsh-tui:build": "pnpm --filter @dsh/tui build"
+    "test": "bun test --preload @opentui/solid/preload"
   },
   "dependencies": {
-    "ink": "^5.0.1",
-    "ink-text-input": "^6.0.0",
-    "react": "^18.3.1"
+    "@opentui/core": "0.1.101",
+    "@opentui/solid": "0.1.101",
+    "solid-js": "1.9.11"
   },
   "devDependencies": {
+    "@types/bun": "^1.3.14",
     "@types/node": "^22.0.0",
-    "@types/react": "^18.3.3",
-    "esbuild": "^0.23.0",
     "typescript": "^5.5.0"
   }
 }

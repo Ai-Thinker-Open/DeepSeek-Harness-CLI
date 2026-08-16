@@ -1,8 +1,0 @@
-# dsh-tui bundle patch: a terminal profile over dsh-base.
-
-- id: hmr
-  disabled: true
-
-- insert:
-    - id: dsh-tui-startup
-      name: 'dsh-tui/startup'

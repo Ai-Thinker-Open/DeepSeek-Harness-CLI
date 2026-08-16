@@ -1,5 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
+
 SCRIPT="$(readlink -f "${BASH_SOURCE[0]}")"
 ROOT="$(cd "$(dirname "$SCRIPT")/.." && pwd)"
-exec bun run --cwd "$ROOT/packages/dsh-tui" --preload @opentui/solid/preload src/cli.tsx "$@"
+
+if [ -f "$ROOT/dist/cli.js" ]; then
+  exec bun run "$ROOT/dist/cli.js" "$@"
+fi
+
+exec bun run --cwd "$ROOT" --preload @opentui/solid/preload src/cli.tsx "$@"
