@@ -1,4 +1,4 @@
-import { createEffect, createSignal, onCleanup } from "solid-js"
+import { Show, createEffect, createSignal, onCleanup } from "solid-js"
 import { useKeyboard, useRenderer, useSelectionHandler } from "@opentui/solid"
 import { copySelection } from "./clipboard"
 import { Toast, type ToastMessage } from "./components/toast"
@@ -62,23 +62,18 @@ export function App(props: { client?: HarnessClientLike } = {}) {
 
   return (
     <box position="relative" width="100%" height="100%">
-      <box
-        position="absolute"
-        left={0}
-        top={0}
-        width="100%"
-        height="100%"
-        visible={screen() === "home"}
-      >
-        <Home
-          mode={mode}
-          model={session.modelName}
-          toast={toast}
-          onSubmit={handleSubmit}
-          motion={screen() === "home"}
-          active={() => screen() === "home"}
-        />
-      </box>
+      <Show when={screen() === "home"}>
+        <box position="absolute" left={0} top={0} width="100%" height="100%">
+          <Home
+            mode={mode}
+            model={session.modelName}
+            toast={toast}
+            onSubmit={handleSubmit}
+            motion
+            active={() => true}
+          />
+        </box>
+      </Show>
       <box
         position="absolute"
         left={0}
