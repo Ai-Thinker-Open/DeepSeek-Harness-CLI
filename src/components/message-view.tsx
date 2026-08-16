@@ -1,4 +1,4 @@
-import { createMemo, For, Show } from "solid-js"
+import { createMemo, createSignal, For, Show } from "solid-js"
 import type { ChatMessage } from "../session"
 import type { ToolCallRecord, ToolResultRecord, ToolCallStatus } from "../session"
 import { theme } from "../theme"
@@ -120,19 +120,28 @@ function ThinkingBlock({ text, streaming }: { text: string; streaming?: boolean 
 function ContextInjectionBlock({ message }: { message: ChatMessage }) {
   const inject = message.inject
   if (!inject) return null
+  const [expanded, setExpanded] = createSignal(false)
   const lines = createMemo(() => message.content.split("\n"))
   const preview = () => {
     const all = lines()
-    if (inject.summary) return [`${inject.summary}`]
     return all.length > INJECT_PREVIEW_LINES
       ? [...all.slice(0, INJECT_PREVIEW_LINES), `… (${all.length - INJECT_PREVIEW_LINES} more lines)`]
       : all
   }
   const formLabel = inject.form ? CONTEXT_FORM_LABELS[inject.form] ?? inject.form : ""
+  const toggle = () => setExpanded((v) => !v)
   return (
     <box flexDirection="column" marginTop={1} marginBottom={1}>
-      <box flexDirection="row" border={["left"]} borderColor={theme.borderSubtle} paddingLeft={1}>
-        <text fg={theme.info}>▸</text>
+      <box
+        flexDirection="row"
+        border={["left"]}
+        borderColor={theme.borderSubtle}
+        paddingLeft={1}
+        onMouse={(evt) => {
+          if (evt.type === "down" && evt.button === 0) toggle()
+        }}
+      >
+        <text fg={theme.info}>{expanded() ? "▾" : "▸"}</text>
         <text fg={theme.text}>
           <b> {inject.source}</b>
         </text>
@@ -140,16 +149,22 @@ function ContextInjectionBlock({ message }: { message: ChatMessage }) {
         <Show when={formLabel}>
           <text fg={theme.textMuted}> · {formLabel}</text>
         </Show>
+        <Show when={inject.form === "notice" && inject.summary}>
+          <text fg={theme.textMuted}> · {inject.summary}</text>
+        </Show>
+        <text fg={theme.textMuted}> · {expanded() ? "点击收起" : "点击展开"}</text>
       </box>
-      <box paddingLeft={3} flexDirection="column" border={["left"]} borderColor={theme.borderSubtle}>
-        <For each={preview()}>
-          {(line) => (
-            <text fg={theme.textMuted} wrapMode="char">
-              {line}
-            </text>
-          )}
-        </For>
-      </box>
+      <Show when={expanded()}>
+        <box paddingLeft={3} flexDirection="column" border={["left"]} borderColor={theme.borderSubtle}>
+          <For each={preview()}>
+            {(line) => (
+              <text fg={theme.textMuted} wrapMode="char">
+                {line}
+              </text>
+            )}
+          </For>
+        </box>
+      </Show>
     </box>
   )
 }

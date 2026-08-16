@@ -162,7 +162,7 @@ test("assistant messages render thinking blocks and tool cards", async () => {
   expect(frame).toContain("test")
 })
 
-test("injected context renders as a folded context-injection block", async () => {
+test("injected context renders collapsed and expands on click", async () => {
   const messages: ChatMessage[] = [
     {
       id: "i1",
@@ -189,8 +189,18 @@ test("injected context renders as a folded context-injection block", async () =>
   expect(frame).toContain("skill-catalog")
   expect(frame).toContain("指令")
   expect(frame).toContain("目录")
-  expect(frame).toContain("你是 DeepSeek Harness CLI 的编码助手。")
   expect(frame).toContain("你好")
+  // Collapsed by default: the injected body is hidden until clicked.
+  expect(frame).not.toContain("你是 DeepSeek Harness CLI 的编码助手。")
+
+  const lines = frame.split("\n")
+  const y = lines.findIndex((line) => line.includes("@deepseek-ai/dsh-system-prompt"))
+  const x = lines[y]?.indexOf("@deepseek-ai/dsh-system-prompt") ?? 0
+  await app.mockMouse.click(x + 1, y)
+  await app.renderOnce()
+
+  expect(app.captureCharFrame()).toContain("你是 DeepSeek Harness CLI 的编码助手。")
+  expect(app.captureCharFrame()).toContain("点击收起")
 })
 
 test("question modal answers with the selected option", async () => {
