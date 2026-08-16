@@ -29,6 +29,8 @@ const TRACE = 0.033
 const TAIL = 1.8
 const TRACE_IN = 200
 const GLOW_OUT = 1600
+/** Smooth cadence while an interaction or the periodic sweep is in flight. */
+const ACTIVE_TICK_MS = 16
 const SWEEP_INTERVAL = 10000
 const SWEEP_DURATION = 1900
 const SWEEP_BAND = 4.5
@@ -568,14 +570,17 @@ export function Logo(
       setSweep(undefined)
     }
     if (!live) setRelease(undefined)
-    if (live || hold() || release() || glow() || sweep()) return
-    if (props.idle) return
+    if (live || hold() || release() || glow() || sweep()) {
+      // An interaction or sweep is in flight — keep it smooth.
+      return
+    }
+    // Idle between sweeps: go fully static so the landing screen stays cool.
     stop()
   }
 
   const start = () => {
     if (timer) return
-    timer = setInterval(tick, 16)
+    timer = setInterval(tick, ACTIVE_TICK_MS)
   }
 
   const stopSweep = () => {
@@ -608,7 +613,6 @@ export function Logo(
     if (props.animated !== false) {
       if (props.idle) {
         setNow(performance.now())
-        start()
       }
       return
     }
