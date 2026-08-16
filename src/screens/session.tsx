@@ -3,6 +3,7 @@ import { useKeyboard } from "@opentui/solid"
 import { Footer } from "../components/footer"
 import { MessageView } from "../components/message-view"
 import { Prompt } from "../components/prompt"
+import { StatsBar } from "../components/stats-bar"
 import { Thinking } from "../components/thinking"
 import { Toast, type ToastMessage } from "../components/toast"
 import type { PermissionMode } from "../permission"
@@ -76,23 +77,15 @@ export function SessionScreen(props: {
         </Show>
       </scrollbox>
 
-      <box
-        width="100%"
-        flexDirection="row"
-        justifyContent="center"
-        paddingTop={1}
-        paddingBottom={1}
-        flexShrink={0}
-      >
-        <box width="100%" maxWidth={75}>
-          <Prompt
-            mode={props.mode}
-            model={props.model}
-            onSubmit={(text) => props.onSend(text)}
-            active={props.active}
-            inputId="session-prompt-input"
-          />
-        </box>
+      <box width="100%" paddingLeft={2} paddingRight={2} paddingTop={1} flexShrink={0}>
+        <Prompt
+          mode={props.mode}
+          model={props.model}
+          onSubmit={(text) => props.onSend(text)}
+          active={props.active}
+          inputId="session-prompt-input"
+        />
+        <StatsBar />
       </box>
 
       <Footer />

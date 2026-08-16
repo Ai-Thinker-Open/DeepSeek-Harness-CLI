@@ -16,6 +16,7 @@ export function App() {
   const [toast, setToast] = createSignal<ToastMessage | null>(null)
   const [screen, setScreen] = createSignal<"home" | "session">("home")
   const [messages, setMessages] = createSignal<ChatMessage[]>([])
+  const [title, setTitle] = createSignal("新会话")
   const [busy, setBusy] = createSignal(false)
   let toastTimer: ReturnType<typeof setTimeout> | undefined
   let replyTimer: ReturnType<typeof setTimeout> | undefined
@@ -67,18 +68,13 @@ export function App() {
     if (screen() === "home") {
       if (replyTimer) clearTimeout(replyTimer)
       setBusy(false)
-      setMessages([{ id: nextId(), role: "user", content: trimmed }])
+      setTitle(trimmed.length > 16 ? `${trimmed.slice(0, 16)}…` : trimmed)
+      setMessages([])
       setScreen("session")
     } else {
       setMessages((list) => [...list, { id: nextId(), role: "user", content: trimmed }])
+      simulateReply(trimmed)
     }
-    simulateReply(trimmed)
-  }
-
-  const title = () => {
-    const first = messages().find((message) => message.role === "user")
-    if (!first) return "新会话"
-    return first.content.length > 16 ? `${first.content.slice(0, 16)}…` : first.content
   }
 
   return (
