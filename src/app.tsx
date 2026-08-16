@@ -8,7 +8,7 @@ import { Home } from "./screens/home"
 export function App() {
   const renderer = useRenderer()
   const [mode, setMode] = createSignal<PermissionMode>("workspace-write")
-  const [model, setModel] = createSignal("deepseek-v4-flash")
+  const [model, setModel] = createSignal("DeepSeek-V4-Flash")
   const [toast, setToast] = createSignal<ToastMessage | null>(null)
   let toastTimer: ReturnType<typeof setTimeout> | undefined
 

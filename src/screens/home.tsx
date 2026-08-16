@@ -21,7 +21,7 @@ export function Home(props: {
   const motion = props.motion ?? true
   const showLoading = props.loading ?? true
   const mode = props.mode ?? (() => "workspace-write" as PermissionMode)
-  const model = props.model ?? (() => "deepseek-v4-flash")
+  const model = props.model ?? (() => "DeepSeek-V4-Flash")
   const toast = props.toast ?? (() => null)
   const [ready, setReady] = createSignal(props.loading === false)
 

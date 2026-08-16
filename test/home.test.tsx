@@ -14,5 +14,5 @@ test("home screen renders brand and version", async () => {
   expect(frame).toContain("/status")
   expect(frame).toContain("MCP")
   expect(frame).toContain("● 提示")
-  expect(frame).toContain("deepseek-v4-flash")
+  expect(frame).toContain("DeepSeek-V4-Flash")
 })

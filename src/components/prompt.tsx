@@ -14,7 +14,7 @@ export function Prompt(props: {
   const [value, setValue] = createSignal("")
   const [idx, setIdx] = createSignal(0)
   const mode = props.mode ?? (() => "workspace-write" as PermissionMode)
-  const model = props.model ?? (() => "deepseek-v4-flash")
+  const model = props.model ?? (() => "DeepSeek-V4-Flash")
   let ref: TextareaRenderable | undefined
 
   onMount(() => {
