@@ -10,6 +10,7 @@
   },
   "scripts": {
     "dev": "bun run --preload @opentui/solid/preload src/cli.tsx",
+    "dev:debug": "DSH_DEBUG=1 bun run --preload @opentui/solid/preload src/cli.tsx",
     "build": "bun run scripts/build.ts",
     "typecheck": "tsc --noEmit",
     "test": "bun test --preload @opentui/solid/preload"
