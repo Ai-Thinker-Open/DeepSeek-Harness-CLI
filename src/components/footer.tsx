@@ -51,6 +51,7 @@ export interface StreamSnapshot {
   connected: boolean
   lastFrameAt: number
   eventCount: number
+  lastEventType: string
 }
 
 function StreamStatus(props: { stream: () => StreamSnapshot | null }) {
@@ -70,7 +71,8 @@ function StreamStatus(props: { stream: () => StreamSnapshot | null }) {
     if (!s.connected) return { color: theme.error, label: `事件流 断开` }
     if (age === null) return { color: theme.textMuted, label: "事件流 —" }
     const color = age < 8 ? theme.success : age < 20 ? theme.warning : theme.error
-    return { color, label: `事件流 ${s.eventCount} · ${age}s 前` }
+    const last = s.lastEventType ? ` · ${s.lastEventType}` : ""
+    return { color, label: `事件流 ${s.eventCount} · ${age}s 前${last}` }
   }
 
   return (

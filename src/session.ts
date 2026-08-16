@@ -40,6 +40,10 @@ export interface ToolCallRecord {
   status: ToolCallStatus
   startedAt?: number
   finishedAt?: number
+  /** Model step this call belongs to (tool-call-delta indices reset per step). */
+  step?: number | null
+  /** Stream index within its step, used to fold deltas without collisions. */
+  index?: number | null
 }
 
 export interface ToolResultRecord {

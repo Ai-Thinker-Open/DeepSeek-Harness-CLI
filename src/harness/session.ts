@@ -32,7 +32,7 @@ export interface HarnessSessionApi {
   busy: () => boolean
   statusText: () => string
   /** Live downlink health for the status bar (polled, not a signal). */
-  streamInfo: () => { connected: boolean; lastFrameAt: number; eventCount: number }
+  streamInfo: () => { connected: boolean; lastFrameAt: number; eventCount: number; lastEventType: string }
   question: () => HarnessQuestion | null
   error: () => string | null
   connected: () => boolean
@@ -87,6 +87,7 @@ export function createHarnessSession(
   let lastFrameAt = 0
   let lastResyncAt = 0
   let eventCount = 0
+  let lastEventType = ""
   let streamAbort: AbortController | null = null
   let stallTimer: ReturnType<typeof setInterval> | undefined
   const usageByStep = new Map<string, { in: number; out: number; cr: number; cw: number; re: number }>()
@@ -364,7 +365,7 @@ export function createHarnessSession(
         touch(last)
         break
       case "tool-call-delta":
-        appendStreamToolCallDelta(last, chunk)
+        appendStreamToolCallDelta(last, chunk, chunkStep ?? null)
         touch(last)
         break
       case "usage": {
@@ -381,15 +382,18 @@ export function createHarnessSession(
   function appendStreamToolCallDelta(
     m: ChatMessage,
     delta: { index?: number; id?: string; name?: string; argumentsDelta?: string },
+    step: number | null,
   ): void {
     m.toolCalls = m.toolCalls ?? []
     const index = delta.index ?? 0
-    let call = m.toolCalls[index]
+    // Stream indices reset at every model step, so a slot is only reusable
+    // within the same step; a later step reusing index 0 gets its own call.
+    let call = m.toolCalls.find((c) => c.index === index && c.step === step)
     if (!call) {
-      call = { id: delta.id ?? `stream-tc-${index}`, name: "", args: {}, status: "running" }
-      m.toolCalls[index] = call
+      call = { id: delta.id ?? `stream-tc-${index}`, name: "", args: {}, status: "running", step, index }
+      m.toolCalls.push(call)
     }
-    if (delta.name) call.name += delta.name
+    if (delta.name) call.name = delta.name
     if (delta.id) call.id = delta.id
     if (delta.argumentsDelta) {
       call.args = mergeArgs(call.args as Record<string, unknown>, delta.argumentsDelta)
@@ -456,7 +460,7 @@ export function createHarnessSession(
   }
 
   function onToolCall(ev: SessionEvent): void {
-    const data = ev.data as { callId?: string; name?: string; arguments?: string }
+    const data = ev.data as { callId?: string; name?: string; arguments?: string; step?: number }
     if (process.env.DSH_DEBUG) console.error("[dsh] tool/call", JSON.stringify(data))
     if (!data.callId || !data.name) return
     const args = tryParseArgs(data.arguments ?? "")
@@ -472,8 +476,17 @@ export function createHarnessSession(
       startedAt: ev.time,
     }
     const existing = target.toolCalls.find((c) => c.id === call.id)
-    if (existing) Object.assign(existing, call)
-    else target.toolCalls.push(call)
+    if (existing) {
+      Object.assign(existing, call)
+    } else {
+      // The stream may have created a placeholder with a synthetic id; adopt
+      // it so we don't end up with two cards for one call.
+      const placeholder = target.toolCalls.find(
+        (c) => c.id.startsWith("stream-tc-") && c.name === call.name && c.step === (data.step ?? null),
+      )
+      if (placeholder) Object.assign(placeholder, call)
+      else target.toolCalls.push(call)
+    }
     setStatusText(`执行 ${data.name}…`)
     touch(target)
     syncStats()
@@ -620,6 +633,8 @@ export function createHarnessSession(
         for await (const frame of client.eventStream(streamAbortController.signal)) {
           lastFrameAt = Date.now()
           eventCount += 1
+          const frameEvent = (frame.payload as { event?: SessionEvent })?.event
+          if (frameEvent?.type) lastEventType = frameEvent.type
           // First frame after a drop: the link is alive again — clear the
           // "连接中断，重连中…" status that would otherwise linger forever.
           if (!connected()) {
@@ -746,7 +761,7 @@ export function createHarnessSession(
     stats,
     busy,
     statusText,
-    streamInfo: () => ({ connected: connected(), lastFrameAt, eventCount }),
+    streamInfo: () => ({ connected: connected(), lastFrameAt, eventCount, lastEventType }),
     question,
     error,
     connected,

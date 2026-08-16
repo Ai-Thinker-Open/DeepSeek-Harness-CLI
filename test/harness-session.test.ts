@@ -162,6 +162,44 @@ test("a wedged stream recovers: the watchdog re-syncs from durable history", asy
   session.dispose()
 })
 
+test("tool-call-delta indices that reset per step fold into distinct cards", async () => {
+  const client = new FakeClient()
+  const session = createHarnessSession(client, "/tmp")
+  await session.start("hello")
+  client.push(frame("session/event", { sessionId: "s-1", event: ev("turn/start", { turn: 1 }, 5) }))
+  await tick()
+
+  for (let step = 1; step <= 3; step++) {
+    client.push(
+      frame("session/event", {
+        sessionId: "s-1",
+        event: ev("assistant/chunk", { turn: 1, step, chunk: { type: "tool-call-delta", index: 0, id: `c${step}`, name: "read" } }, 5 + step),
+      }),
+    )
+    await tick()
+    client.push(
+      frame("session/event", {
+        sessionId: "s-1",
+        event: ev(
+          "assistant/chunk",
+          { turn: 1, step, chunk: { type: "tool-call-delta", index: 0, argumentsDelta: JSON.stringify({ file_path: `f${step}.ts` }) } },
+          10 + step,
+        ),
+      }),
+    )
+    await tick()
+  }
+
+  const last = session.messages()[session.messages().length - 1]
+  expect(last?.toolCalls?.length).toBe(3)
+  expect(last?.toolCalls?.map((c) => c.name)).toEqual(["read", "read", "read"])
+  expect(last?.toolCalls?.map((c) => c.args)).toEqual([
+    { file_path: "f1.ts" },
+    { file_path: "f2.ts" },
+    { file_path: "f3.ts" },
+  ])
+})
+
 test("session streams assistant text, reasoning and tool call results", async () => {
   const client = new FakeClient()
   const session = createHarnessSession(client, "/tmp")
