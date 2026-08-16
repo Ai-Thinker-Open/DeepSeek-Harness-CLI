@@ -98,7 +98,7 @@ function ThinkingBlock({ text, streaming }: { text: string; streaming?: boolean 
     return all.length > 12 ? [...all.slice(0, 12), `… (${all.length - 12} more lines)`] : all
   }
   return (
-    <box flexDirection="column" paddingLeft={2} marginTop={1}>
+    <box flexDirection="column" paddingLeft={2}>
       <box
         flexDirection="row"
         onMouse={(evt) => {
