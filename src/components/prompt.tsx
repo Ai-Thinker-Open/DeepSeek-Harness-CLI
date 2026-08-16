@@ -59,10 +59,7 @@ export function Prompt(props: {
         <text>
           <span style={{ fg: theme.primary }}>{modeLabel(mode())}</span>
         </text>
-        <text>
-          <span style={{ fg: theme.textMuted }}>$ </span>
-          <span style={{ fg: theme.text }}>{model()}</span>
-        </text>
+        <text fg={theme.text}>{model()}</text>
       </box>
     </box>
   )
