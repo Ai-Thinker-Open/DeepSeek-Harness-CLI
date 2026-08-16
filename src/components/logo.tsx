@@ -704,7 +704,9 @@ export function Logo(
     }
   })
 
-  const idleState = createMemo(() => (props.idle ? buildIdleState(frame().t, ctx) : undefined))
+  // Fully static logo: no per-character shimmer pulse either, so nothing on
+  // the landing screen moves except user interactions that may be added later.
+  const idleState = createMemo<IdleState | undefined>(() => undefined)
 
   const renderLine = (
     line: string,
