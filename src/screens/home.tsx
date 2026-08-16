@@ -7,7 +7,7 @@ import { Toast, type ToastMessage } from "../components/toast"
 import { Tips } from "../components/tips"
 import { Footer } from "../components/footer"
 import { StartupLoading } from "../components/startup-loading"
-import { explore } from "../logo-art"
+import { deepseek } from "../logo-art"
 import type { PermissionMode } from "../permission"
 import { theme } from "../theme"
 
@@ -54,7 +54,7 @@ export function Home(props: {
         <box flexGrow={1} minHeight={0} />
 
         <box flexShrink={0} alignItems="center" gap={1}>
-          <Logo art={explore} ink={theme.primary} animated={motion} idle sweep />
+          <Logo art={deepseek} ink={theme.primary} animated={motion} idle sweep />
           <text fg={theme.textMuted} marginTop={1}>
             DeepSeek Harness CLI
           </text>
