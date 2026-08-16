@@ -5,6 +5,7 @@ import { Home } from "./screens/home"
 
 export function App() {
   const [mode, setMode] = createSignal<PermissionMode>("workspace-write")
+  const [model, setModel] = createSignal("deepseek-v4-flash")
 
   useKeyboard((key) => {
     if (key.name === "tab") {
@@ -12,5 +13,5 @@ export function App() {
     }
   })
 
-  return <Home mode={mode} />
+  return <Home mode={mode} model={model} />
 }

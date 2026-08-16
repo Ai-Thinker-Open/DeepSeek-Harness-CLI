@@ -1,13 +1,20 @@
 import { createSignal, onCleanup, onMount } from "solid-js"
 import type { TextareaRenderable } from "@opentui/core"
+import { modeLabel, type PermissionMode } from "../permission"
 import { theme } from "../theme"
 
 const NORMAL = ["帮我实现一个 TODO 应用", "排查这个报错的原因", "为这个模块写一组测试"]
 const SHELL = ["ls -la", "git status --short", "pwd"]
 
-export function Prompt(props: { onSubmit?: (text: string) => void } = {}) {
+export function Prompt(props: {
+  onSubmit?: (text: string) => void
+  mode?: () => PermissionMode
+  model?: () => string
+} = {}) {
   const [value, setValue] = createSignal("")
   const [idx, setIdx] = createSignal(0)
+  const mode = props.mode ?? (() => "workspace-write" as PermissionMode)
+  const model = props.model ?? (() => "deepseek-v4-flash")
   let ref: TextareaRenderable | undefined
 
   onMount(() => {
@@ -49,8 +56,14 @@ export function Prompt(props: { onSubmit?: (text: string) => void } = {}) {
         onSubmit={submit}
       />
       <box flexDirection="row" justifyContent="space-between" marginTop={1}>
-        <text fg={theme.textMuted}>Enter 发送 · Ctrl+C 退出</text>
-        <text fg={theme.textMuted}>$ DeepSeek Harness</text>
+        <text>
+          <span style={{ fg: theme.textMuted }}>模式: </span>
+          <span style={{ fg: theme.primary }}>{modeLabel(mode())}</span>
+        </text>
+        <text>
+          <span style={{ fg: theme.textMuted }}>$ </span>
+          <span style={{ fg: theme.text }}>{model()}</span>
+        </text>
       </box>
     </box>
   )

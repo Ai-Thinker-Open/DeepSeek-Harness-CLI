@@ -12,3 +12,7 @@ export function nextMode(mode: PermissionMode, reverse = false): PermissionMode 
   const offset = reverse ? count - 1 : 1
   return PERMISSION_MODES[(index + offset) % count]!.id
 }
+
+export function modeLabel(mode: PermissionMode): string {
+  return PERMISSION_MODES.find((item) => item.id === mode)?.label ?? mode
+}

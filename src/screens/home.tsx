@@ -10,10 +10,16 @@ import { deepseek, harness } from "../logo-art"
 import type { PermissionMode } from "../permission"
 import { theme } from "../theme"
 
-export function Home(props: { motion?: boolean; loading?: boolean; mode?: () => PermissionMode } = {}) {
+export function Home(props: {
+  motion?: boolean
+  loading?: boolean
+  mode?: () => PermissionMode
+  model?: () => string
+} = {}) {
   const motion = props.motion ?? true
   const showLoading = props.loading ?? true
   const mode = props.mode ?? (() => "workspace-write" as PermissionMode)
+  const model = props.model ?? (() => "deepseek-v4-flash")
   const [ready, setReady] = createSignal(props.loading === false)
 
   onMount(() => {
@@ -51,7 +57,7 @@ export function Home(props: { motion?: boolean; loading?: boolean; mode?: () => 
         <box height={1} minHeight={0} flexShrink={1} />
 
         <box width="100%" maxWidth={75} flexShrink={0}>
-          <Prompt />
+          <Prompt mode={mode} model={model} />
         </box>
 
         <box width="100%" maxWidth={75} paddingTop={1} flexShrink={0}>
