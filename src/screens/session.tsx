@@ -4,10 +4,11 @@ import { Footer } from "../components/footer"
 import { MessageView } from "../components/message-view"
 import { Prompt } from "../components/prompt"
 import { QuestionModal } from "../components/question-modal"
+import { StatusMarquee } from "../components/status-marquee"
 import { StatsBar } from "../components/stats-bar"
 import { Toast, type ToastMessage } from "../components/toast"
 import type { PermissionMode } from "../permission"
-import type { ChatMessage, HarnessQuestion, SessionStats } from "../session"
+import { DEEP_DIVING_STATUS, type ChatMessage, type HarnessQuestion, type SessionStats } from "../session"
 import { theme } from "../theme"
 
 export function SessionScreen(props: {
@@ -64,7 +65,10 @@ export function SessionScreen(props: {
         <box width="100%" paddingLeft={2} paddingRight={2} paddingTop={1} flexShrink={0}>
           <Show when={props.statusText()}>
             <box paddingBottom={1}>
-              <text fg={theme.textMuted}>{props.statusText()}</text>
+              <StatusMarquee
+                text={props.statusText()}
+                animated={props.statusText() === DEEP_DIVING_STATUS}
+              />
             </box>
           </Show>
           <Prompt

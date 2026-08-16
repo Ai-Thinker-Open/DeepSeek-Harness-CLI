@@ -137,15 +137,19 @@ test("status text sits above the prompt and never hides the stats row", async ()
   const app = await renderSession({
     messages: [userMsg("你好")],
     stats,
-    statusText: "思考中…",
+    statusText: "Deep diving",
   })
   await app.renderOnce()
 
   const lines = app.captureCharFrame().split("\n")
-  const statusY = lines.findIndex((line) => line.includes("思考中"))
+  const statusY = lines.findIndex((line) => line.includes("Deep diving"))
   const statsY = lines.findIndex((line) => line.includes("3 轮 · 3 步"))
   const promptY = lines.findIndex((line) => line.includes("Workspace write"))
 
+  expect(app.captureCharFrame()).toContain("Deep diving")
+  // Deep-diving status is followed by the chasing-lights animation.
+  expect(app.captureCharFrame()).toContain("●")
+  expect(app.captureCharFrame()).toContain("○")
   expect(statusY).toBeGreaterThanOrEqual(0)
   expect(statsY).toBeGreaterThan(statusY)
   expect(promptY).toBeGreaterThan(statusY)
@@ -192,7 +196,7 @@ test("assistant messages collapse thinking and render tool cards", async () => {
   await app.renderOnce()
 
   const frame = app.captureCharFrame()
-  expect(frame).toContain("🧠")
+  expect(frame).toContain("✦")
   expect(frame).toContain("Think")
   expect(frame).not.toContain("点击展开")
   expect(frame).not.toContain("行 ·")
@@ -277,7 +281,7 @@ test("injected context renders collapsed and expands on click", async () => {
   await app.renderOnce()
 
   const frame = app.captureCharFrame()
-  expect(frame).toContain("🧭")
+  expect(frame).toContain("❐")
   expect(frame).toContain("上下文注入")
   expect(frame).toContain("@deepseek-ai/dsh-system-prompt")
   expect(frame).toContain("skill-catalog")

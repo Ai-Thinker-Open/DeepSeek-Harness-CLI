@@ -106,7 +106,7 @@ function ThinkingBlock({ text, streaming }: { text: string; streaming?: boolean 
         }}
       >
         <text fg={theme.textMuted}>
-          {expanded() ? "▾" : "▸"} 🧠
+          {expanded() ? "▾" : "▸"} ✦
         </text>
         <text fg={theme.textMuted}>
           <b> Think</b>
@@ -142,7 +142,7 @@ function ContextInjectionBlock({ message }: { message: ChatMessage }) {
   const formLabel = inject.form ? CONTEXT_FORM_LABELS[inject.form] ?? inject.form : ""
   const toggle = () => setExpanded((v) => !v)
   return (
-    <box flexDirection="column" marginTop={1} marginBottom={1}>
+    <box flexDirection="column" marginBottom={1}>
       <box
         flexDirection="row"
         border={["left"]}
@@ -152,7 +152,7 @@ function ContextInjectionBlock({ message }: { message: ChatMessage }) {
           if (evt.type === "down" && evt.button === 0) toggle()
         }}
       >
-        <text fg={theme.textMuted}>{expanded() ? "▾" : "▸"} 🧭</text>
+        <text fg={theme.textMuted}>{expanded() ? "▾" : "▸"} ❐</text>
         <text fg={theme.textMuted}>
           <b> 上下文注入</b>
         </text>

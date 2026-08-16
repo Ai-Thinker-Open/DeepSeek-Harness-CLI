@@ -26,6 +26,9 @@ export type ChatMessage = {
   createdAt: number
 }
 
+/** Status shown while the harness is deep-diving (reasoning) over a turn. */
+export const DEEP_DIVING_STATUS = "Deep diving"
+
 export type ToolCallStatus = "running" | "ok" | "error" | "denied"
 
 export interface ToolCallRecord {

@@ -1,5 +1,6 @@
 import { createSignal } from "solid-js"
 import {
+  DEEP_DIVING_STATUS,
   EMPTY_STATS,
   type ChatMessage,
   type HarnessQuestion,
@@ -240,7 +241,7 @@ export function createHarnessSession(
         streamTurn = ev.data.turn != null ? String(ev.data.turn) : null
         firstTokenDone = false
         setBusy(true)
-        setStatusText("思考中…")
+        setStatusText(DEEP_DIVING_STATUS)
         model.push({
           id: `stream-${ev.seq}`,
           role: "assistant",
