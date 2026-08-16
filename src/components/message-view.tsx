@@ -105,11 +105,11 @@ function ThinkingBlock({ text, streaming }: { text: string; streaming?: boolean 
           if (evt.type === "down" && evt.button === 0) setExpanded((v) => !v)
         }}
       >
-        <text fg={theme.info}>
-          {expanded() ? "▾" : "▸"} 💭
+        <text fg={theme.textMuted}>
+          {expanded() ? "▾" : "▸"} 🧠
         </text>
-        <text fg={theme.text}>
-          <b> 思考</b>
+        <text fg={theme.textMuted}>
+          <b> Think</b>
         </text>
         <Show when={streaming}>
           <text fg={theme.textMuted}> …</text>
@@ -152,18 +152,17 @@ function ContextInjectionBlock({ message }: { message: ChatMessage }) {
           if (evt.type === "down" && evt.button === 0) toggle()
         }}
       >
-        <text fg={theme.info}>{expanded() ? "▾" : "▸"}</text>
-        <text fg={theme.text}>
-          <b> {inject.source}</b>
+        <text fg={theme.textMuted}>{expanded() ? "▾" : "▸"} 🧭</text>
+        <text fg={theme.textMuted}>
+          <b> 上下文注入</b>
         </text>
-        <text fg={theme.textMuted}> · 上下文注入</text>
+        <text fg={theme.textMuted}> · {inject.source}</text>
         <Show when={formLabel}>
           <text fg={theme.textMuted}> · {formLabel}</text>
         </Show>
         <Show when={inject.form === "notice" && inject.summary}>
           <text fg={theme.textMuted}> · {inject.summary}</text>
         </Show>
-        <text fg={theme.textMuted}> · {expanded() ? "点击收起" : "点击展开"}</text>
       </box>
       <Show when={expanded()}>
         <box paddingLeft={3} flexDirection="column" border={["left"]} borderColor={theme.borderSubtle}>

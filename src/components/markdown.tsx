@@ -25,7 +25,7 @@ type MdBlock =
   | { kind: "heading"; level: number; segs: InlineSeg[] }
   | { kind: "code"; text: string }
   | { kind: "quote"; segs: InlineSeg[] }
-  | { kind: "list"; marker: string; segs: InlineSeg[] }
+  | { kind: "list"; marker: string; indent: number; segs: InlineSeg[] }
   | { kind: "hr" }
   | { kind: "table"; rows: InlineSeg[][][] }
 
@@ -117,7 +117,14 @@ export function parseBlocks(text: string): MdBlock[] {
     }
     const list = /^(\s*)([-*+]|\d+[.)])\s+(.*)$/.exec(line)
     if (list) {
-      blocks.push({ kind: "list", marker: list[2] as string, segs: parseInline(list[3] as string) })
+      const rawMarker = list[2] as string
+      const ordered = /^\d/.test(rawMarker)
+      blocks.push({
+        kind: "list",
+        marker: ordered ? rawMarker : "•",
+        indent: Math.floor((list[1] as string).length / 2),
+        segs: parseInline(list[3] as string),
+      })
       i++
       continue
     }
@@ -239,9 +246,11 @@ function BlockView({ block }: { block: MdBlock }) {
       )
     case "list":
       return (
-        <text wrapMode="char">
-          <span style={{ fg: theme.primary, bold: true }}>{block.marker}</span> <Segs segs={block.segs} />
-        </text>
+        <box paddingLeft={block.indent * 2} flexDirection="row">
+          <text wrapMode="char">
+            <span style={{ fg: theme.primary, bold: true }}>{block.marker}</span> <Segs segs={block.segs} />
+          </text>
+        </box>
       )
     case "hr":
       return <text fg={theme.borderSubtle}>{"─".repeat(40)}</text>

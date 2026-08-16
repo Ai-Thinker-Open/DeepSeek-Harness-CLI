@@ -18,6 +18,7 @@ async function renderSession(opts: {
   messages?: ChatMessage[]
   stats?: SessionStats
   statusText?: string
+  height?: number
   question?: () => HarnessQuestion | null
   onQuestion?: (choice: string) => void
   onBack?: () => void
@@ -38,7 +39,7 @@ async function renderSession(opts: {
         onQuestion={opts.onQuestion ?? (() => {})}
       />
     ),
-    { width: 80, height: 32 },
+    { width: 80, height: opts.height ?? 32 },
   )
   return app
 }
@@ -191,7 +192,8 @@ test("assistant messages collapse thinking and render tool cards", async () => {
   await app.renderOnce()
 
   const frame = app.captureCharFrame()
-  expect(frame).toContain("思考")
+  expect(frame).toContain("🧠")
+  expect(frame).toContain("Think")
   expect(frame).not.toContain("点击展开")
   expect(frame).not.toContain("行 ·")
   expect(frame).toContain("运行中…")
@@ -204,8 +206,8 @@ test("assistant messages collapse thinking and render tool cards", async () => {
   // Thinking body stays collapsed until clicked.
   expect(frame).not.toContain("让我想想")
   const lines = frame.split("\n")
-  const y = lines.findIndex((line) => line.includes("思考"))
-  const x = lines[y]?.indexOf("思考") ?? 0
+  const y = lines.findIndex((line) => line.includes("Think"))
+  const x = lines[y]?.indexOf("Think") ?? 0
   await app.mockMouse.click(x + 1, y)
   await app.renderOnce()
   expect(app.captureCharFrame()).toContain("让我想想")
@@ -227,8 +229,12 @@ echo "hello-from-md"
 | 名称 | 说明 |
 | --- | --- |
 | bash | 执行命令 |
-| fs | 读写文件 |`
-  const app = await renderSession({ messages: [assistantMsg(content)] })
+| fs | 读写文件 |
+
+- 写代码 / 改代码：在这个工作区里创建、修改、调试项目
+- 查资料：搜索最新的技术信息、文档
+- 分析问题：排查 bug、审查代码`
+  const app = await renderSession({ messages: [assistantMsg(content)], height: 48 })
   await app.renderOnce()
 
   const frame = app.captureCharFrame()
@@ -239,6 +245,9 @@ echo "hello-from-md"
   expect(frame).toContain("引用：bun run dev 启动")
   expect(frame).toContain("bash")
   expect(frame).toContain("执行命令")
+  // Unordered list items render as bullet dots, not raw dash markers.
+  expect(frame).toContain("• 写代码 / 改代码：在这个工作区里创建、修改、调试项目")
+  expect(frame).not.toContain("- 写代码 / 改代码")
   // Markdown syntax markers must not leak into the frame.
   expect(frame).not.toContain("## 🖥️")
   expect(frame).not.toContain("**终端小游戏**")
@@ -268,6 +277,7 @@ test("injected context renders collapsed and expands on click", async () => {
   await app.renderOnce()
 
   const frame = app.captureCharFrame()
+  expect(frame).toContain("🧭")
   expect(frame).toContain("上下文注入")
   expect(frame).toContain("@deepseek-ai/dsh-system-prompt")
   expect(frame).toContain("skill-catalog")
@@ -284,7 +294,6 @@ test("injected context renders collapsed and expands on click", async () => {
   await app.renderOnce()
 
   expect(app.captureCharFrame()).toContain("你是 DeepSeek Harness CLI 的编码助手。")
-  expect(app.captureCharFrame()).toContain("点击收起")
 })
 
 test("question modal answers with the selected option", async () => {

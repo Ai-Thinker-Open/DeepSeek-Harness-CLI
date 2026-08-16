@@ -22,6 +22,12 @@ export const MAX_TOOL_OUTPUT_CHARS = 4000
 /** Bound applied to injected-context text previews kept in the UI model. */
 export const MAX_INJECT_CHARS = 2000
 
+/** Cap on a single assistant message's retained text (chars). */
+export const MAX_CONTENT_CHARS = 400_000
+
+/** Cap on retained reasoning text per assistant message (chars). */
+export const MAX_THINKING_CHARS = 120_000
+
 /** Human labels for the harness's `ContextForm` vocabulary. */
 export const CONTEXT_FORM_LABELS: Record<string, string> = {
   instructions: "指令",
@@ -160,11 +166,15 @@ export function eventToMessage(ev: SessionEvent): ChatMessage | null {
       if (!m?.content) return null
       const { content, thinking, toolCalls } = assistantBlocksToMessage(m.content, seqId)
       if (!content && !thinking && toolCalls.length === 0) return null
+      const boundedContent = truncateText(content, MAX_CONTENT_CHARS)
+      const boundedThinking = truncateText(thinking, MAX_THINKING_CHARS)
       return {
         id: `msg-${m.id ?? seqId}`,
         role: "assistant",
-        content,
-        thinking: thinking || undefined,
+        content: boundedContent.truncated ? `${boundedContent.text}\n… (内容过长，已截断)` : boundedContent.text,
+        thinking: boundedThinking.truncated
+          ? `${boundedThinking.text}\n… (推理过长，已截断)`
+          : boundedThinking.text || undefined,
         toolCalls,
         createdAt: ev.time,
       }

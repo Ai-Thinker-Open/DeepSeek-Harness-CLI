@@ -57,7 +57,9 @@ class FakeClient implements HarnessClientLike {
   }
 }
 
-const tick = () => new Promise((resolve) => setTimeout(resolve, 10))
+// Chunk-driven message updates are coalesced into a per-frame flush (~32ms),
+// so tests wait a full frame before reading the folded messages.
+const tick = () => new Promise((resolve) => setTimeout(resolve, 40))
 
 const ev = (type: string, data: Record<string, unknown>, seq: number, time = seq * 1000): SessionEvent => ({
   type,

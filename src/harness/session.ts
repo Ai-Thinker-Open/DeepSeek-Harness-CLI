@@ -14,6 +14,8 @@ import {
   injectSourceTitle,
   isInjectedSource,
   MAX_INJECT_CHARS,
+  MAX_CONTENT_CHARS,
+  MAX_THINKING_CHARS,
   MAX_TOOL_OUTPUT_CHARS,
   summaryFor,
   truncateText,
@@ -84,8 +86,30 @@ export function createHarnessSession(
     toolCalls: m.toolCalls ? m.toolCalls.map((c) => ({ ...c })) : undefined,
     toolResults: m.toolResults ? m.toolResults.map((r) => ({ ...r })) : undefined,
   })
-  const syncAll = () => setMessages([...model])
-  const touch = (target: ChatMessage) => setMessages(model.map((m) => (m === target ? cloneMessage(m) : m)))
+  // Chunk streams can arrive far faster than the 30fps renderer. Instead of
+  // pushing a fresh array (and re-rendering the touched message) for every
+  // chunk, in-place mutations are collected and flushed once per frame so the
+  // event loop is not saturated during heavy reasoning bursts.
+  let dirty = new Set<ChatMessage>()
+  let flushTimer: ReturnType<typeof setTimeout> | undefined
+  const flushTouchedNow = () => {
+    if (flushTimer != null) {
+      clearTimeout(flushTimer)
+      flushTimer = undefined
+    }
+    if (dirty.size === 0) return
+    const targets = dirty
+    dirty = new Set()
+    setMessages(model.map((m) => (targets.has(m) ? cloneMessage(m) : m)))
+  }
+  const touch = (target: ChatMessage) => {
+    dirty.add(target)
+    if (flushTimer == null) flushTimer = setTimeout(flushTouchedNow, 32)
+  }
+  const syncAll = () => {
+    flushTouchedNow()
+    setMessages([...model])
+  }
   const syncStats = () => setStats({ ...statsModel })
 
   function appendUserMessage(text: string): void {
@@ -313,12 +337,15 @@ export function createHarnessSession(
           firstTokenDone = true
           syncStats()
         }
-        last.content += chunk.text ?? ""
+        const delta = chunk.text ?? ""
+        if (last.content.length < MAX_CONTENT_CHARS) last.content += delta
         touch(last)
         break
       }
       case "reasoning-delta":
-        last.thinking = (last.thinking ?? "") + (chunk.text ?? "")
+        if ((last.thinking?.length ?? 0) < MAX_THINKING_CHARS) {
+          last.thinking = (last.thinking ?? "") + (chunk.text ?? "")
+        }
         touch(last)
         break
       case "tool-call-delta":
@@ -365,6 +392,12 @@ export function createHarnessSession(
     }
     const blocks = data.message?.content
     const { content, thinking, toolCalls } = assistantBlocksToMessage(blocks ?? [], `ev-${ev.seq}`)
+    const boundedContent = truncateText(content, MAX_CONTENT_CHARS)
+    const boundedThinking = truncateText(thinking, MAX_THINKING_CHARS)
+    const finalContent = boundedContent.truncated ? `${boundedContent.text}\n… (内容过长，已截断)` : boundedContent.text
+    const finalThinking = boundedThinking.truncated
+      ? `${boundedThinking.text}\n… (推理过长，已截断)`
+      : boundedThinking.text
     if (data.usage) {
       addUsage(normalizeUsage(data.usage), data.turn, data.step)
       syncStats()
@@ -372,8 +405,8 @@ export function createHarnessSession(
     const last = model[model.length - 1]
     if (last?.streaming) {
       last.streaming = false
-      if (content) last.content = content
-      if (thinking) last.thinking = thinking
+      if (content) last.content = finalContent
+      if (thinking) last.thinking = finalThinking
       for (const tc of toolCalls) {
         const live = last.toolCalls?.find((c) => c.id === tc.id)
         if (!live) {
@@ -386,8 +419,8 @@ export function createHarnessSession(
       model.push({
         id: `msg-${data.message?.id ?? ev.seq}`,
         role: "assistant",
-        content,
-        thinking: thinking || undefined,
+        content: finalContent,
+        thinking: finalThinking || undefined,
         toolCalls: toolCalls.length ? toolCalls : undefined,
         createdAt: ev.time,
       })

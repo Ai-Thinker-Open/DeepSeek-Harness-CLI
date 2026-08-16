@@ -71,7 +71,7 @@ class FakeClient implements HarnessClientLike {
   }
 }
 
-const tick = (ms = 20) => new Promise((resolve) => setTimeout(resolve, ms))
+const tick = (ms = 40) => new Promise((resolve) => setTimeout(resolve, ms))
 
 const ev = (type: string, data: Record<string, unknown>, seq: number, time = seq * 1000): SessionEvent => ({
   type,
