@@ -39,40 +39,35 @@ export function Prompt(props: {
   }
 
   return (
-    <box
-      border={["left"]}
-      borderColor={theme.primary}
-      backgroundColor={theme.backgroundPanel}
-      paddingLeft={2}
-      paddingRight={2}
-      paddingTop={1}
-      paddingBottom={1}
-    >
-      <textarea
-        id={props.inputId ?? "prompt-input"}
-        ref={(el) => (ref = el)}
-        initialValue=""
-        placeholder={placeholder()}
-        minHeight={1}
-        maxHeight={5}
-        keyBindings={[
-          { name: "return", action: "submit" },
-          { name: "linefeed", action: "submit" },
-          { name: "return", meta: true, action: "newline" },
-        ]}
-        textColor={theme.text}
-        placeholderColor={theme.textMuted}
-        cursorColor={theme.primary}
-        onContentChange={(next) => {
-          setValue(next as string)
-        }}
-        onSubmit={submit}
-      />
-      <box flexDirection="row" justifyContent="space-between" marginTop={1}>
-        <text>
-          <span style={{ fg: theme.primary }}>{modeLabel(mode())}</span>
-        </text>
-        <text fg={theme.text}>{model()}</text>
+    <box backgroundColor={theme.backgroundPanel} flexDirection="row">
+      <box width={2} backgroundColor={theme.primary} flexShrink={0} />
+      <box paddingLeft={2} paddingRight={2} paddingTop={1} paddingBottom={1} flexGrow={1} minWidth={0}>
+        <textarea
+          id={props.inputId ?? "prompt-input"}
+          ref={(el) => (ref = el)}
+          initialValue=""
+          placeholder={placeholder()}
+          minHeight={1}
+          maxHeight={5}
+          keyBindings={[
+            { name: "return", action: "submit" },
+            { name: "linefeed", action: "submit" },
+            { name: "return", meta: true, action: "newline" },
+          ]}
+          textColor={theme.text}
+          placeholderColor={theme.textMuted}
+          cursorColor={theme.primary}
+          onContentChange={(next) => {
+            setValue(next as string)
+          }}
+          onSubmit={submit}
+        />
+        <box flexDirection="row" justifyContent="space-between" marginTop={1}>
+          <text>
+            <span style={{ fg: theme.primary }}>{modeLabel(mode())}</span>
+          </text>
+          <text fg={theme.text}>{model()}</text>
+        </box>
       </box>
     </box>
   )
