@@ -200,6 +200,65 @@ test("tool-call-delta indices that reset per step fold into distinct cards", asy
   ])
 })
 
+test("Deep diving status survives tool execution without being overwritten", async () => {
+  const client = new FakeClient()
+  const session = createHarnessSession(client, "/tmp")
+  await session.start("hello")
+  expect(session.statusText()).toBe("Deep diving")
+
+  client.push(frame("session/event", { sessionId: "s-1", event: ev("turn/start", { turn: 1 }, 5) }))
+  await tick()
+  expect(session.statusText()).toBe("Deep diving")
+
+  client.push(
+    frame("session/event", { sessionId: "s-1", event: ev("tool/call", { turn: 1, step: 1, callId: "c1", name: "read", arguments: "{}" }, 6) }),
+  )
+  await tick()
+  expect(session.statusText()).toBe("Deep diving")
+
+  client.push(
+    frame("session/event", {
+      sessionId: "s-1",
+      event: ev(
+        "tool/result",
+        { turn: 1, step: 1, message: { content: [{ type: "tool-result", toolCallId: "c1", isError: false, content: [{ type: "text", text: "ok" }] }] } },
+        7,
+      ),
+    }),
+  )
+  await tick()
+  expect(session.statusText()).toBe("Deep diving")
+})
+
+test("late tool events attach to their turn's message instead of spawning a stray bottom card", async () => {
+  const client = new FakeClient()
+  const session = createHarnessSession(client, "/tmp")
+  await session.start("hello")
+  client.push(frame("session/event", { sessionId: "s-1", event: ev("turn/start", { turn: 1 }, 5) }))
+  await tick()
+  client.push(
+    frame("session/event", {
+      sessionId: "s-1",
+      event: ev("assistant/message", { message: { id: "a1", content: [{ type: "text", text: "final" }] } }, 6),
+    }),
+  )
+  await tick()
+  const before = session.messages().length
+
+  client.push(
+    frame("session/event", {
+      sessionId: "s-1",
+      event: ev("tool/call", { turn: 1, step: 1, callId: "c1", name: "read", arguments: JSON.stringify({ file_path: "x.ts" }) }, 7),
+    }),
+  )
+  await tick()
+
+  expect(session.messages().length).toBe(before)
+  const last = session.messages()[session.messages().length - 1]
+  expect(last?.toolCalls?.length).toBe(1)
+  expect(last?.id.startsWith("msg-")).toBe(true)
+})
+
 test("session streams assistant text, reasoning and tool call results", async () => {
   const client = new FakeClient()
   const session = createHarnessSession(client, "/tmp")

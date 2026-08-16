@@ -164,6 +164,7 @@ export function createHarnessSession(
       id: `stream-${ev.seq}`,
       role: "assistant",
       content: "",
+      turn: typeof ev.data.turn === "number" ? ev.data.turn : undefined,
       createdAt: ev.time,
       streaming: true,
     }
@@ -261,6 +262,7 @@ export function createHarnessSession(
           id: `stream-${ev.seq}`,
           role: "assistant",
           content: "",
+          turn: ev.data.turn != null ? Number(ev.data.turn) : undefined,
           createdAt: ev.time,
           streaming: true,
         })
@@ -453,6 +455,7 @@ export function createHarnessSession(
         content: finalContent,
         thinking: finalThinking || undefined,
         toolCalls: toolCalls.length ? toolCalls : undefined,
+        turn: data.turn,
         createdAt: ev.time,
       })
       syncAll()
@@ -460,12 +463,23 @@ export function createHarnessSession(
   }
 
   function onToolCall(ev: SessionEvent): void {
-    const data = ev.data as { callId?: string; name?: string; arguments?: string; step?: number }
+    const data = ev.data as { callId?: string; name?: string; arguments?: string; step?: number; turn?: number }
     if (process.env.DSH_DEBUG) console.error("[dsh] tool/call", JSON.stringify(data))
     if (!data.callId || !data.name) return
     const args = tryParseArgs(data.arguments ?? "")
     const last = model[model.length - 1]
-    const target = last?.streaming ? last : ensureStreamingAssistant(ev)
+    const evTurn = typeof data.turn === "number" ? data.turn : undefined
+    let target: ChatMessage | undefined
+    if (last?.streaming) {
+      target = last
+    } else if (last?.role === "assistant" && last.turn === evTurn) {
+      // Late tool events (arriving after assistant/message finalized the turn,
+      // or replayed after a reconnect) belong to that turn's message — attach
+      // instead of spawning a stray card-only message at the bottom.
+      target = last
+    } else {
+      target = ensureStreamingAssistant(ev)
+    }
     target.toolCalls = target.toolCalls ?? []
     const call: ToolCallRecord = {
       id: data.callId,
@@ -487,7 +501,6 @@ export function createHarnessSession(
       if (placeholder) Object.assign(placeholder, call)
       else target.toolCalls.push(call)
     }
-    setStatusText(`执行 ${data.name}…`)
     touch(target)
     syncStats()
   }
@@ -520,7 +533,6 @@ export function createHarnessSession(
         }
       }
     }
-    setStatusText("")
     if (target) touch(target)
   }
 

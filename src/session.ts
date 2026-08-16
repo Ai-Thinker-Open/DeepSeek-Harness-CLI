@@ -2,6 +2,8 @@ export type ChatMessage = {
   id: string
   role: "user" | "assistant"
   content: string
+  /** Harness turn this message belongs to (assistant messages). */
+  turn?: number
   /** Streaming reasoning content (deepseek-reasoner), shown in a thinking block. */
   thinking?: string
   /**
