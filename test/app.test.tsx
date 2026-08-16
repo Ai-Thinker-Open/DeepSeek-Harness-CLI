@@ -40,3 +40,17 @@ test("tab cycles permission mode and highlights the current one", async () => {
   await app.renderOnce()
   expect(highlightedMode(app)).toBe("Read only")
 })
+
+test("selecting text copies it and shows a toast", async () => {
+  const app = await testRender(() => <App />, { width: 80, height: 32 })
+  await app.renderOnce()
+
+  const lines = app.captureCharFrame().split("\n")
+  const y = lines.findIndex((line) => line.includes("Tab 切换模式"))
+  const x = lines[y]?.indexOf("Tab 切换模式") ?? 0
+
+  await app.mockMouse.drag(x, y, x + 12, y)
+  await app.renderOnce()
+
+  expect(app.captureCharFrame()).toContain("复制")
+})

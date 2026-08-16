@@ -3,6 +3,7 @@ import { createSignal } from "solid-js"
 import { Logo } from "../components/logo"
 import { ModeHint } from "../components/mode-hint"
 import { Prompt } from "../components/prompt"
+import { Toast, type ToastMessage } from "../components/toast"
 import { Tips } from "../components/tips"
 import { Footer } from "../components/footer"
 import { StartupLoading } from "../components/startup-loading"
@@ -15,11 +16,13 @@ export function Home(props: {
   loading?: boolean
   mode?: () => PermissionMode
   model?: () => string
+  toast?: () => ToastMessage | null
 } = {}) {
   const motion = props.motion ?? true
   const showLoading = props.loading ?? true
   const mode = props.mode ?? (() => "workspace-write" as PermissionMode)
   const model = props.model ?? (() => "deepseek-v4-flash")
+  const toast = props.toast ?? (() => null)
   const [ready, setReady] = createSignal(props.loading === false)
 
   onMount(() => {
@@ -73,6 +76,7 @@ export function Home(props: {
 
       <Footer />
       {showLoading ? <StartupLoading ready={ready} /> : null}
+      <Toast toast={toast} />
     </box>
   )
 }

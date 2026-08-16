@@ -1,6 +1,7 @@
 import fs from "node:fs"
 import path from "node:path"
 import { createSignal, onMount } from "solid-js"
+import pkg from "../../package.json"
 import { getMcpServers, type McpServerStatus } from "../mcp"
 import { theme } from "../theme"
 
@@ -75,7 +76,7 @@ export function Footer() {
       </text>
       <McpStatus />
       <box flexGrow={1} />
-      <text fg={theme.textMuted}>v0.1.0</text>
+      <text fg={theme.textMuted}>v{pkg.version}</text>
     </box>
   )
 }
