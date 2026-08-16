@@ -67,19 +67,54 @@ function askQuestion(sessionId, rpcId, question, options) {
   })
 }
 
-async function runTurn(sessionId, text) {
+async function runTurn(sessionId, text, firstTurn) {
   // Give the client's events.mux socket time to open before emitting, so the
-  // first events (user/message, turn/start) are not lost.
+  // first events (injections, user/message, turn/start) are not lost.
   await sleep(150)
   const turn = ++turnSeq
   const now = () => Date.now()
+  if (firstTurn) {
+    // Injected context, exactly like the real harness folds it into the
+    // model-visible surface before the first model call.
+    emitEvent(sessionId, {
+      type: "user/message",
+      seq: nextSeq(),
+      time: now(),
+      data: {
+        id: `inj-${turn}-system`,
+        content: [
+          {
+            type: "text",
+            text: "你是 DeepSeek Harness CLI 的编码助手。\n- 使用中文回复\n- 动手前先说明计划\n- 涉及文件修改时给出清晰小结",
+          },
+        ],
+        source: { kind: "plugin", plugin: "@deepseek-ai/dsh-system-prompt", form: "instructions" },
+      },
+    })
+    emitEvent(sessionId, {
+      type: "user/message",
+      seq: nextSeq(),
+      time: now(),
+      data: {
+        id: `inj-${turn}-skills`,
+        content: [
+          {
+            type: "text",
+            text: "本会话可用技能目录：\n- bash：执行 shell 命令并读取输出\n- fs：读写与搜索工作区文件\n- web：网页搜索与内容抓取",
+          },
+        ],
+        source: { kind: "plugin", plugin: "skill-catalog", form: "catalog" },
+      },
+    })
+  }
+  emitEvent(sessionId, { type: "turn/start", seq: nextSeq(), time: now(), data: { turn } })
   emitEvent(sessionId, {
     type: "user/message",
     seq: nextSeq(),
     time: now(),
-    data: { id: `um-${turn}`, content: [{ type: "text", text }] },
+    data: { id: `um-${turn}`, content: [{ type: "text", text }], source: { kind: "user" } },
   })
-  emitEvent(sessionId, { type: "turn/start", seq: nextSeq(), time: now(), data: { turn } })
+  emitEvent(sessionId, { type: "step/start", seq: nextSeq(), time: now(), data: { turn, step: 1 } })
 
   const reasoning = ["让我先分析一下这个问题，", "然后我会调用工具来确认结果。"]
   for (const part of reasoning) {
@@ -87,7 +122,7 @@ async function runTurn(sessionId, text) {
       type: "assistant/chunk",
       seq: nextSeq(),
       time: now(),
-      data: { turn, chunk: { type: "reasoning-delta", text: part } },
+      data: { turn, step: 1, chunk: { type: "reasoning-delta", text: part } },
     })
     await sleep(120)
   }
@@ -98,7 +133,7 @@ async function runTurn(sessionId, text) {
       type: "assistant/chunk",
       seq: nextSeq(),
       time: now(),
-      data: { turn, chunk: { type: "text-delta", text: `你选择了「${answer}」。` } },
+      data: { turn, step: 1, chunk: { type: "text-delta", text: `你选择了「${answer}」。` } },
     })
   } else {
     const command = "echo hello-from-mock-bash"
@@ -106,7 +141,7 @@ async function runTurn(sessionId, text) {
       type: "assistant/chunk",
       seq: nextSeq(),
       time: now(),
-      data: { turn, chunk: { type: "text-delta", text: "好的，我执行一条命令看看结果。" } },
+      data: { turn, step: 1, chunk: { type: "text-delta", text: "好的，我执行一条命令看看结果。" } },
     })
     await sleep(100)
     emitEvent(sessionId, {
@@ -115,6 +150,7 @@ async function runTurn(sessionId, text) {
       time: now(),
       data: {
         turn,
+        step: 1,
         chunk: {
           type: "tool-call-delta",
           index: 0,
@@ -154,7 +190,7 @@ async function runTurn(sessionId, text) {
       type: "assistant/chunk",
       seq: nextSeq(),
       time: now(),
-      data: { turn, chunk: { type: "text-delta", text: "完成，工具返回了输出。" } },
+      data: { turn, step: 1, chunk: { type: "text-delta", text: "完成，工具返回了输出。" } },
     })
   }
 
@@ -162,14 +198,27 @@ async function runTurn(sessionId, text) {
     type: "assistant/chunk",
     seq: nextSeq(),
     time: now(),
-    data: { turn, chunk: { type: "usage", usage: { prompt_tokens: 42, completion_tokens: 7, total_tokens: 49 } } },
+    data: {
+      turn,
+      step: 1,
+      chunk: {
+        type: "usage",
+        usage: { inputTokens: 42, outputTokens: 7, cacheReadTokens: 158, cacheWriteTokens: 0, reasoningTokens: 3 },
+      },
+    },
   })
   emitEvent(sessionId, {
     type: "assistant/message",
     seq: nextSeq(),
     time: now(),
-    data: { message: { id: `am-${turn}` } },
+    data: {
+      turn,
+      step: 1,
+      message: { id: `am-${turn}` },
+      usage: { inputTokens: 42, outputTokens: 7, cacheReadTokens: 158, cacheWriteTokens: 0, reasoningTokens: 3 },
+    },
   })
+  emitEvent(sessionId, { type: "step/end", seq: nextSeq(), time: now(), data: { turn, step: 1 } })
   emitEvent(sessionId, { type: "turn/end", seq: nextSeq(), time: now(), data: { turn, reason: { kind: "stop" } } })
 }
 
@@ -224,8 +273,14 @@ async function handleRpc(req) {
       const text = String(payload.content?.[0]?.text ?? "")
       const s = sessions.get(sessionId)
       if (!s) return respond(fail(`session ${sessionId} not found`, "not-found"))
-      s.events.push({ type: "user/message", seq: nextSeq(), time: Date.now(), data: { id: `um-q`, content: [{ type: "text", text }] } })
-      void runTurn(sessionId, text)
+      const firstTurn = s.events.length === 0
+      s.events.push({
+        type: "user/message",
+        seq: nextSeq(),
+        time: Date.now(),
+        data: { id: `um-q`, content: [{ type: "text", text }], source: { kind: "user" } },
+      })
+      void runTurn(sessionId, text, firstTurn)
       return respond(ok({ accepted: true }))
     }
     case "session.cancel":

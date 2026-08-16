@@ -16,6 +16,51 @@ export interface Block {
   isError?: boolean
 }
 
+/** Bound applied to tool-result text kept in the UI model. */
+export const MAX_TOOL_OUTPUT_CHARS = 4000
+
+/** Bound applied to injected-context text previews kept in the UI model. */
+export const MAX_INJECT_CHARS = 2000
+
+/** Human labels for the harness's `ContextForm` vocabulary. */
+export const CONTEXT_FORM_LABELS: Record<string, string> = {
+  instructions: "指令",
+  catalog: "目录",
+  snapshot: "快照",
+  notice: "通知",
+  relay: "转达",
+  recall: "回顾",
+}
+
+/** The `source` object carried by `user/message` events. */
+export interface UserMessageSource {
+  kind?: string
+  plugin?: string
+  form?: string
+  summary?: string
+}
+
+/** Display title for an injected-context producer. */
+export function injectSourceTitle(source: UserMessageSource | undefined): string {
+  if (!source) return ""
+  if (typeof source.plugin === "string" && source.plugin) return source.plugin
+  if (typeof source.kind === "string" && source.kind && source.kind !== "user" && source.kind !== "plugin") {
+    return source.kind
+  }
+  return ""
+}
+
+/** True when a user/message source is injected context rather than a human prompt. */
+export function isInjectedSource(source: UserMessageSource | undefined): boolean {
+  return Boolean(source && source.kind && source.kind !== "user")
+}
+
+/** Cap long text without paying for a full copy when it is short. */
+export function truncateText(text: string, max: number): { text: string; truncated: boolean } {
+  if (text.length <= max) return { text, truncated: false }
+  return { text: text.slice(0, max), truncated: true }
+}
+
 export function tryParseArgs(raw: string): Record<string, unknown> {
   try {
     const v = JSON.parse(raw)
@@ -85,11 +130,27 @@ export function eventToMessage(ev: SessionEvent): ChatMessage | null {
   const seqId = `ev-${ev.seq}`
   switch (ev.type) {
     case "user/message": {
-      const m = data as unknown as { id?: string; content?: Block[] }
+      const m = data as unknown as { id?: string; content?: Block[]; source?: UserMessageSource }
       if (!m.content) return null
+      const source = m.source
+      if (isInjectedSource(source)) {
+        const title = injectSourceTitle(source)
+        const { text, truncated } = truncateText(blockText(m.content), MAX_INJECT_CHARS)
+        return {
+          id: `msg-${m.id ?? seqId}`,
+          role: "user" as const,
+          content: truncated ? `${text}\n… (内容已截断)` : text,
+          inject: {
+            source: title || "unknown",
+            form: source?.form,
+            summary: source?.summary,
+          },
+          createdAt: ev.time,
+        }
+      }
       return {
         id: `msg-${m.id ?? seqId}`,
-        role: "user",
+        role: "user" as const,
         content: blockText(m.content),
         createdAt: ev.time,
       }
@@ -118,10 +179,13 @@ export function foldToolResult(messages: ChatMessage[], ev: SessionEvent): ToolR
   const data = ev.data as { message?: { content?: Block[] } }
   const block = data.message?.content?.[0]
   if (!block || block.type !== "tool-result" || !block.toolCallId) return null
+  const raw = blockText(block.content)
+  const { text, truncated } = truncateText(raw, MAX_TOOL_OUTPUT_CHARS)
   const result: ToolResultRecord = {
     toolCallId: block.toolCallId,
     ok: !block.isError,
-    output: blockText(block.content),
+    output: text,
+    truncated,
   }
   const target = [...messages].reverse().find((m) => m.toolCalls?.some((c) => c.id === block.toolCallId))
   if (target) {

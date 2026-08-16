@@ -10,6 +10,13 @@ function formatDuration(ms: number): string {
   return `${Math.floor(totalSeconds / 60)}m${String(totalSeconds % 60).padStart(2, "0")}s`
 }
 
+/** Sub-second precision for first-token averages ("0.6s"). */
+function formatPrecise(ms: number): string {
+  if (ms <= 0) return "—"
+  if (ms < 1000) return `${(ms / 1000).toFixed(1)}s`
+  return formatDuration(ms)
+}
+
 function formatTokens(n: number): string {
   if (n >= 1_000_000_000) return `${(n / 1_000_000_000).toFixed(1)}B`
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`
@@ -22,9 +29,18 @@ function fullStats(s: SessionStats): string[] {
     `轮次 ${s.turns} · 步骤 ${s.steps}`,
     `LLM 用时 ${formatDuration(s.llmMs)} · 工具调用 ${formatDuration(s.toolMs)}`,
   ]
-  if (s.firstTokenMs != null) lines.push(`首 token ${formatDuration(s.firstTokenMs)}`)
-  lines.push(`输入 ${formatTokens(s.inTokens)} tokens · 输出 ${formatTokens(s.outTokens)} tokens`)
+  if (s.firstTokenMs != null && s.firstTokenCount > 0) {
+    lines.push(`首 token 平均 ${formatPrecise(s.firstTokenMs)}（${s.firstTokenCount} 步）`)
+  }
+  lines.push(`输入 ${formatTokens(s.inTokens)} tokens · 缓存读取 ${formatTokens(s.cacheReadTokens)} · 缓存写入 ${formatTokens(s.cacheWriteTokens)}`)
+  lines.push(`输出 ${formatTokens(s.outTokens)} tokens · 推理 ${formatTokens(s.reasoningTokens)} tokens`)
   return lines
+}
+
+function cacheHitPct(s: SessionStats): number | null {
+  const billed = s.inTokens + s.cacheReadTokens
+  if (billed <= 0) return null
+  return Math.round((s.cacheReadTokens / billed) * 100)
 }
 
 export function StatsBar(props: { stats?: () => SessionStats; status?: () => string } = {}) {
@@ -36,10 +52,23 @@ export function StatsBar(props: { stats?: () => SessionStats; status?: () => str
     const statusText = status()
     if (statusText) return statusText
     const s = stats()
-    if (s.turns === 0 && s.steps === 0 && s.inTokens === 0 && s.outTokens === 0) {
-      return "等待对话…"
+    const parts: string[] = []
+    if (s.turns > 0 || s.steps > 0) parts.push(`${s.turns} 轮 · ${s.steps} 步`)
+    if (s.llmMs > 0) parts.push(`LLM ${formatDuration(s.llmMs)}`)
+    if (s.firstTokenMs != null && s.firstTokenCount > 0) {
+      let seg = `首 token 平均 ${formatPrecise(s.firstTokenMs)}`
+      if (s.outTokens > 0 && s.llmMs > 0) {
+        const tokPerSec = Math.round((s.outTokens * 1000) / s.llmMs)
+        if (tokPerSec > 0) seg += ` · ${tokPerSec} tok/s`
+      }
+      parts.push(seg)
     }
-    return `${s.turns} 轮 · ${s.steps} 步 | LLM ${formatDuration(s.llmMs)} · 工具 ${formatDuration(s.toolMs)} | 输入 ${formatTokens(s.inTokens)} · 输出 ${formatTokens(s.outTokens)}`
+    const hit = cacheHitPct(s)
+    if (hit != null) parts.push(`缓存命中 ${hit}%`)
+    if (s.inTokens > 0 || s.outTokens > 0 || s.cacheReadTokens > 0) {
+      parts.push(`输入 ${formatTokens(s.inTokens + s.cacheReadTokens)} · 输出 ${formatTokens(s.outTokens)} tok`)
+    }
+    return parts.length ? parts.join(" | ") : "等待对话…"
   }
 
   return (

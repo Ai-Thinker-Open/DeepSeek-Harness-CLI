@@ -82,7 +82,12 @@ test("hovering the stats bar shows real stats without flickering", async () => {
     toolMs: 12_500,
     inTokens: 1_200,
     outTokens: 800,
+    cacheReadTokens: 11_800,
+    cacheWriteTokens: 120,
+    reasoningTokens: 60,
     firstTokenMs: 2_500,
+    firstTokenSumMs: 2_500,
+    firstTokenCount: 1,
   }
   const app = await renderSession({
     messages: [userMsg("你好")],
@@ -147,7 +152,7 @@ test("assistant messages render thinking blocks and tool cards", async () => {
   await app.renderOnce()
 
   const frame = app.captureCharFrame()
-  expect(frame).toContain("thinking")
+  expect(frame).toContain("思考")
   expect(frame).toContain("让我想想")
   expect(frame).toContain("运行中…")
   expect(frame).toContain("●")
@@ -155,6 +160,37 @@ test("assistant messages render thinking blocks and tool cards", async () => {
   expect(frame).toContain("✓")
   expect(frame).toContain("src")
   expect(frame).toContain("test")
+})
+
+test("injected context renders as a folded context-injection block", async () => {
+  const messages: ChatMessage[] = [
+    {
+      id: "i1",
+      role: "user",
+      content: "你是 DeepSeek Harness CLI 的编码助手。",
+      inject: { source: "@deepseek-ai/dsh-system-prompt", form: "instructions" },
+      createdAt: 1,
+    },
+    {
+      id: "i2",
+      role: "user",
+      content: "技能目录：\n- bash\n- fs",
+      inject: { source: "skill-catalog", form: "catalog" },
+      createdAt: 2,
+    },
+    userMsg("你好"),
+  ]
+  const app = await renderSession({ messages })
+  await app.renderOnce()
+
+  const frame = app.captureCharFrame()
+  expect(frame).toContain("上下文注入")
+  expect(frame).toContain("@deepseek-ai/dsh-system-prompt")
+  expect(frame).toContain("skill-catalog")
+  expect(frame).toContain("指令")
+  expect(frame).toContain("目录")
+  expect(frame).toContain("你是 DeepSeek Harness CLI 的编码助手。")
+  expect(frame).toContain("你好")
 })
 
 test("question modal answers with the selected option", async () => {

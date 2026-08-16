@@ -8,6 +8,7 @@ import {
   foldHistory,
   foldToolCall,
   foldToolResult,
+  MAX_TOOL_OUTPUT_CHARS,
   tryParseArgs,
   userMessageText,
 } from "../src/harness/fold"
@@ -37,6 +38,7 @@ test("assistantBlocksToMessage extracts text, reasoning and tool calls", () => {
 test("eventToMessage folds user and assistant messages", () => {
   const user = eventToMessage(ev("user/message", { id: "m1", content: [{ type: "text", text: "你好" }] }, 1))
   expect(user).toMatchObject({ id: "msg-m1", role: "user", content: "你好" })
+  expect(user?.inject).toBeUndefined()
 
   const assistant = eventToMessage(
     ev("assistant/message", { message: { id: "m2", content: [{ type: "text", text: "收到" }] } }, 2),
@@ -45,6 +47,58 @@ test("eventToMessage folds user and assistant messages", () => {
 
   const empty = eventToMessage(ev("assistant/message", { message: { content: [] } }, 3))
   expect(empty).toBeNull()
+})
+
+test("eventToMessage folds injected context into a context-injection block", () => {
+  const system = eventToMessage(
+    ev(
+      "user/message",
+      {
+        id: "inj-1",
+        content: [{ type: "text", text: "你是编码助手" }],
+        source: { kind: "plugin", plugin: "@deepseek-ai/dsh-system-prompt", form: "instructions" },
+      },
+      1,
+    ),
+  )
+  expect(system).toMatchObject({
+    id: "msg-inj-1",
+    role: "user",
+    content: "你是编码助手",
+    inject: { source: "@deepseek-ai/dsh-system-prompt", form: "instructions" },
+  })
+
+  const catalog = eventToMessage(
+    ev(
+      "user/message",
+      {
+        id: "inj-2",
+        content: [{ type: "text", text: "技能目录" }],
+        source: { kind: "plugin", plugin: "skill-catalog", form: "catalog" },
+      },
+      2,
+    ),
+  )
+  expect(catalog?.inject).toMatchObject({ source: "skill-catalog", form: "catalog" })
+
+  const notice = eventToMessage(
+    ev(
+      "user/message",
+      {
+        id: "inj-3",
+        content: [{ type: "text", text: "文件已变更" }],
+        source: { kind: "plugin", plugin: "dsh-fs", form: "notice", summary: "src/app.tsx 已更新" },
+      },
+      3,
+    ),
+  )
+  expect(notice?.inject).toMatchObject({ source: "dsh-fs", form: "notice", summary: "src/app.tsx 已更新" })
+
+  // Unknown plugin kinds still fold with a best-effort title.
+  const unknown = eventToMessage(
+    ev("user/message", { id: "inj-4", content: [{ type: "text", text: "x" }], source: { kind: "plugin", plugin: "" } }, 4),
+  )
+  expect(unknown?.inject?.source).toBe("unknown")
 })
 
 test("foldHistory replays tool calls and results onto assistant messages", () => {
@@ -91,4 +145,32 @@ test("tryParseArgs and helpers handle bad input", () => {
   expect(blockText(undefined)).toBe("")
   expect(blockText([{ type: "image" }])).toBe("[image]")
   expect(userMessageText(ev("user/message", { content: [{ type: "text", text: "ping" }] }, 1))).toBe("ping")
+})
+
+test("tool results are truncated at fold time", () => {
+  const big = "x".repeat(MAX_TOOL_OUTPUT_CHARS + 100)
+  const messages: ChatMessage[] = [
+    { id: "m1", role: "user" as const, content: "x", createdAt: 1 },
+    {
+      id: "m2",
+      role: "assistant" as const,
+      content: "",
+      createdAt: 2,
+      toolCalls: [{ id: "c1", name: "bash", args: {}, status: "running" as const }],
+    },
+  ]
+  foldToolResult(
+    messages,
+    ev(
+      "tool/result",
+      { message: { content: [{ type: "tool-result", toolCallId: "c1", isError: false, content: [{ type: "text", text: big }] }] } },
+      3,
+    ),
+  )
+  expect(messages[1]?.toolResults?.[0]).toMatchObject({
+    toolCallId: "c1",
+    ok: true,
+    truncated: true,
+  })
+  expect(messages[1]?.toolResults?.[0]?.output.length).toBe(MAX_TOOL_OUTPUT_CHARS)
 })

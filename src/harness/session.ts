@@ -8,7 +8,19 @@ import {
   type ToolResultRecord,
 } from "../session"
 import { HarnessClient, type HarnessClientLike, type ServerRequest, type SessionEvent } from "./client"
-import { assistantBlocksToMessage, blockText, summaryFor, tryParseArgs, type Block } from "./fold"
+import {
+  assistantBlocksToMessage,
+  blockText,
+  injectSourceTitle,
+  isInjectedSource,
+  MAX_INJECT_CHARS,
+  MAX_TOOL_OUTPUT_CHARS,
+  summaryFor,
+  truncateText,
+  tryParseArgs,
+  type Block,
+  type UserMessageSource,
+} from "./fold"
 
 export interface HarnessSessionApi {
   messages: () => ChatMessage[]
@@ -54,21 +66,26 @@ export function createHarnessSession(
   let model: ChatMessage[] = []
   let statsModel: SessionStats = { ...EMPTY_STATS }
   let messageSeq = 0
-  let turnStartMs: number | null = null
+  let turnStartAt: number | null = null
+  let stepStartAt: number | null = null
+  let turnStepEnds = 0
   let streamTurn: string | null = null
   let promptSentAt = 0
   let firstTokenDone = true
+  const usageByStep = new Map<string, { in: number; out: number; cr: number; cw: number; re: number }>()
 
-  // Solid's <For> memoizes items by object identity, so each sync must hand
-  // out fresh message/tool objects or streaming updates would never re-render.
-  const sync = () =>
-    setMessages(
-      model.map((m) => ({
-        ...m,
-        toolCalls: m.toolCalls ? m.toolCalls.map((c) => ({ ...c })) : undefined,
-        toolResults: m.toolResults ? m.toolResults.map((r) => ({ ...r })) : undefined,
-      })),
-    )
+  // Solid's <For> memoizes items by object identity. To make only the touched
+  // message re-render (and not the whole conversation on every stream chunk),
+  // pushes/removals replace the array with the same object references, while
+  // in-place mutations go through `touch`, which hands out a fresh copy of
+  // just that one message (and its tool rows).
+  const cloneMessage = (m: ChatMessage): ChatMessage => ({
+    ...m,
+    toolCalls: m.toolCalls ? m.toolCalls.map((c) => ({ ...c })) : undefined,
+    toolResults: m.toolResults ? m.toolResults.map((r) => ({ ...r })) : undefined,
+  })
+  const syncAll = () => setMessages([...model])
+  const touch = (target: ChatMessage) => setMessages(model.map((m) => (m === target ? cloneMessage(m) : m)))
   const syncStats = () => setStats({ ...statsModel })
 
   function appendUserMessage(text: string): void {
@@ -78,8 +95,7 @@ export function createHarnessSession(
       content: text,
       createdAt: Date.now(),
     })
-    statsModel.turns += 1
-    sync()
+    syncAll()
     syncStats()
   }
 
@@ -87,8 +103,7 @@ export function createHarnessSession(
     const last = model[model.length - 1]
     if (last?.role === "user") {
       model.pop()
-      statsModel.turns = Math.max(0, statsModel.turns - 1)
-      sync()
+      syncAll()
       syncStats()
     }
   }
@@ -113,20 +128,91 @@ export function createHarnessSession(
       streaming: true,
     }
     model.push(m)
-    if (turnStartMs == null) turnStartMs = ev.time
-    sync()
+    if (turnStartAt == null) turnStartAt = ev.time
+    syncAll()
     return m
+  }
+
+  interface NormalizedUsage {
+    in: number
+    out: number
+    cr: number
+    cw: number
+    re: number
+  }
+
+  function normalizeUsage(u: Record<string, unknown>): NormalizedUsage {
+    return {
+      in: Number(u.inputTokens ?? u.prompt_tokens ?? 0) || 0,
+      out: Number(u.outputTokens ?? u.completion_tokens ?? 0) || 0,
+      cr: Number(u.cacheReadTokens ?? 0) || 0,
+      cw: Number(u.cacheWriteTokens ?? 0) || 0,
+      re: Number(u.reasoningTokens ?? 0) || 0,
+    }
+  }
+
+  /** Fold one step's token usage into the totals without double counting when
+   *  both the usage chunk and the assembled assistant/message carry it. */
+  function addUsage(norm: NormalizedUsage, turn?: number, step?: number): void {
+    const key = turn != null && step != null ? `${turn}:${step}` : null
+    const prev = key ? usageByStep.get(key) : undefined
+    const delta = key
+      ? {
+          in: norm.in - (prev?.in ?? 0),
+          out: norm.out - (prev?.out ?? 0),
+          cr: norm.cr - (prev?.cr ?? 0),
+          cw: norm.cw - (prev?.cw ?? 0),
+          re: norm.re - (prev?.re ?? 0),
+        }
+      : norm
+    if (key) usageByStep.set(key, norm)
+    statsModel.inTokens = Math.max(0, statsModel.inTokens + delta.in)
+    statsModel.outTokens = Math.max(0, statsModel.outTokens + delta.out)
+    statsModel.cacheReadTokens = Math.max(0, statsModel.cacheReadTokens + delta.cr)
+    statsModel.cacheWriteTokens = Math.max(0, statsModel.cacheWriteTokens + delta.cw)
+    statsModel.reasoningTokens = Math.max(0, statsModel.reasoningTokens + delta.re)
+  }
+
+  function recordFirstToken(ev: SessionEvent): void {
+    const base = stepStartAt ?? (promptSentAt > 0 ? promptSentAt : null)
+    if (base == null) return
+    statsModel.firstTokenSumMs += Math.max(0, ev.time - base)
+    statsModel.firstTokenCount += 1
+    statsModel.firstTokenMs = Math.round(statsModel.firstTokenSumMs / statsModel.firstTokenCount)
   }
 
   // ── live event folding ──────────────────────────────────────────────
 
   function onSessionEvent(ev: SessionEvent): void {
     switch (ev.type) {
-      case "user/message":
-        // User messages are appended locally on send; skip live echoes.
+      case "user/message": {
+        const data = ev.data as unknown as { id?: string; content?: Block[]; source?: UserMessageSource }
+        if (isInjectedSource(data.source)) {
+          const title = injectSourceTitle(data.source)
+          const { text, truncated } = truncateText(blockText(data.content), MAX_INJECT_CHARS)
+          const id = `msg-${data.id ?? ev.seq}`
+          if (!model.some((m) => m.inject && m.id === id)) {
+            model.push({
+              id,
+              role: "user",
+              content: truncated ? `${text}\n… (内容已截断)` : text,
+              inject: {
+                source: title || "unknown",
+                form: data.source?.form,
+                summary: data.source?.summary,
+              },
+              createdAt: ev.time,
+            })
+            syncAll()
+          }
+        }
+        // Direct user messages are appended locally on send; skip live echoes.
         break
+      }
       case "turn/start": {
-        turnStartMs = ev.time
+        turnStartAt = ev.time
+        turnStepEnds = 0
+        statsModel.turns += 1
         streamTurn = ev.data.turn != null ? String(ev.data.turn) : null
         firstTokenDone = false
         setBusy(true)
@@ -138,7 +224,15 @@ export function createHarnessSession(
           createdAt: ev.time,
           streaming: true,
         })
-        sync()
+        syncAll()
+        syncStats()
+        break
+      }
+      case "step/start": {
+        stepStartAt = ev.time
+        firstTokenDone = false
+        statsModel.steps += 1
+        syncStats()
         break
       }
       case "assistant/chunk":
@@ -153,18 +247,37 @@ export function createHarnessSession(
       case "tool/result":
         onToolResult(ev)
         break
-      case "turn/end": {
-        if (turnStartMs != null) {
-          statsModel.llmMs += Math.max(0, ev.time - turnStartMs)
-          turnStartMs = null
-          syncStats()
+      case "step/end": {
+        if (stepStartAt != null) {
+          statsModel.llmMs += Math.max(0, ev.time - stepStartAt)
+          stepStartAt = null
+          turnStepEnds += 1
         }
+        syncStats()
+        break
+      }
+      case "turn/end": {
+        // Fallback for harnesses that do not emit step/end: charge the whole
+        // turn to the LLM only when no step completed during it.
+        if (turnStartAt != null && turnStepEnds === 0) {
+          statsModel.llmMs += Math.max(0, ev.time - turnStartAt)
+        }
+        turnStartAt = null
+        stepStartAt = null
         streamTurn = null
         const last = model[model.length - 1]
+        const wasStreaming = Boolean(last?.streaming)
         if (last?.streaming) last.streaming = false
         setBusy(false)
         setStatusText("")
-        sync()
+        if (wasStreaming) touch(last as ChatMessage)
+        syncStats()
+        break
+      }
+      case "request/context": {
+        const ctx = ev.data as { provider?: string; model?: string }
+        const name = ctx.model ?? ctx.provider
+        if (name) setModelName(name)
         break
       }
       default:
@@ -174,6 +287,7 @@ export function createHarnessSession(
 
   function onChunk(ev: SessionEvent): void {
     const chunkTurn = ev.data.turn != null ? String(ev.data.turn) : null
+    const chunkStep = ev.data.step != null ? Number(ev.data.step) : undefined
     let last = model[model.length - 1]
     if (last?.streaming) {
       if (streamTurn != null && chunkTurn != null && chunkTurn !== streamTurn) return
@@ -194,28 +308,27 @@ export function createHarnessSession(
     if (!chunk?.type) return
     switch (chunk.type) {
       case "text-delta": {
-        if (!firstTokenDone && promptSentAt > 0) {
-          statsModel.firstTokenMs = Math.max(0, ev.time - promptSentAt)
+        if (!firstTokenDone) {
+          recordFirstToken(ev)
           firstTokenDone = true
           syncStats()
         }
         last.content += chunk.text ?? ""
-        sync()
+        touch(last)
         break
       }
       case "reasoning-delta":
         last.thinking = (last.thinking ?? "") + (chunk.text ?? "")
-        sync()
+        touch(last)
         break
       case "tool-call-delta":
         appendStreamToolCallDelta(last, chunk)
-        sync()
+        touch(last)
         break
       case "usage": {
-        const u = chunk.usage as { prompt_tokens?: number; completion_tokens?: number } | undefined
+        const u = chunk.usage as Record<string, unknown> | undefined
         if (u) {
-          statsModel.inTokens += u.prompt_tokens ?? 0
-          statsModel.outTokens += u.completion_tokens ?? 0
+          addUsage(normalizeUsage(u), chunkTurn != null ? Number(chunkTurn) : undefined, chunkStep)
           syncStats()
         }
         break
@@ -244,9 +357,18 @@ export function createHarnessSession(
   }
 
   function finalizeAssistant(ev: SessionEvent): void {
-    const data = ev.data as { message?: { id?: string; content?: Block[] } }
+    const data = ev.data as {
+      message?: { id?: string; content?: Block[] }
+      usage?: Record<string, unknown>
+      turn?: number
+      step?: number
+    }
     const blocks = data.message?.content
     const { content, thinking, toolCalls } = assistantBlocksToMessage(blocks ?? [], `ev-${ev.seq}`)
+    if (data.usage) {
+      addUsage(normalizeUsage(data.usage), data.turn, data.step)
+      syncStats()
+    }
     const last = model[model.length - 1]
     if (last?.streaming) {
       last.streaming = false
@@ -259,7 +381,7 @@ export function createHarnessSession(
           last.toolCalls.push(tc)
         }
       }
-      sync()
+      touch(last)
     } else if (content || thinking || toolCalls.length) {
       model.push({
         id: `msg-${data.message?.id ?? ev.seq}`,
@@ -269,7 +391,7 @@ export function createHarnessSession(
         toolCalls: toolCalls.length ? toolCalls : undefined,
         createdAt: ev.time,
       })
-      sync()
+      syncAll()
     }
   }
 
@@ -291,19 +413,20 @@ export function createHarnessSession(
     const existing = target.toolCalls.find((c) => c.id === call.id)
     if (existing) Object.assign(existing, call)
     else target.toolCalls.push(call)
-    statsModel.steps += 1
     setStatusText(`执行 ${data.name}…`)
-    sync()
+    touch(target)
     syncStats()
   }
 
   function onToolResult(ev: SessionEvent): void {
     const block = (ev.data as { message?: { content?: Block[] } }).message?.content?.[0]
     if (!block || block.type !== "tool-result" || !block.toolCallId) return
+    const { text, truncated } = truncateText(blockText(block.content), MAX_TOOL_OUTPUT_CHARS)
     const result: ToolResultRecord = {
       toolCallId: block.toolCallId,
       ok: !block.isError,
-      output: blockText(block.content),
+      output: text,
+      truncated,
     }
     const target = [...model].reverse().find((m) => m.toolCalls?.some((c) => c.id === block.toolCallId))
     if (target) {
@@ -322,7 +445,7 @@ export function createHarnessSession(
       }
     }
     setStatusText("")
-    sync()
+    if (target) touch(target)
   }
 
   // ── mux frames ──────────────────────────────────────────────────────
