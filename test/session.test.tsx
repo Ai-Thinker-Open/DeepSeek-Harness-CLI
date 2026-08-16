@@ -9,11 +9,10 @@ const messages: ChatMessage[] = [
   { id: "2", role: "assistant", content: "收到，演示回复" },
 ]
 
-test("session screen renders title, messages, model and back hint", async () => {
+test("session screen renders messages, model and back hint", async () => {
   const app = await testRender(
     () => (
       <SessionScreen
-        title={() => "你好"}
         messages={() => messages}
         mode={() => "workspace-write"}
         model={() => "DeepSeek-V4-Flash"}
@@ -38,7 +37,6 @@ test("escape in the session returns home", async () => {
   const app = await testRender(
     () => (
       <SessionScreen
-        title={() => "你好"}
         messages={() => messages}
         mode={() => "workspace-write"}
         model={() => "DeepSeek-V4-Flash"}
@@ -65,7 +63,6 @@ test("hovering the stats bar shows full info without flickering", async () => {
   const app = await testRender(
     () => (
       <SessionScreen
-        title={() => "你好"}
         messages={() => messages}
         mode={() => "workspace-write"}
         model={() => "DeepSeek-V4-Flash"}

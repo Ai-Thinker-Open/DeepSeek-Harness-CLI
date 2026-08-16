@@ -10,7 +10,6 @@ import type { ChatMessage } from "../session"
 import { theme } from "../theme"
 
 export function SessionScreen(props: {
-  title: () => string
   messages: () => ChatMessage[]
   mode: () => PermissionMode
   model: () => string
@@ -45,13 +44,8 @@ export function SessionScreen(props: {
         borderColor={theme.borderSubtle}
         flexShrink={0}
       >
-        <text fg={theme.text}>
-          <b>{props.title()}</b>
-        </text>
-        <box flexDirection="row" gap={2}>
-          <text fg={theme.textMuted}>esc 返回</text>
-          <text fg={theme.text}>{props.model()}</text>
-        </box>
+        <text fg={theme.textMuted}>esc 返回</text>
+        <text fg={theme.text}>{props.model()}</text>
       </box>
 
       <scrollbox

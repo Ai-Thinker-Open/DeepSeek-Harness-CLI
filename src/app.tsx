@@ -14,7 +14,6 @@ export function App() {
   const [toast, setToast] = createSignal<ToastMessage | null>(null)
   const [screen, setScreen] = createSignal<"home" | "session">("home")
   const [messages, setMessages] = createSignal<ChatMessage[]>([])
-  const [title, setTitle] = createSignal("新会话")
   let toastTimer: ReturnType<typeof setTimeout> | undefined
   let messageId = 0
 
@@ -46,7 +45,6 @@ export function App() {
     const trimmed = text.trim()
     if (!trimmed) return
     if (screen() === "home") {
-      setTitle(trimmed.length > 16 ? `${trimmed.slice(0, 16)}…` : trimmed)
       setMessages([{ id: nextId(), role: "user", content: trimmed }])
       setScreen("session")
     } else {
@@ -82,7 +80,6 @@ export function App() {
         visible={screen() === "session"}
       >
         <SessionScreen
-          title={title}
           messages={messages}
           mode={mode}
           model={model}
