@@ -6,6 +6,7 @@ import {
   parseCardMeta,
   questionItems,
   todoItems,
+  toolBody,
   toolIcon,
   toolSummary,
   toolTitle,
@@ -136,4 +137,42 @@ test("web_search keeps its own globe-ish icon while local search stays a magnifi
   expect(toolIcon("edit")).toBe("✎")
   expect(toolIcon("todo_write")).toBe("☑")
   expect(toolIcon("unknown_tool")).toBe("✦")
+})
+
+test("generic action families get meaningful summaries", () => {
+  expect(toolSummary("subagent", { description: "调研 bug", prompt: "看一下日志" })).toBe("调研 bug")
+  expect(toolSummary("workflow", { meta: { name: "全库审计", description: "审计所有文件" } })).toBe("全库审计")
+  expect(toolSummary("lsp", { operation: "definition", file_path: "src/a.ts", line: 3, character: 5 })).toBe(
+    "definition · src/a.ts:3:5",
+  )
+  expect(toolSummary("update_goal", { goal_id: "g1", revision: 2, action: "complete" })).toBe("complete · g1")
+  expect(toolSummary("schedule_create", { prompt: "跑测试", after_seconds: 60 })).toBe("跑测试 · in 60s")
+  expect(toolSummary("interrupt_agent", { agent_id: "a1" })).toBe("✕ a1")
+  expect(toolSummary("send_message", { subagent_id: "a1", message: "继续" })).toBe("→ a1")
+  expect(toolSummary("create_goal", { objective: "发布 v2" })).toBe("发布 v2")
+  expect(toolSummary("skill", { name: "opentui" })).toBe("opentui")
+  expect(toolSummary("exit_plan_mode", { plan: "先重构再测试" })).toBe("先重构再测试")
+  expect(toolSummary("job_output", { job_id: "j1" })).toBe("j1")
+  expect(toolSummary("cordis_define", { name: "my-plugin", purpose: "演示" })).toBe("my-plugin")
+})
+
+test("generic action families get readable expanded bodies", () => {
+  expect(toolBody("subagent", { description: "调研", prompt: "看下日志" })).toBe("调研\nprompt: 看下日志")
+  expect(toolBody("report", { output: "已完成\n详情如下" })).toBe("已完成\n详情如下")
+  expect(toolBody("lsp", { operation: "definition", file_path: "src/a.ts", line: 3, character: 5 })).toBe(
+    "definition\nsrc/a.ts:3:5",
+  )
+  expect(toolBody("schedule_create", { prompt: "跑测试", every_seconds: 3600 })).toBe("跑测试\nevery: 3600s")
+  expect(
+    toolBody("workflow", { meta: { name: "审计", description: "全库", phases: [{ title: "a" }] }, script: "return 1" }),
+  ).toBe("审计\n全库\nphases: 1\nscript: return 1")
+  expect(toolBody("cordis_run", { pluginId: "p1", packageId: "pkg1", mode: "prod" })).toBe(
+    "plugin: p1\npackage: pkg1\nmode: prod",
+  )
+  expect(toolBody("update_goal", { goal_id: "g1", revision: 2, action: "complete" })).toBe(
+    "goal: g1\nrevision: 2\naction: complete",
+  )
+  expect(toolBody("job_kill", { job_id: "j1", reason: "超时" })).toBe("job: j1\nreason: 超时")
+  // Unknown tools still fall back to the pretty-printed args.
+  expect(toolBody("mystery_tool", { foo: "bar" })).toBe('{\n  "foo": "bar"\n}')
 })

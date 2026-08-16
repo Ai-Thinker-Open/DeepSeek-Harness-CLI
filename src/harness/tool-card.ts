@@ -225,6 +225,77 @@ export function questionItems(args: Record<string, unknown>): QuestionItemLike[]
   return out
 }
 
+/** Per-tool summary key preference for the generic (others) family. */
+const TOOL_SUMMARY_KEYS: Record<string, readonly string[]> = {
+  subagent: ["description", "prompt"],
+  subagent_fork: ["description", "prompt"],
+  report: ["output"],
+  skill: ["name"],
+  create_goal: ["objective"],
+  schedule_create: ["prompt"],
+  schedule_delete: ["id"],
+  session_search: ["query"],
+  session_event_search: ["query"],
+  session_event_read: ["seq"],
+  session_event_trace: ["seq"],
+  session_trace: ["session_id"],
+  interrupt_agent: ["agent_id"],
+  send_message: ["message"],
+  job_output: ["job_id"],
+  job_kill: ["job_id"],
+  exit_plan_mode: ["plan"],
+  cordis_define: ["name", "purpose"],
+  cordis_run: ["pluginId"],
+  cordis_stop: ["pluginId"],
+  cordis_undefine: ["pluginId"],
+  cordis_inspect_self: ["pluginId"],
+  cordis_inspect_query: ["method", "provider"],
+}
+
+/** Tool-specific one-line summaries that need more than a plain key pick. */
+function toolSpecificSummary(name: string, args: Record<string, unknown>): string | undefined {
+  const meta = args.meta
+  if (name === "workflow" && typeof meta === "object" && meta !== null) {
+    const m = meta as Record<string, unknown>
+    const title = str(m.name) ?? str(m.description)
+    return title ? truncate(firstLine(title)) : undefined
+  }
+  if (name === "lsp") {
+    const op = str(args.operation)
+    const file = str(args.file_path)
+    const line = num(args.line)
+    const col = num(args.character)
+    if (!op) return undefined
+    const at = file ? `${file}${line != null ? `:${line}` : ""}${col != null ? `:${col}` : ""}` : undefined
+    return at ? `${op} · ${at}` : op
+  }
+  if (name === "update_goal") {
+    const action = str(args.action)
+    const id = str(args.goal_id)
+    return action ? (id ? `${action} · ${id}` : action) : undefined
+  }
+  if (name === "send_message") {
+    const id = str(args.subagent_id)
+    if (id) return `→ ${id}`
+    const message = str(args.message)
+    return message ? truncate(firstLine(message)) : undefined
+  }
+  if (name === "schedule_create") {
+    const prompt = str(args.prompt)
+    const after = num(args.after_seconds)
+    const every = num(args.every_seconds)
+    const at = str(args.at)
+    const when = at ?? (after != null ? `in ${after}s` : every != null ? `every ${every}s` : undefined)
+    const head = prompt ? truncate(firstLine(prompt)) : undefined
+    return when ? (head ? `${head} · ${when}` : when) : head
+  }
+  if (name === "interrupt_agent") {
+    const id = str(args.agent_id)
+    return id ? `✕ ${id}` : undefined
+  }
+  return undefined
+}
+
 /** One-line summary for any tool call, mirroring the web's summary keys. */
 export function toolSummary(name: string, args: Record<string, unknown>): string {
   const variant = classifyTool(name)
@@ -232,12 +303,232 @@ export function toolSummary(name: string, args: Record<string, unknown>): string
     const summary = todoSummary(args)
     return summary ? truncate(summary, 80) : ""
   }
+  const specific = toolSpecificSummary(name, args)
+  if (specific !== undefined && specific !== "") return specific
+  const toolKeys = TOOL_SUMMARY_KEYS[name]
+  if (toolKeys) {
+    const picked = pickString(args, toolKeys)
+    if (picked !== undefined) return truncate(firstLine(picked))
+  }
   const picked = pickString(args, SUMMARY_KEYS[variant])
   if (picked !== undefined) return truncate(firstLine(picked))
   for (const v of Object.values(args)) {
     if (typeof v === "string" && v !== "") return truncate(firstLine(v))
   }
   return ""
+}
+
+/** Readable expanded-body text for the generic action families. */
+function toolSpecificBody(name: string, args: Record<string, unknown>): string | undefined {
+  const meta = args.meta
+  switch (name) {
+    case "subagent":
+    case "subagent_fork": {
+      const parts: string[] = []
+      const desc = str(args.description)
+      if (desc) parts.push(desc)
+      const prompt = str(args.prompt)
+      if (prompt) parts.push(`prompt: ${truncate(prompt, 300)}`)
+      if (args.run_in_background === true) parts.push("background: yes")
+      return parts.length ? parts.join("\n") : undefined
+    }
+    case "report": {
+      const output = str(args.output)
+      return output ? truncate(output, 400) : undefined
+    }
+    case "interrupt_agent": {
+      const id = str(args.agent_id)
+      return id ? `agent: ${id}` : undefined
+    }
+    case "list_agents": {
+      const scope = str(args.scope)
+      return scope ? `scope: ${scope}` : undefined
+    }
+    case "send_message": {
+      const parts: string[] = []
+      const id = str(args.subagent_id)
+      if (id) parts.push(`→ ${id}`)
+      const message = str(args.message)
+      if (message) parts.push(truncate(message, 200))
+      return parts.length ? parts.join("\n") : undefined
+    }
+    case "create_goal": {
+      const parts: string[] = []
+      const objective = str(args.objective)
+      if (objective) parts.push(objective)
+      const rounds = num(args.max_goal_rounds)
+      if (rounds != null) parts.push(`max rounds: ${rounds}`)
+      return parts.length ? parts.join("\n") : undefined
+    }
+    case "update_goal": {
+      const parts: string[] = []
+      const id = str(args.goal_id)
+      const rev = num(args.revision)
+      const action = str(args.action)
+      if (id) parts.push(`goal: ${id}`)
+      if (rev != null) parts.push(`revision: ${rev}`)
+      if (action) parts.push(`action: ${action}`)
+      const objective = str(args.objective)
+      if (objective) parts.push(objective)
+      const reason = str(args.blocked_reason)
+      if (reason) parts.push(`blocked: ${reason}`)
+      return parts.length ? parts.join("\n") : undefined
+    }
+    case "schedule_create": {
+      const parts: string[] = []
+      const prompt = str(args.prompt)
+      if (prompt) parts.push(truncate(prompt, 300))
+      const after = num(args.after_seconds)
+      const every = num(args.every_seconds)
+      const at = str(args.at)
+      if (after != null) parts.push(`after: ${after}s`)
+      if (every != null) parts.push(`every: ${every}s`)
+      if (at) parts.push(`at: ${at}`)
+      return parts.length ? parts.join("\n") : undefined
+    }
+    case "schedule_delete": {
+      const id = str(args.id)
+      return id ? `schedule: ${id}` : undefined
+    }
+    case "lsp": {
+      const parts: string[] = []
+      const op = str(args.operation)
+      const file = str(args.file_path)
+      const line = num(args.line)
+      const col = num(args.character)
+      if (op) parts.push(op)
+      if (file) parts.push(`${file}${line != null ? `:${line}` : ""}${col != null ? `:${col}` : ""}`)
+      return parts.length ? parts.join("\n") : undefined
+    }
+    case "ralph": {
+      const parts: string[] = []
+      const objective = str(args.objective)
+      if (objective) parts.push(objective)
+      const rounds = num(args.maxRounds)
+      if (rounds != null) parts.push(`max rounds: ${rounds}`)
+      return parts.length ? parts.join("\n") : undefined
+    }
+    case "skill": {
+      const name = str(args.name)
+      return name ? name : undefined
+    }
+    case "session_search": {
+      const query = str(args.query)
+      return query ? `query: ${query}` : undefined
+    }
+    case "session_trace": {
+      const id = str(args.session_id)
+      return id ? `session: ${id}` : undefined
+    }
+    case "session_event_read":
+    case "session_event_trace": {
+      const seq = num(args.seq)
+      const id = str(args.session_id)
+      const parts: string[] = []
+      if (seq != null) parts.push(`seq: ${seq}`)
+      if (id) parts.push(`session: ${id}`)
+      return parts.length ? parts.join("\n") : undefined
+    }
+    case "session_event_search": {
+      const query = str(args.query)
+      const parts: string[] = []
+      if (query) parts.push(`query: ${query}`)
+      const types = args.event_types
+      if (Array.isArray(types) && types.length) parts.push(`types: ${types.join(",")}`)
+      return parts.length ? parts.join("\n") : undefined
+    }
+    case "workflow": {
+      const parts: string[] = []
+      if (typeof meta === "object" && meta !== null) {
+        const m = meta as Record<string, unknown>
+        const title = str(m.name)
+        if (title) parts.push(title)
+        const desc = str(m.description)
+        if (desc) parts.push(desc)
+        const phases = m.phases
+        if (Array.isArray(phases) && phases.length) parts.push(`phases: ${phases.length}`)
+      }
+      const script = str(args.script)
+      if (script) parts.push(`script: ${truncate(script, 200)}`)
+      return parts.length ? parts.join("\n") : undefined
+    }
+    case "exit_plan_mode": {
+      const plan = str(args.plan)
+      return plan ? truncate(plan, 300) : undefined
+    }
+    case "cordis_define": {
+      const parts: string[] = []
+      const title = str(args.name)
+      if (title) parts.push(title)
+      const purpose = str(args.purpose)
+      if (purpose) parts.push(purpose)
+      const plugin = args.plugin
+      if (typeof plugin === "object" && plugin !== null) {
+        const kind = (plugin as Record<string, unknown>).kind
+        if (typeof kind === "string") parts.push(`kind: ${kind}`)
+      }
+      return parts.length ? parts.join("\n") : undefined
+    }
+    case "cordis_run": {
+      const pluginId = str(args.pluginId)
+      const packageId = str(args.packageId)
+      const mode = str(args.mode)
+      const parts: string[] = []
+      if (pluginId) parts.push(`plugin: ${pluginId}`)
+      if (packageId) parts.push(`package: ${packageId}`)
+      if (mode) parts.push(`mode: ${mode}`)
+      return parts.length ? parts.join("\n") : undefined
+    }
+    case "cordis_stop":
+    case "cordis_undefine": {
+      const pluginId = str(args.pluginId)
+      return pluginId ? `plugin: ${pluginId}` : undefined
+    }
+    case "cordis_inspect_query": {
+      const platform = str(args.platform)
+      const provider = str(args.provider)
+      const method = str(args.method)
+      const parts: string[] = []
+      if (platform || provider || method) parts.push([platform, provider, method].filter(Boolean).join("."))
+      const input = args.input
+      if (input !== undefined && input !== "") {
+        try {
+          parts.push(`input: ${JSON.stringify(input).slice(0, 200)}`)
+        } catch {
+          /* ignore */
+        }
+      }
+      return parts.length ? parts.join("\n") : undefined
+    }
+    case "cordis_inspect_self": {
+      const pluginId = str(args.pluginId)
+      const packageId = str(args.packageId)
+      const parts: string[] = []
+      if (pluginId) parts.push(`plugin: ${pluginId}`)
+      if (packageId) parts.push(`package: ${packageId}`)
+      return parts.length ? parts.join("\n") : undefined
+    }
+    case "job_output": {
+      const parts: string[] = []
+      const id = str(args.job_id)
+      if (id) parts.push(`job: ${id}`)
+      const wait = args.wait
+      if (wait === true) parts.push("wait: yes")
+      const timeout = num(args.timeout_ms)
+      if (timeout != null) parts.push(`timeout: ${timeout}ms`)
+      return parts.length ? parts.join("\n") : undefined
+    }
+    case "job_kill": {
+      const parts: string[] = []
+      const id = str(args.job_id)
+      if (id) parts.push(`job: ${id}`)
+      const reason = str(args.reason)
+      if (reason) parts.push(`reason: ${reason}`)
+      return parts.length ? parts.join("\n") : undefined
+    }
+    default:
+      return undefined
+  }
 }
 
 /**
@@ -258,6 +549,8 @@ export function toolBody(name: string, args: Record<string, unknown>): string | 
   if (variant === "todo" || variant === "question" || variant === "read" || variant === "write" || variant === "edit" || variant === "search") {
     return null
   }
+  const specific = toolSpecificBody(name, args)
+  if (specific !== undefined) return specific
   const hasArgs = Object.keys(args).some((k) => args[k] !== undefined && args[k] !== "")
   if (!hasArgs) return null
   try {
