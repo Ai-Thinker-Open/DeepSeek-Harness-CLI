@@ -1,6 +1,7 @@
 import fs from "node:fs"
 import path from "node:path"
 import { createSignal, onMount } from "solid-js"
+import { getMcpServers, type McpServerStatus } from "../mcp"
 import { theme } from "../theme"
 
 function abbreviate(dir: string) {
@@ -21,6 +22,28 @@ function readBranch(): string {
   } catch {
     return ""
   }
+}
+
+function McpStatus() {
+  const [servers, setServers] = createSignal<McpServerStatus[]>([])
+
+  onMount(() => {
+    setServers(getMcpServers())
+  })
+
+  const count = () => servers().filter((item) => item.status === "connected").length
+  const hasError = () => servers().some((item) => item.status === "failed")
+  const dot = () => (hasError() ? theme.error : count() > 0 ? theme.success : theme.textMuted)
+
+  return (
+    <box flexDirection="row" gap={2} flexShrink={0}>
+      <text fg={theme.text}>
+        <span style={{ fg: dot() }}>⊙ </span>
+        {count()} MCP
+      </text>
+      <text fg={theme.textMuted}>/status</text>
+    </box>
+  )
 }
 
 export function Footer() {
@@ -50,6 +73,7 @@ export function Footer() {
         {dir()}
         {branch() ? `:${branch()}` : ""}
       </text>
+      <McpStatus />
       <box flexGrow={1} />
       <text fg={theme.textMuted}>v0.1.0</text>
     </box>

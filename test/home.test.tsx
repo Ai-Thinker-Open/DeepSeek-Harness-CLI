@@ -11,4 +11,6 @@ test("home screen renders brand and version", async () => {
   expect(frame).toContain("DeepSeek Harness")
   expect(frame).toContain("v0.1.0")
   expect(frame).toContain("Tab 切换模式")
+  expect(frame).toContain("/status")
+  expect(frame).toContain("MCP")
 })
