@@ -153,7 +153,7 @@ test("status text sits above the prompt and never hides the stats row", async ()
   expect(app.captureCharFrame()).toContain("24.4k · 输出 492 tok")
 })
 
-test("assistant messages render thinking blocks and tool cards", async () => {
+test("assistant messages collapse thinking and render tool cards", async () => {
   const messages: ChatMessage[] = [
     userMsg("查一下"),
     assistantMsg("", {
@@ -190,13 +190,58 @@ test("assistant messages render thinking blocks and tool cards", async () => {
 
   const frame = app.captureCharFrame()
   expect(frame).toContain("思考")
-  expect(frame).toContain("让我想想")
+  expect(frame).toContain("点击展开")
   expect(frame).toContain("运行中…")
   expect(frame).toContain("●")
   expect(frame).toContain("echo hi")
   expect(frame).toContain("✓")
   expect(frame).toContain("src")
   expect(frame).toContain("test")
+
+  // Thinking body stays collapsed until clicked.
+  expect(frame).not.toContain("让我想想")
+  const lines = frame.split("\n")
+  const y = lines.findIndex((line) => line.includes("思考"))
+  const x = lines[y]?.indexOf("思考") ?? 0
+  await app.mockMouse.click(x + 1, y)
+  await app.renderOnce()
+  expect(app.captureCharFrame()).toContain("让我想想")
+  expect(app.captureCharFrame()).toContain("点击收起")
+})
+
+test("assistant markdown renders blocks and inline styles without raw markers", async () => {
+  const content = `## 🖥️ 终端类（和你的环境很搭）
+
+1. **终端小游戏** — 用 ANSI 转义序列或 TUI 库实现
+2. **终端天气/汇率查询工具** — 调用免费 API
+3. 命令行 **Markdown 浏览器** — 支持翻页、搜索
+
+\`\`\`bash
+echo "hello-from-md"
+\`\`\`
+
+> 引用：\`bun run dev\` 启动
+
+| 名称 | 说明 |
+| --- | --- |
+| bash | 执行命令 |
+| fs | 读写文件 |`
+  const app = await renderSession({ messages: [assistantMsg(content)] })
+  await app.renderOnce()
+
+  const frame = app.captureCharFrame()
+  expect(frame).toContain("终端类（和你的环境很搭）")
+  expect(frame).toContain("终端小游戏")
+  expect(frame).toContain("Markdown 浏览器")
+  expect(frame).toContain("echo \"hello-from-md\"")
+  expect(frame).toContain("引用：bun run dev 启动")
+  expect(frame).toContain("bash")
+  expect(frame).toContain("执行命令")
+  // Markdown syntax markers must not leak into the frame.
+  expect(frame).not.toContain("## 🖥️")
+  expect(frame).not.toContain("**终端小游戏**")
+  expect(frame).not.toContain("**Markdown 浏览器**")
+  expect(frame).not.toContain("```")
 })
 
 test("injected context renders collapsed and expands on click", async () => {

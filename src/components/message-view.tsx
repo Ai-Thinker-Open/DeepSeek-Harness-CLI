@@ -3,6 +3,7 @@ import type { ChatMessage } from "../session"
 import type { ToolCallRecord, ToolResultRecord, ToolCallStatus } from "../session"
 import { theme } from "../theme"
 import { CONTEXT_FORM_LABELS } from "../harness/fold"
+import { MarkdownText } from "./markdown"
 
 /** While a message is streaming, only render its tail so layout stays cheap. */
 const STREAMING_CONTENT_TAIL = 4000
@@ -89,6 +90,7 @@ export function ToolCard({ call, result }: { call: ToolCallRecord; result?: Tool
 }
 
 function ThinkingBlock({ text, streaming }: { text: string; streaming?: boolean }) {
+  const [expanded, setExpanded] = createSignal(false)
   // Bounded slice first so huge reasoning dumps never split in full.
   const lines = createMemo(() => text.slice(0, 12_000).split("\n"))
   const preview = () => {
@@ -97,22 +99,32 @@ function ThinkingBlock({ text, streaming }: { text: string; streaming?: boolean 
   }
   return (
     <box flexDirection="column" paddingLeft={2} marginTop={1}>
-      <box flexDirection="row">
-        <text fg={theme.info}>💭</text>
+      <box
+        flexDirection="row"
+        onMouse={(evt) => {
+          if (evt.type === "down" && evt.button === 0) setExpanded((v) => !v)
+        }}
+      >
+        <text fg={theme.info}>
+          {expanded() ? "▾" : "▸"} 💭
+        </text>
         <text fg={theme.text}>
           <b> 思考</b>
         </text>
         <Show when={streaming}>
           <text fg={theme.textMuted}> …</text>
         </Show>
+        <text fg={theme.textMuted}> · {lines().length} 行 · {expanded() ? "点击收起" : "点击展开"}</text>
       </box>
-      <For each={preview()}>
-        {(line) => (
-          <text fg={theme.textMuted} wrapMode="char">
-            {line}
-          </text>
-        )}
-      </For>
+      <Show when={expanded()}>
+        <For each={preview()}>
+          {(line) => (
+            <text fg={theme.textMuted} wrapMode="char">
+              {line}
+            </text>
+          )}
+        </For>
+      </Show>
     </box>
   )
 }
@@ -207,16 +219,11 @@ export function MessageView(props: { message: ChatMessage }) {
         <ThinkingBlock text={props.message.thinking as string} streaming={props.message.streaming} />
       </Show>
       <Show when={props.message.content}>
-        <box paddingLeft={2}>
+        <box paddingLeft={2} flexDirection="column">
           <Show when={view.truncated}>
             <text fg={theme.textMuted}>…</text>
           </Show>
-          <text fg={theme.text} wrapMode="char">
-            {view.text}
-            <Show when={props.message.streaming}>
-              <span style={{ fg: theme.accent }}>▍</span>
-            </Show>
-          </text>
+          <MarkdownText text={props.message.streaming ? `${view.text}▍` : view.text} />
         </box>
       </Show>
       <Show when={!props.message.content && !props.message.thinking && props.message.streaming}>
