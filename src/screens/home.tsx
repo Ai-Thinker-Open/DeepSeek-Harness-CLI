@@ -63,7 +63,7 @@ export function Home(props: {
           <Prompt mode={mode} model={model} />
         </box>
 
-        <box width="100%" maxWidth={75} flexShrink={0}>
+        <box width="100%" maxWidth={75} paddingTop={3} flexShrink={0}>
           <ModeHint />
         </box>
 
