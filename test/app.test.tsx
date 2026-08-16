@@ -67,7 +67,7 @@ test("submitting on the home prompt opens the session", async () => {
   const frame = app.captureCharFrame()
   expect(frame).toContain("esc 返回")
   expect(frame).toContain("hello")
-  expect(frame).toContain("发送消息开始对话")
+  expect(frame).not.toContain("发送消息开始对话")
   expect(frame).toContain("30 轮")
 
   app.mockInput.typeText("world")

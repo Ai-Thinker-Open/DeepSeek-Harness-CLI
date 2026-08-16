@@ -47,7 +47,7 @@ export function App() {
     if (!trimmed) return
     if (screen() === "home") {
       setTitle(trimmed.length > 16 ? `${trimmed.slice(0, 16)}…` : trimmed)
-      setMessages([])
+      setMessages([{ id: nextId(), role: "user", content: trimmed }])
       setScreen("session")
     } else {
       setMessages((list) => [...list, { id: nextId(), role: "user", content: trimmed }])
