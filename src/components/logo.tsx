@@ -842,40 +842,8 @@ export function Logo(
     })
   }
 
-  const mouse = (evt: any) => {
-    if (props.animated === false) return
-    if (!box) return
-    if ((evt.type === "down" || evt.type === "drag") && evt.button === MouseButton.LEFT) {
-      const x = evt.x - box.x
-      const y = evt.y - box.y
-      if (!hit(x, y)) return
-      if (evt.type === "drag" && hold()) return
-      evt.preventDefault()
-      evt.stopPropagation()
-      const t = performance.now()
-      press(x, y, t)
-      return
-    }
-
-    if (!hold()) return
-    if (evt.type === "up") {
-      const item = hold()
-      if (!item) return
-      burst(item.x, item.y)
-    }
-  }
-
   return (
     <box ref={(item: BoxRenderable) => (box = item)}>
-      <box
-        position="absolute"
-        top={0}
-        left={0}
-        width={ctx.FULL[0]?.length ?? 0}
-        height={ctx.FULL.length}
-        zIndex={1}
-        onMouse={mouse}
-      />
       <box flexDirection="column">
         <For each={ctx.FULL}>
           {(line, index) => (
