@@ -1,10 +1,9 @@
-import { createEffect, createSignal, onCleanup, onMount } from "solid-js"
+import { createEffect, createSignal } from "solid-js"
 import type { TextareaRenderable } from "@opentui/core"
 import { modeLabel, type PermissionMode } from "../permission"
 import { theme } from "../theme"
 
-const NORMAL = ["帮我实现一个 TODO 应用", "排查这个报错的原因", "为这个模块写一组测试"]
-const SHELL = ["ls -la", "git status --short", "pwd"]
+const PROMPT_PLACEHOLDER = "给智能体发消息"
 
 export function Prompt(props: {
   onSubmit?: (text: string) => void
@@ -14,7 +13,6 @@ export function Prompt(props: {
   inputId?: string
 } = {}) {
   const [value, setValue] = createSignal("")
-  const [idx, setIdx] = createSignal(0)
   const mode = props.mode ?? (() => "workspace-write" as PermissionMode)
   const model = props.model ?? (() => "DeepSeek-V4-Flash")
   const active = props.active ?? (() => true)
@@ -23,13 +21,6 @@ export function Prompt(props: {
   createEffect(() => {
     if (active()) ref?.focus()
   })
-
-  onMount(() => {
-    const timer = setInterval(() => setIdx((i) => (i + 1) % Math.max(1, NORMAL.length)), 4000)
-    onCleanup(() => clearInterval(timer))
-  })
-
-  const placeholder = () => SHELL[idx() % SHELL.length]
 
   const submit = () => {
     const text = (ref?.plainText ?? value()).trim()
@@ -46,7 +37,7 @@ export function Prompt(props: {
           id={props.inputId ?? "prompt-input"}
           ref={(el) => (ref = el)}
           initialValue=""
-          placeholder={placeholder()}
+          placeholder={PROMPT_PLACEHOLDER}
           minHeight={1}
           maxHeight={5}
           keyBindings={[

@@ -54,6 +54,8 @@ test("session screen renders messages and model without a top header", async () 
   expect(frame).toContain("收到，演示回复")
   expect(frame).toContain("DeepSeek-V4-Flash")
   expect(frame).not.toContain("esc 返回")
+  expect(frame).toContain("给智能体发消息")
+  expect(frame).not.toContain("ls -la")
 })
 
 test("escape in the session returns home", async () => {
