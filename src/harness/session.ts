@@ -12,6 +12,7 @@ import { HarnessClient, type HarnessClientLike, type ServerRequest, type Session
 import {
   assistantBlocksToMessage,
   blockText,
+  foldHistory,
   injectSourceTitle,
   isInjectedSource,
   MAX_INJECT_CHARS,
@@ -53,6 +54,7 @@ export function describeHarnessError(e: unknown): string {
 export function createHarnessSession(
   client: HarnessClientLike = new HarnessClient(process.env.DSH_URL ?? "http://127.0.0.1:3080"),
   cwd = process.cwd(),
+  options: { stallResyncMs?: number } = {},
 ): HarnessSessionApi {
   const [messages, setMessages] = createSignal<ChatMessage[]>([])
   const [stats, setStats] = createSignal<SessionStats>(EMPTY_STATS)
@@ -75,6 +77,15 @@ export function createHarnessSession(
   let streamTurn: string | null = null
   let promptSentAt = 0
   let firstTokenDone = true
+  /** Silence watchdog: while a message is streaming, no frame for this long
+   *  means the downlink is wedged (or the turn died) — force a reconnect and
+   *  re-sync from durable history so a stuck ▍ cursor can never persist. */
+  const stallResyncMs = options.stallResyncMs ?? 45_000
+  const stallCheckMs = Math.min(5_000, Math.max(50, Math.floor(stallResyncMs / 3)))
+  let lastFrameAt = 0
+  let lastResyncAt = 0
+  let streamAbort: AbortController | null = null
+  let stallTimer: ReturnType<typeof setInterval> | undefined
   const usageByStep = new Map<string, { in: number; out: number; cr: number; cw: number; re: number }>()
 
   // Solid's <For> memoizes items by object identity. To make only the touched
@@ -403,7 +414,20 @@ export function createHarnessSession(
       syncStats()
     }
     const last = model[model.length - 1]
-    if (last?.streaming) {
+    const msgId = `msg-${data.message?.id ?? ev.seq}`
+    const existing = model.find((m) => m.id === msgId)
+    if (existing) {
+      // Idempotent finalize (survives a history re-sync racing the live event).
+      existing.streaming = false
+      if (content) existing.content = finalContent
+      if (thinking) existing.thinking = finalThinking || undefined
+      for (const tc of toolCalls) {
+        if (!existing.toolCalls?.some((c) => c.id === tc.id)) {
+          existing.toolCalls = [...(existing.toolCalls ?? []), tc]
+        }
+      }
+      touch(existing)
+    } else if (last?.streaming) {
       last.streaming = false
       if (content) last.content = finalContent
       if (thinking) last.thinking = finalThinking
@@ -417,7 +441,7 @@ export function createHarnessSession(
       touch(last)
     } else if (content || thinking || toolCalls.length) {
       model.push({
-        id: `msg-${data.message?.id ?? ev.seq}`,
+        id: msgId,
         role: "assistant",
         content: finalContent,
         thinking: finalThinking || undefined,
@@ -544,10 +568,52 @@ export function createHarnessSession(
     void listenLoop()
   }
 
+  /** Watch for a wedged downlink while a turn is streaming. */
+  function startStallWatchdog(): void {
+    if (stallTimer) return
+    stallTimer = setInterval(() => {
+      if (abortController.signal.aborted) return
+      const streaming = model.some((m) => m.streaming)
+      if (!streaming) return
+      const now = Date.now()
+      if (lastFrameAt > 0 && now - lastFrameAt > stallResyncMs && now - lastResyncAt > stallResyncMs) {
+        lastResyncAt = now
+        setStatusText("长时间无响应，正在恢复…")
+        streamAbort?.abort()
+        void resyncFromHistory()
+      }
+    }, stallCheckMs)
+  }
+
+  /** Rebuild the conversation from durable history after a stall/reconnect. */
+  async function resyncFromHistory(): Promise<void> {
+    if (!sessionId) return
+    try {
+      const { events } = await client.history(sessionId)
+      const fresh = foldHistory(events.map((e) => e.event))
+      if (fresh.length === 0) return
+      model = fresh
+      streamTurn = null
+      firstTokenDone = true
+      // If the stalled turn completed durably, drop the busy/streaming state.
+      if (!model.some((m) => m.streaming)) {
+        setBusy(false)
+        setStatusText("")
+      }
+      syncAll()
+    } catch {
+      // Keep the live view; the reconnect loop keeps trying.
+    }
+  }
+
   async function listenLoop(): Promise<void> {
     while (!abortController.signal.aborted) {
+      const streamAbortController = new AbortController()
+      streamAbort = streamAbortController
+      lastFrameAt = Date.now()
       try {
-        for await (const frame of client.eventStream(abortController.signal)) {
+        for await (const frame of client.eventStream(streamAbortController.signal)) {
+          lastFrameAt = Date.now()
           // First frame after a drop: the link is alive again — clear the
           // "连接中断，重连中…" status that would otherwise linger forever.
           if (!connected()) {
@@ -568,7 +634,12 @@ export function createHarnessSession(
       // Both a clean close and an error mean the downlink is gone; reconnect.
       if (abortController.signal.aborted) break
       setConnected(false)
-      setStatusText("连接中断，重连中…")
+      // If the watchdog already re-synced from history and the conversation is
+      // healthy again, don't flash a stale "连接中断" status on top of it.
+      const justResynced = Date.now() - lastResyncAt < stallResyncMs
+      if (!justResynced || model.some((m) => m.streaming)) {
+        setStatusText("连接中断，重连中…")
+      }
       await new Promise((r) => setTimeout(r, RECONNECT_DELAY_MS))
     }
     listening = false
@@ -583,6 +654,7 @@ export function createHarnessSession(
         const created = await client.createSession(cwd)
         sessionId = created.sessionId
         startListening()
+        startStallWatchdog()
       } catch (e) {
         setConnected(false)
         setError(describeHarnessError(e))
@@ -656,6 +728,10 @@ export function createHarnessSession(
   }
 
   function dispose(): void {
+    if (stallTimer) {
+      clearInterval(stallTimer)
+      stallTimer = undefined
+    }
     abortController.abort()
   }
 

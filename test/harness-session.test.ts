@@ -120,6 +120,48 @@ test("reconnect clears the interrupted status once frames flow again", async () 
   expect(session.statusText()).toBe("")
 })
 
+test("a wedged stream recovers: the watchdog re-syncs from durable history", async () => {
+  const client = new FakeClient()
+  client.history = (async () => ({
+    events: [
+      { event: ev("user/message", { id: "m1", content: [{ type: "text", text: "hello" }] }, 1) },
+      {
+        event: ev(
+          "assistant/message",
+          { message: { id: "a1", content: [{ type: "text", text: "finalized reply" }] } },
+          2,
+        ),
+      },
+    ],
+    hasMore: false,
+  })) as unknown as typeof client.history
+  // The first stream yields one turn/start frame, then wedges silently — no
+  // close, no error — which would otherwise leave the ▍ cursor forever.
+  let calls = 0
+  client.eventStream = (async function* (signal?: AbortSignal) {
+    calls += 1
+    if (calls === 1) {
+      yield frame("session/event", { sessionId: "s-1", event: ev("turn/start", { turn: 1 }, 5) })
+    }
+    await new Promise((resolve) => signal?.addEventListener("abort", resolve, { once: true }))
+  }) as typeof client.eventStream
+
+  const session = createHarnessSession(client, "/tmp", { stallResyncMs: 150 })
+  await session.start("hello")
+  await tick()
+
+  // Turn started and the message is stuck streaming.
+  expect(session.statusText()).toBe("Deep diving")
+  expect(session.messages().some((m) => m.streaming)).toBe(true)
+
+  // After the silence threshold the watchdog reconnects and history wins.
+  await new Promise((resolve) => setTimeout(resolve, 350))
+  expect(session.messages().map((m) => m.content)).toEqual(["hello", "finalized reply"])
+  expect(session.messages().some((m) => m.streaming)).toBe(false)
+  expect(session.statusText()).toBe("")
+  session.dispose()
+})
+
 test("session streams assistant text, reasoning and tool call results", async () => {
   const client = new FakeClient()
   const session = createHarnessSession(client, "/tmp")
