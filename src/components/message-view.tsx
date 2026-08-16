@@ -3,6 +3,14 @@ import type { ChatMessage } from "../session"
 import type { ToolCallRecord, ToolResultRecord, ToolCallStatus } from "../session"
 import { theme } from "../theme"
 import { CONTEXT_FORM_LABELS } from "../harness/fold"
+import {
+  editPair,
+  questionItems,
+  todoItems,
+  toolRowModel,
+  writeText,
+  type ToolRowModel,
+} from "../harness/tool-card"
 import { MarkdownText } from "./markdown"
 
 /** While a message is streaming, only render its tail so layout stays cheap. */
@@ -10,6 +18,7 @@ const STREAMING_CONTENT_TAIL = 4000
 /** Bound on a finalized message's rendered text (head+tail, with a note). */
 const MAX_RENDERED_CONTENT = 32_000
 const INJECT_PREVIEW_LINES = 8
+const MAX_OUTPUT_LINES = 20
 
 function statusColor(status: ToolCallStatus) {
   switch (status) {
@@ -42,25 +51,220 @@ function formatDuration(ms: number): string {
   return `${(ms / 1000).toFixed(1)}s`
 }
 
+function OutputLines({ text }: { text: string }) {
+  const lines = createMemo(() => text.split("\n"))
+  return (
+    <box paddingLeft={2} flexDirection="column">
+      <For each={lines().slice(0, MAX_OUTPUT_LINES)}>
+        {(line) => (
+          <text fg={theme.textMuted} wrapMode="char">
+            {line || " "}
+          </text>
+        )}
+      </For>
+      <Show when={lines().length > MAX_OUTPUT_LINES}>
+        <text fg={theme.textMuted}>… ({lines().length - MAX_OUTPUT_LINES} more lines)</text>
+      </Show>
+    </box>
+  )
+}
+
+function BashCard({ model }: { model: ToolRowModel }) {
+  const markers = model.markers
+  return (
+    <box flexDirection="column" border={["left"]} borderColor={theme.borderSubtle} paddingLeft={1}>
+      <Show when={model.body}>
+        <text fg={theme.text} wrapMode="char">
+          <b>❯ </b>
+          {model.body}
+        </text>
+      </Show>
+      <Show when={markers.text}>
+        <OutputLines text={markers.text} />
+      </Show>
+      <Show when={markers.sandbox}>
+        <text fg={theme.warning}>⚠ {markers.sandbox}</text>
+      </Show>
+      <Show when={markers.exitCode !== undefined}>
+        <text fg={markers.exitCode === 0 ? theme.textMuted : theme.error}>
+          {markers.exitCode === 0 ? "✓ 退出码 0" : `✗ 退出码 ${markers.exitCode}`}
+        </text>
+      </Show>
+    </box>
+  )
+}
+
+function ReadCard({ model }: { model: ToolRowModel }) {
+  return (
+    <box flexDirection="column" border={["left"]} borderColor={theme.borderSubtle} paddingLeft={1}>
+      <Show when={model.output}>
+        <OutputLines text={model.output as string} />
+      </Show>
+    </box>
+  )
+}
+
+function EditCard({ args, newOnly }: { args: Record<string, unknown>; newOnly?: boolean }) {
+  const lines = createMemo(() => {
+    const out: Array<{ sign: "+" | "-"; text: string }> = []
+    const pair = editPair(args)
+    if (!newOnly && pair.oldText) {
+      for (const line of pair.oldText.split("\n")) out.push({ sign: "-", text: line })
+    }
+    const newText = newOnly ? writeText(args) : pair.newText
+    if (newText) {
+      for (const line of newText.split("\n")) out.push({ sign: "+", text: line })
+    }
+    return out
+  })
+  return (
+    <box flexDirection="column" border={["left"]} borderColor={theme.borderSubtle} paddingLeft={1}>
+      <For each={lines().slice(0, MAX_OUTPUT_LINES)}>
+        {(item) => (
+          <text fg={item.sign === "+" ? theme.success : theme.error} wrapMode="char">
+            {item.sign} {item.text || " "}
+          </text>
+        )}
+      </For>
+      <Show when={lines().length > MAX_OUTPUT_LINES}>
+        <text fg={theme.textMuted}>… ({lines().length - MAX_OUTPUT_LINES} more lines)</text>
+      </Show>
+    </box>
+  )
+}
+
+function TodoCard({ args }: { args: Record<string, unknown> }) {
+  const items = todoItems(args)
+  return (
+    <box flexDirection="column" paddingLeft={2}>
+      <For each={items}>
+        {(item) => (
+          <text
+            fg={
+              item.status === "completed"
+                ? theme.success
+                : item.status === "in_progress"
+                  ? theme.info
+                  : theme.textMuted
+            }
+          >
+            {item.status === "completed" ? "☑ " : item.status === "in_progress" ? "◐ " : "○ "}
+            {item.content}
+          </text>
+        )}
+      </For>
+    </box>
+  )
+}
+
+function QuestionCard({ args }: { args: Record<string, unknown> }) {
+  const items = questionItems(args)
+  return (
+    <box flexDirection="column" paddingLeft={2}>
+      <For each={items}>
+        {(item) => (
+          <box flexDirection="column">
+            <text fg={theme.text} wrapMode="char">
+              ? {item.question}
+            </text>
+            <For each={item.options}>
+              {(option) => (
+                <text fg={theme.textMuted} wrapMode="char">
+                  {"  "}· {option}
+                </text>
+              )}
+            </For>
+          </box>
+        )}
+      </For>
+    </box>
+  )
+}
+
+function ToolBody({ model, args }: { model: ToolRowModel; args: Record<string, unknown> }) {
+  switch (model.variant) {
+    case "bash":
+      return <BashCard model={model} />
+    case "read":
+      return <ReadCard model={model} />
+    case "edit":
+      return <EditCard args={args} />
+    case "write":
+      return <EditCard args={args} newOnly />
+    case "search":
+      return (
+        <box flexDirection="column" border={["left"]} borderColor={theme.borderSubtle} paddingLeft={1}>
+          <Show when={model.output}>
+            <OutputLines text={model.output as string} />
+          </Show>
+        </box>
+      )
+    case "todo":
+      return <TodoCard args={args} />
+    case "question":
+      return <QuestionCard args={args} />
+    default:
+      return (
+        <box flexDirection="column" paddingLeft={2}>
+          <Show when={model.body}>
+            <text fg={theme.textMuted} wrapMode="char">
+              {model.body}
+            </text>
+          </Show>
+          <Show when={model.output}>
+            <OutputLines text={model.output as string} />
+          </Show>
+        </box>
+      )
+  }
+}
+
 export function ToolCard({ call, result }: { call: ToolCallRecord; result?: ToolResultRecord }) {
+  const model = createMemo(() => toolRowModel(call, result))
+  const [expanded, setExpanded] = createSignal(false)
   const dur =
     call.startedAt && call.finishedAt ? ` (${formatDuration(call.finishedAt - call.startedAt)})` : ""
-  const outputLines = createMemo(() => (result && result.output.trim() ? result.output.split("\n") : []))
+  const errorLine = createMemo(() => {
+    if (call.status !== "error") return null
+    const output = model().output
+    if (!output) return null
+    const nl = output.indexOf("\n")
+    return nl === -1 ? output : output.slice(0, nl)
+  })
+  const expandable = createMemo(
+    () =>
+      model().body !== null ||
+      model().output !== null ||
+      model().variant === "todo" ||
+      model().variant === "question",
+  )
+  const toggle = () => setExpanded((v) => !v)
   return (
     <box flexDirection="column" paddingLeft={2} marginTop={1}>
-      <box flexDirection="row">
+      <box
+        flexDirection="row"
+        onMouse={(evt) => {
+          if (evt.type === "down" && evt.button === 0 && expandable()) toggle()
+        }}
+      >
         <ToolIcon status={call.status} />
         <text fg={theme.text}>
-          <b> {call.name}</b>
+          <b>
+            {" "}
+            {model().icon} {model().title}
+          </b>
         </text>
-        <Show when={call.summary}>
-          <text fg={theme.textMuted} wrapMode="char">
-            {"  "}
-            {call.summary}
+        <Show when={model().summary || errorLine()}>
+          <text fg={call.status === "error" && errorLine() ? theme.error : theme.textMuted} wrapMode="char">
+            {" · "}
+            {errorLine() ?? model().summary}
           </text>
         </Show>
         <Show when={dur}>
           <text fg={theme.textMuted}>{dur}</text>
+        </Show>
+        <Show when={expandable()}>
+          <text fg={theme.textMuted}>{expanded() ? " ▾" : " ▸"}</text>
         </Show>
       </box>
       <Show when={call.status === "running"}>
@@ -68,22 +272,11 @@ export function ToolCard({ call, result }: { call: ToolCallRecord; result?: Tool
           <text fg={theme.textMuted}>运行中…</text>
         </box>
       </Show>
-      <Show when={outputLines().length > 0 && call.status !== "running"}>
-        <box paddingLeft={2} flexDirection="column">
-          <For each={outputLines().slice(0, 4)}>
-            {(line) => (
-              <text fg={theme.textMuted} wrapMode="char">
-                {line}
-              </text>
-            )}
-          </For>
-          <Show when={outputLines().length > 4}>
-            <text fg={theme.textMuted}>… ({outputLines().length - 4} more lines)</text>
-          </Show>
-          <Show when={result?.truncated}>
-            <text fg={theme.textMuted}>… 输出已截断</text>
-          </Show>
-        </box>
+      <Show when={expanded() && call.status !== "running"}>
+        <ToolBody model={model()} args={(call.args ?? {}) as Record<string, unknown>} />
+        <Show when={result?.truncated}>
+          <text fg={theme.textMuted}>… 输出已截断</text>
+        </Show>
       </Show>
     </box>
   )

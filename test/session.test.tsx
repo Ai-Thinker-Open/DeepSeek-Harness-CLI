@@ -204,8 +204,10 @@ test("assistant messages collapse thinking and render tool cards", async () => {
   expect(frame).toContain("●")
   expect(frame).toContain("echo hi")
   expect(frame).toContain("✓")
-  expect(frame).toContain("src")
-  expect(frame).toContain("test")
+  expect(frame).toContain("Bash · ls")
+  // Tool cards are collapsed by default; output stays hidden until expanded.
+  expect(frame).not.toContain("src")
+  expect(frame).not.toContain("test")
 
   // Thinking body stays collapsed until clicked.
   expect(frame).not.toContain("让我想想")
@@ -215,6 +217,99 @@ test("assistant messages collapse thinking and render tool cards", async () => {
   await app.mockMouse.click(x + 1, y)
   await app.renderOnce()
   expect(app.captureCharFrame()).toContain("让我想想")
+
+  // Expanding the settled tool card reveals its output.
+  const frame2 = app.captureCharFrame().split("\n")
+  const ty = frame2.findIndex((line) => line.includes("· ls"))
+  const tx = frame2[ty]?.indexOf("· ls") ?? 0
+  await app.mockMouse.click(tx + 1, ty)
+  await app.renderOnce()
+  const frame3 = app.captureCharFrame()
+  expect(frame3).toContain("src")
+  expect(frame3).toContain("test")
+})
+
+test("tool cards render per-variant bodies (bash exit code, edit diff, todo checklist)", async () => {
+  const messages: ChatMessage[] = [
+    assistantMsg("", {
+      toolCalls: [
+        {
+          id: "t1",
+          name: "bash",
+          args: { command: "false", description: "Run a failing command" },
+          summary: "Run a failing command",
+          status: "ok",
+          startedAt: 2,
+          finishedAt: 2300,
+        },
+        {
+          id: "t2",
+          name: "edit",
+          args: { file_path: "src/main.ts", old_string: "旧代码", new_string: "新代码" },
+          summary: "src/main.ts",
+          status: "ok",
+          startedAt: 3,
+          finishedAt: 3300,
+        },
+        {
+          id: "t3",
+          name: "todo_write",
+          args: {
+            todos: [
+              { content: "调研", status: "completed" },
+              { content: "实现", status: "in_progress" },
+              { content: "测试", status: "pending" },
+            ],
+          },
+          summary: "",
+          status: "ok",
+          startedAt: 4,
+          finishedAt: 4300,
+        },
+      ],
+      toolResults: [
+        { toolCallId: "t1", ok: true, output: "boom\n[exit code: 1]" },
+        { toolCallId: "t2", ok: true, output: "done" },
+      ],
+    }),
+  ]
+  const app = await renderSession({ messages, height: 40 })
+  await app.renderOnce()
+
+  const frame = app.captureCharFrame()
+  // Variant titles and summaries.
+  expect(frame).toContain("Bash · Run a failing command")
+  expect(frame).toContain("Edit · src/main.ts")
+  expect(frame).toContain("Todo · 1/3 done · 1 running")
+  // Exit marker is not shown raw in the collapsed row.
+  expect(frame).not.toContain("[exit code: 1]")
+
+  const lines = frame.split("\n")
+  const bashY = lines.findIndex((line) => line.includes("Bash ·"))
+  await app.mockMouse.click(lines[bashY]!.indexOf("Bash") + 1, bashY)
+  await app.renderOnce()
+  const afterBash = app.captureCharFrame()
+  expect(afterBash).toContain("❯ false")
+  expect(afterBash).toContain("boom")
+  expect(afterBash).toContain("✗ 退出码 1")
+  expect(afterBash).not.toContain("[exit code: 1]")
+
+  const lines2 = afterBash.split("\n")
+  const editY = lines2.findIndex((line) => line.includes("Edit ·"))
+  await app.mockMouse.click(lines2[editY]!.indexOf("Edit") + 1, editY)
+  await app.renderOnce()
+  const afterEdit = app.captureCharFrame()
+  expect(afterEdit).toContain("- 旧代码")
+  expect(afterEdit).toContain("+ 新代码")
+
+  const lines3 = afterEdit.split("\n")
+  const todoY = lines3.findIndex((line) => line.includes("Todo ·"))
+  await app.mockMouse.click(lines3[todoY]!.indexOf("Todo") + 1, todoY)
+  await app.renderOnce()
+  const afterTodo = app.captureCharFrame()
+  expect(afterTodo).toContain("☑ 调研")
+  expect(afterTodo).toContain("◐ 实现")
+  expect(afterTodo).toContain("○ 测试")
 })
 
 test("assistant markdown renders blocks and inline styles without raw markers", async () => {

@@ -4,6 +4,7 @@
  */
 import type { ChatMessage, ToolCallRecord, ToolResultRecord } from "../session"
 import type { SessionEvent } from "./client"
+import { toolSummary } from "./tool-card"
 
 export interface Block {
   type?: string
@@ -91,13 +92,7 @@ export function blockText(blocks: Block[] | undefined): string {
 }
 
 export function summaryFor(name: string, args: Record<string, unknown>): string {
-  const first = Object.values(args)[0]
-  if (typeof first === "string") return String(first).slice(0, 80)
-  try {
-    return JSON.stringify(args).slice(0, 80)
-  } catch {
-    return name
-  }
+  return toolSummary(name, args)
 }
 
 /** Extract {content, thinking, toolCalls} from assistant content blocks. */

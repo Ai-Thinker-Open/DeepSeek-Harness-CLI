@@ -379,8 +379,7 @@ export function createHarnessSession(
     if (delta.id) call.id = delta.id
     if (delta.argumentsDelta) {
       call.args = mergeArgs(call.args as Record<string, unknown>, delta.argumentsDelta)
-      const first = Object.values(call.args as Record<string, unknown>)[0]
-      call.summary = String(typeof first === "string" ? first : call.name).slice(0, 80)
+      call.summary = summaryFor(call.name, call.args as Record<string, unknown>)
     }
   }
 

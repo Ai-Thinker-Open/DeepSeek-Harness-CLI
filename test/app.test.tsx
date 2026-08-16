@@ -191,9 +191,16 @@ test("session streams assistant replies and tool calls from the harness", async 
 
   const frame = app.captureCharFrame()
   expect(frame).toContain("好的")
-  expect(frame).toContain("bash")
+  expect(frame).toContain("Bash · echo hi")
   expect(frame).toContain("✓")
-  expect(frame).toContain("hi from mock")
+  // The settled tool card is collapsed; expand it to reveal the output.
+  expect(frame).not.toContain("hi from mock")
+  const lines = frame.split("\n")
+  const y = lines.findIndex((line) => line.includes("Bash ·"))
+  const x = lines[y]?.indexOf("Bash") ?? 0
+  await app.mockMouse.click(x + 1, y)
+  await app.renderOnce()
+  expect(app.captureCharFrame()).toContain("hi from mock")
 })
 
 test("connection failure shows an error toast and stays on home", async () => {
