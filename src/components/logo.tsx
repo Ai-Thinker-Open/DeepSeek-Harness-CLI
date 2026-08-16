@@ -477,8 +477,7 @@ function sweepGlow(x: number, y: number, frame: Frame, ctx: LogoContext) {
   const band = Math.exp(-((dx / SWEEP_BAND) ** 2))
   const core = Math.exp(-((dx / 1.3) ** 2)) * 1.7
   const env = Math.sin(p * Math.PI)
-  const wobble = 1 + 0.08 * Math.sin(y * 0.9 + p * 6)
-  return (band * 0.7 + core) * env * SWEEP_AMP * wobble
+  return (band * 0.7 + core) * env * SWEEP_AMP
 }
 
 function buildIdleState(t: number, ctx: LogoContext): IdleState {
