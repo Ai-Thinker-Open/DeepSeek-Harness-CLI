@@ -54,3 +54,22 @@ test("selecting text copies it and shows a toast", async () => {
 
   expect(app.captureCharFrame()).toContain("复制")
 })
+
+test("submitting on the home prompt opens the session", async () => {
+  const app = await testRender(() => <App />, { width: 80, height: 32 })
+  await app.renderOnce()
+
+  app.mockInput.typeText("hello")
+  await app.renderOnce()
+  app.mockInput.pressEnter()
+  await app.renderOnce()
+
+  const frame = app.captureCharFrame()
+  expect(frame).toContain("esc 返回")
+  expect(frame).toContain("hello")
+  expect(frame).toContain("思考中")
+
+  await new Promise((resolve) => setTimeout(resolve, 800))
+  await app.renderOnce()
+  expect(app.captureCharFrame()).toContain("已收到")
+})

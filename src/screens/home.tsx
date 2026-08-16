@@ -17,6 +17,9 @@ export function Home(props: {
   mode?: () => PermissionMode
   model?: () => string
   toast?: () => ToastMessage | null
+  onSubmit?: (text: string) => void
+  visible?: boolean
+  active?: () => boolean
 } = {}) {
   const motion = props.motion ?? true
   const showLoading = props.loading ?? true
@@ -38,6 +41,7 @@ export function Home(props: {
       width="100%"
       height="100%"
       backgroundColor={theme.background}
+      visible={props.visible ?? true}
     >
       <box
         flexDirection="column"
@@ -60,7 +64,13 @@ export function Home(props: {
         <box height={1} minHeight={0} flexShrink={1} />
 
         <box width="100%" maxWidth={75} flexShrink={0}>
-          <Prompt mode={mode} model={model} />
+          <Prompt
+            mode={mode}
+            model={model}
+            onSubmit={props.onSubmit}
+            active={props.active}
+            inputId="home-prompt-input"
+          />
         </box>
 
         <box width="100%" maxWidth={75} paddingTop={1} flexShrink={0}>

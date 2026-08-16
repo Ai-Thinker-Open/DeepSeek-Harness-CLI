@@ -1,4 +1,4 @@
-import { createSignal, onCleanup, onMount } from "solid-js"
+import { createEffect, createSignal, onCleanup, onMount } from "solid-js"
 import type { TextareaRenderable } from "@opentui/core"
 import { modeLabel, type PermissionMode } from "../permission"
 import { theme } from "../theme"
@@ -10,12 +10,19 @@ export function Prompt(props: {
   onSubmit?: (text: string) => void
   mode?: () => PermissionMode
   model?: () => string
+  active?: () => boolean
+  inputId?: string
 } = {}) {
   const [value, setValue] = createSignal("")
   const [idx, setIdx] = createSignal(0)
   const mode = props.mode ?? (() => "workspace-write" as PermissionMode)
   const model = props.model ?? (() => "DeepSeek-V4-Flash")
+  const active = props.active ?? (() => true)
   let ref: TextareaRenderable | undefined
+
+  createEffect(() => {
+    if (active()) ref?.focus()
+  })
 
   onMount(() => {
     const timer = setInterval(() => setIdx((i) => (i + 1) % Math.max(1, NORMAL.length)), 4000)
@@ -42,11 +49,17 @@ export function Prompt(props: {
       paddingBottom={1}
     >
       <textarea
+        id={props.inputId ?? "prompt-input"}
         ref={(el) => (ref = el)}
         initialValue=""
         placeholder={placeholder()}
         minHeight={1}
         maxHeight={5}
+        keyBindings={[
+          { name: "return", action: "submit" },
+          { name: "linefeed", action: "submit" },
+          { name: "return", meta: true, action: "newline" },
+        ]}
         textColor={theme.text}
         placeholderColor={theme.textMuted}
         cursorColor={theme.primary}
