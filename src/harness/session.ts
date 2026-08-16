@@ -454,6 +454,7 @@ export function createHarnessSession(
 
   function onToolCall(ev: SessionEvent): void {
     const data = ev.data as { callId?: string; name?: string; arguments?: string }
+    if (process.env.DSH_DEBUG) console.error("[dsh] tool/call", JSON.stringify(data))
     if (!data.callId || !data.name) return
     const args = tryParseArgs(data.arguments ?? "")
     const last = model[model.length - 1]
@@ -477,6 +478,7 @@ export function createHarnessSession(
 
   function onToolResult(ev: SessionEvent): void {
     const block = (ev.data as { message?: { content?: Block[] } }).message?.content?.[0]
+    if (process.env.DSH_DEBUG) console.error("[dsh] tool/result", JSON.stringify(ev.data))
     if (!block || block.type !== "tool-result" || !block.toolCallId) return
     const { text, truncated } = truncateText(blockText(block.content), MAX_TOOL_OUTPUT_CHARS)
     const result: ToolResultRecord = {
