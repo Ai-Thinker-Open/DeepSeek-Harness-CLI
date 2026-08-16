@@ -37,7 +37,7 @@ export function Home(props: { motion?: boolean; loading?: boolean } = {}) {
       >
         <box flexGrow={1} minHeight={0} />
 
-        <box flexShrink={0} alignItems="center">
+        <box flexShrink={0} alignItems="center" gap={1}>
           <Logo art={deepseek} ink={theme.primary} animated={motion} idle sweep />
           <Logo art={harness} ink={theme.textMuted} animated={motion} idle />
           <text fg={theme.textMuted} marginTop={1}>

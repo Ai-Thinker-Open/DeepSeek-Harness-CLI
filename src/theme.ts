@@ -19,13 +19,13 @@ export type Theme = {
 }
 
 export const theme: Theme = {
-  primary: RGBA.fromHex("#FF6A00"),
-  secondary: RGBA.fromHex("#FF8A3C"),
+  primary: RGBA.fromHex("#4D6BFE"),
+  secondary: RGBA.fromHex("#6E86FF"),
   accent: RGBA.fromHex("#818CF8"),
   error: RGBA.fromHex("#FB7185"),
   warning: RGBA.fromHex("#FBBF24"),
-  success: RGBA.fromHex("#FF6A00"),
-  info: RGBA.fromHex("#FF8A3C"),
+  success: RGBA.fromHex("#4D6BFE"),
+  info: RGBA.fromHex("#6E86FF"),
   text: RGBA.fromHex("#EEEEEE"),
   textMuted: RGBA.fromHex("#808080"),
   background: RGBA.fromHex("#0A0A0A"),

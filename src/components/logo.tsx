@@ -35,7 +35,7 @@ const SWEEP_BAND = 4.5
 const SWEEP_AMP = 1.5
 const PEAK = RGBA.fromInts(255, 255, 255)
 
-const MIMO_ORANGE = RGBA.fromInts(251, 129, 71)
+const BRAND_BLUE = RGBA.fromInts(77, 107, 254)
 
 type ShimmerConfig = {
   period: number
@@ -876,7 +876,7 @@ export function Logo(
         <For each={ctx.FULL}>
           {(line, index) => (
             <box flexDirection="row">
-              {renderLine(line, index(), props.ink ?? MIMO_ORANGE, true, frame(), dusk(), idleState())}
+              {renderLine(line, index(), props.ink ?? BRAND_BLUE, true, frame(), dusk(), idleState())}
             </box>
           )}
         </For>
