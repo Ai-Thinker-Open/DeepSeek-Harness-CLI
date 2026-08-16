@@ -62,6 +62,11 @@ export function SessionScreen(props: {
 
       <Show when={!props.question()}>
         <box width="100%" paddingLeft={2} paddingRight={2} paddingTop={1} flexShrink={0}>
+          <Show when={props.statusText()}>
+            <box paddingBottom={1}>
+              <text fg={theme.textMuted}>{props.statusText()}</text>
+            </box>
+          </Show>
           <Prompt
             mode={props.mode}
             model={props.model}
@@ -69,7 +74,7 @@ export function SessionScreen(props: {
             active={props.active}
             inputId="session-prompt-input"
           />
-          <StatsBar stats={props.stats} status={props.statusText} />
+          <StatsBar stats={props.stats} />
         </box>
       </Show>
 

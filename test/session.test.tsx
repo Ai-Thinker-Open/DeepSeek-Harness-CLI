@@ -116,6 +116,43 @@ test("hovering the stats bar shows real stats without flickering", async () => {
   expect(app.captureCharFrame()).not.toContain("轮次 3")
 })
 
+test("status text sits above the prompt and never hides the stats row", async () => {
+  const stats: SessionStats = {
+    turns: 3,
+    steps: 3,
+    llmMs: 6_000,
+    toolMs: 1_000,
+    inTokens: 732,
+    outTokens: 492,
+    cacheReadTokens: 23_668,
+    cacheWriteTokens: 0,
+    reasoningTokens: 60,
+    firstTokenMs: 900,
+    firstTokenSumMs: 2_700,
+    firstTokenCount: 3,
+  }
+  const app = await renderSession({
+    messages: [userMsg("你好")],
+    stats,
+    statusText: "思考中…",
+  })
+  await app.renderOnce()
+
+  const lines = app.captureCharFrame().split("\n")
+  const statusY = lines.findIndex((line) => line.includes("思考中"))
+  const statsY = lines.findIndex((line) => line.includes("3 轮 · 3 步"))
+  const promptY = lines.findIndex((line) => line.includes("Workspace write"))
+
+  expect(statusY).toBeGreaterThanOrEqual(0)
+  expect(statsY).toBeGreaterThan(statusY)
+  expect(promptY).toBeGreaterThan(statusY)
+  expect(app.captureCharFrame()).toContain("首 token 平均 0.9s")
+  expect(app.captureCharFrame()).toContain("缓存命中 97%")
+  // The row is longer than the 80-column test frame, so the token segment
+  // wraps onto its own line — assert it as a whole.
+  expect(app.captureCharFrame()).toContain("24.4k · 输出 492 tok")
+})
+
 test("assistant messages render thinking blocks and tool cards", async () => {
   const messages: ChatMessage[] = [
     userMsg("查一下"),

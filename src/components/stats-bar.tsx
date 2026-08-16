@@ -43,14 +43,11 @@ function cacheHitPct(s: SessionStats): number | null {
   return Math.round((s.cacheReadTokens / billed) * 100)
 }
 
-export function StatsBar(props: { stats?: () => SessionStats; status?: () => string } = {}) {
+export function StatsBar(props: { stats?: () => SessionStats } = {}) {
   const [hover, setHover] = createSignal(false)
   const stats = props.stats ?? (() => EMPTY_STATS)
-  const status = props.status ?? (() => "")
 
   const short = () => {
-    const statusText = status()
-    if (statusText) return statusText
     const s = stats()
     const parts: string[] = []
     if (s.turns > 0 || s.steps > 0) parts.push(`${s.turns} 轮 · ${s.steps} 步`)
