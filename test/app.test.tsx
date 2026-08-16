@@ -1,9 +1,10 @@
 /** @jsxImportSource @opentui/solid */
 import { expect, test } from "bun:test"
+import { TextAttributes } from "@opentui/core"
 import { testRender } from "@opentui/solid"
 import { App } from "../src/app"
 
-type SpanLike = { text: string; fg: { r: number; g: number; b: number } }
+type SpanLike = { text: string; fg: { r: number; g: number; b: number }; attributes: number }
 type FrameLike = { captureSpans: () => { lines: Array<{ spans: SpanLike[] }> } }
 
 function highlightedMode(app: FrameLike): string | null {
@@ -11,8 +12,8 @@ function highlightedMode(app: FrameLike): string | null {
   for (const line of app.captureSpans().lines) {
     for (const span of line.spans) {
       const label = labels.find((item) => span.text.includes(item))
-      // Primary blue (#4D6BFE) vs muted gray (#808080)
-      if (label && span.fg.b > 0.8 && span.fg.g < 0.6) return label
+      // Current mode is bold; the other two are regular blue
+      if (label && (span.attributes & TextAttributes.BOLD) !== 0) return label
     }
   }
   return null

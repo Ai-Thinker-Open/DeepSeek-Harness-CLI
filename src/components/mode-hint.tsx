@@ -4,16 +4,18 @@ import { theme } from "../theme"
 
 export function ModeHint(props: { mode: () => PermissionMode }) {
   return (
-    <text>
-      <span style={{ fg: theme.textMuted }}>Tab 切换模式: </span>
-      <For each={PERMISSION_MODES}>
-        {(item, index) => (
-          <span style={{ fg: props.mode() === item.id ? theme.primary : theme.textMuted }}>
-            {index() > 0 ? " / " : ""}
-            {item.label}
-          </span>
-        )}
-      </For>
-    </text>
+    <box flexDirection="row" justifyContent="center">
+      <text>
+        <span style={{ fg: theme.secondary }}>Tab 切换模式: </span>
+        <For each={PERMISSION_MODES}>
+          {(item, index) => (
+            <span style={{ fg: theme.primary }}>
+              {index() > 0 ? " / " : ""}
+              {props.mode() === item.id ? <b>{item.label}</b> : item.label}
+            </span>
+          )}
+        </For>
+      </text>
+    </box>
   )
 }
