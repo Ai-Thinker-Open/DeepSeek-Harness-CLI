@@ -55,7 +55,7 @@ export function Home(props: {
 
         <box flexShrink={0} alignItems="center" gap={1}>
           <Logo art={deepseek} ink={theme.primary} animated={motion} idle sweep />
-          <Logo art={harness} ink={theme.textMuted} animated={motion} idle sweep />
+          <Logo art={harness} ink={theme.textMuted} animated={motion} idle />
           <text fg={theme.textMuted} marginTop={1}>
             DeepSeek Harness CLI
           </text>
