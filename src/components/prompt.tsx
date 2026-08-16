@@ -1,7 +1,7 @@
 import { createEffect, createSignal } from "solid-js"
 import type { TextareaRenderable } from "@opentui/core"
 import { modeLabel, type PermissionMode } from "../permission"
-import { theme } from "../theme"
+import { ACCENT_BORDER, theme } from "../theme"
 
 const PROMPT_PLACEHOLDER = "给智能体发消息"
 
@@ -30,7 +30,13 @@ export function Prompt(props: {
   }
 
   return (
-    <box backgroundColor={theme.backgroundPanel} flexDirection="row" border={["left"]} borderColor={theme.primary}>
+    <box
+      backgroundColor={theme.backgroundPanel}
+      flexDirection="row"
+      border={["left"]}
+      borderColor={theme.primary}
+      customBorderChars={ACCENT_BORDER}
+    >
       <box paddingLeft={2} paddingRight={2} paddingTop={1} paddingBottom={1} flexGrow={1} minWidth={0}>
         <textarea
           id={props.inputId ?? "prompt-input"}

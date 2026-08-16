@@ -36,6 +36,22 @@ export const theme: Theme = {
   borderSubtle: RGBA.fromHex("#3C3C3C"),
 }
 
+/** Half-block left accent used on the prompt and user bubbles: a visible bar
+ *  that is thinner than a full solid cell but thicker than a hairline. */
+export const ACCENT_BORDER = {
+  topLeft: "▌",
+  topRight: "│",
+  bottomLeft: "▌",
+  bottomRight: "│",
+  horizontal: "─",
+  vertical: "▌",
+  topT: "┬",
+  bottomT: "┴",
+  leftT: "├",
+  rightT: "┤",
+  cross: "┼",
+} as const
+
 export function useTheme() {
   return { theme }
 }

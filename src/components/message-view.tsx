@@ -1,7 +1,7 @@
 import { createMemo, createSignal, For, Show } from "solid-js"
 import type { ChatMessage } from "../session"
 import type { ToolCallRecord, ToolResultRecord, ToolCallStatus } from "../session"
-import { theme } from "../theme"
+import { ACCENT_BORDER, theme } from "../theme"
 import { CONTEXT_FORM_LABELS } from "../harness/fold"
 import {
   editPair,
@@ -473,6 +473,7 @@ export function MessageView(props: { message: ChatMessage }) {
         marginBottom={1}
         border={["left"]}
         borderColor={theme.primary}
+        customBorderChars={ACCENT_BORDER}
       >
         <box paddingLeft={2} paddingRight={2} paddingTop={1} paddingBottom={1} flexGrow={1} minWidth={0}>
           <text fg={theme.text} wrapMode="char">
