@@ -20,3 +20,6 @@ export function word(text: string): string[] {
 
 export const deepseek = word("DEEPSEEK")
 export const harness = word("HARNESS")
+
+/** The CLI's own slogan, rendered as the animated home logo. */
+export const explore = ["探索未至之境"]
