@@ -19,7 +19,7 @@ export function Tips() {
   return (
     <box flexDirection="row" justifyContent="center">
       <text>
-        <span style={{ fg: theme.primary }}>· 提示:</span>
+        <span style={{ fg: theme.primary }}>● 提示:</span>
         <span style={{ fg: theme.textMuted }}>{TIPS[idx()]}</span>
       </text>
     </box>
