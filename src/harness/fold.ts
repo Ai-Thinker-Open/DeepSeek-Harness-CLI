@@ -68,6 +68,8 @@ export function truncateText(text: string, max: number): { text: string; truncat
 }
 
 export function tryParseArgs(raw: string): Record<string, unknown> {
+  // Some harness versions/proxies deliver `arguments` as a plain object.
+  if (typeof raw === "object" && raw !== null) return raw as Record<string, unknown>
   try {
     const v = JSON.parse(raw)
     return v && typeof v === "object" ? (v as Record<string, unknown>) : {}
