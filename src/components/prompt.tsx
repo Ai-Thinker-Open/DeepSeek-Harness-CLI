@@ -39,7 +39,7 @@ export function Prompt(props: {
       paddingLeft={2}
       paddingRight={2}
       paddingTop={1}
-      paddingBottom={0}
+      paddingBottom={1}
     >
       <textarea
         ref={(el) => (ref = el)}
