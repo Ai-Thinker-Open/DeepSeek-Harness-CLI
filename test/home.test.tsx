@@ -10,7 +10,7 @@ test("home screen renders brand and version", async () => {
   const frame = app.captureCharFrame()
   expect(frame).toContain("DeepSeek Harness")
   expect(frame).toContain("v0.1.0")
-  expect(frame).toContain("Tab 切换权限")
+  expect(frame).toContain("tab 切换权限")
   expect(frame).toContain("/status")
   expect(frame).toContain("MCP")
   expect(frame).toContain("● 提示")

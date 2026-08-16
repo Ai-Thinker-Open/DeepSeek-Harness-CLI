@@ -46,8 +46,8 @@ test("selecting text copies it and shows a toast", async () => {
   await app.renderOnce()
 
   const lines = app.captureCharFrame().split("\n")
-  const y = lines.findIndex((line) => line.includes("Tab 切换权限"))
-  const x = lines[y]?.indexOf("Tab 切换权限") ?? 0
+  const y = lines.findIndex((line) => line.includes("tab 切换权限"))
+  const x = lines[y]?.indexOf("tab 切换权限") ?? 0
 
   await app.mockMouse.drag(x, y, x + 12, y)
   await app.renderOnce()
