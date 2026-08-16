@@ -57,7 +57,6 @@ export function Prompt(props: {
       />
       <box flexDirection="row" justifyContent="space-between" marginTop={1}>
         <text>
-          <span style={{ fg: theme.textMuted }}>模式: </span>
           <span style={{ fg: theme.primary }}>{modeLabel(mode())}</span>
         </text>
         <text>

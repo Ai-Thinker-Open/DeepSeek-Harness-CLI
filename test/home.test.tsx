@@ -13,6 +13,6 @@ test("home screen renders brand and version", async () => {
   expect(frame).toContain("Tab 切换模式")
   expect(frame).toContain("/status")
   expect(frame).toContain("MCP")
-  expect(frame).toContain("模式:")
+  expect(frame).toContain("提示:")
   expect(frame).toContain("deepseek-v4-flash")
 })

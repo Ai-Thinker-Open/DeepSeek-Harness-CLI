@@ -17,12 +17,10 @@ export function Tips() {
   })
 
   return (
-    <box flexDirection="row" maxWidth="100%">
-      <text fg={theme.primary} flexShrink={0}>
-        ●{" "}
-      </text>
-      <text fg={theme.textMuted} flexShrink={1}>
-        {TIPS[idx()]}
+    <box flexDirection="row" justifyContent="center">
+      <text>
+        <span style={{ fg: theme.primary }}>· 提示:</span>
+        <span style={{ fg: theme.textMuted }}>{TIPS[idx()]}</span>
       </text>
     </box>
   )
