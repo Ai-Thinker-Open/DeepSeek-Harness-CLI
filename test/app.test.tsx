@@ -77,9 +77,4 @@ test("submitting on the home prompt opens the session", async () => {
 
   const sessionFrame = app.captureCharFrame()
   expect(sessionFrame).toContain("world")
-  expect(sessionFrame).toContain("思考中")
-
-  await new Promise((resolve) => setTimeout(resolve, 800))
-  await app.renderOnce()
-  expect(app.captureCharFrame()).toContain("已收到")
 })

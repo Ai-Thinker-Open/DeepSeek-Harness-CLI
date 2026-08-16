@@ -4,7 +4,6 @@ import { Footer } from "../components/footer"
 import { MessageView } from "../components/message-view"
 import { Prompt } from "../components/prompt"
 import { StatsBar } from "../components/stats-bar"
-import { Thinking } from "../components/thinking"
 import { Toast, type ToastMessage } from "../components/toast"
 import type { PermissionMode } from "../permission"
 import type { ChatMessage } from "../session"
@@ -13,7 +12,6 @@ import { theme } from "../theme"
 export function SessionScreen(props: {
   title: () => string
   messages: () => ChatMessage[]
-  busy: () => boolean
   mode: () => PermissionMode
   model: () => string
   toast: () => ToastMessage | null
@@ -73,7 +71,6 @@ export function SessionScreen(props: {
           }
         >
           <For each={props.messages()}>{(message) => <MessageView message={message} />}</For>
-          {props.busy() ? <Thinking /> : null}
         </Show>
       </scrollbox>
 

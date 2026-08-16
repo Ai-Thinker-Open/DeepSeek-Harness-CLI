@@ -7,8 +7,6 @@ import { Home } from "./screens/home"
 import { SessionScreen } from "./screens/session"
 import type { ChatMessage } from "./session"
 
-const REPLY_DELAY_MS = 700
-
 export function App() {
   const renderer = useRenderer()
   const [mode, setMode] = createSignal<PermissionMode>("workspace-write")
@@ -17,9 +15,7 @@ export function App() {
   const [screen, setScreen] = createSignal<"home" | "session">("home")
   const [messages, setMessages] = createSignal<ChatMessage[]>([])
   const [title, setTitle] = createSignal("新会话")
-  const [busy, setBusy] = createSignal(false)
   let toastTimer: ReturnType<typeof setTimeout> | undefined
-  let replyTimer: ReturnType<typeof setTimeout> | undefined
   let messageId = 0
 
   const nextId = () => `m${++messageId}`
@@ -32,7 +28,6 @@ export function App() {
 
   onCleanup(() => {
     if (toastTimer) clearTimeout(toastTimer)
-    if (replyTimer) clearTimeout(replyTimer)
   })
 
   useKeyboard((key) => {
@@ -47,33 +42,15 @@ export function App() {
     else if (result === "unsupported") showToast("✕ 终端不支持复制", "error")
   })
 
-  const simulateReply = (text: string) => {
-    setBusy(true)
-    replyTimer = setTimeout(() => {
-      setMessages((list) => [
-        ...list,
-        {
-          id: nextId(),
-          role: "assistant",
-          content: `已收到：“${text}”。这是演示回复，接入 Agent 后端后会在这里显示真实输出。`,
-        },
-      ])
-      setBusy(false)
-    }, REPLY_DELAY_MS)
-  }
-
   const handleSubmit = (text: string) => {
     const trimmed = text.trim()
-    if (!trimmed || busy()) return
+    if (!trimmed) return
     if (screen() === "home") {
-      if (replyTimer) clearTimeout(replyTimer)
-      setBusy(false)
       setTitle(trimmed.length > 16 ? `${trimmed.slice(0, 16)}…` : trimmed)
       setMessages([])
       setScreen("session")
     } else {
       setMessages((list) => [...list, { id: nextId(), role: "user", content: trimmed }])
-      simulateReply(trimmed)
     }
   }
 
@@ -107,7 +84,6 @@ export function App() {
         <SessionScreen
           title={title}
           messages={messages}
-          busy={busy}
           mode={mode}
           model={model}
           toast={toast}

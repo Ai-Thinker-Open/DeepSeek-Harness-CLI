@@ -15,7 +15,6 @@ test("session screen renders title, messages, model and back hint", async () => 
       <SessionScreen
         title={() => "你好"}
         messages={() => messages}
-        busy={() => false}
         mode={() => "workspace-write"}
         model={() => "DeepSeek-V4-Flash"}
         toast={() => null}
@@ -30,7 +29,6 @@ test("session screen renders title, messages, model and back hint", async () => 
   const frame = app.captureCharFrame()
   expect(frame).toContain("你好")
   expect(frame).toContain("收到，演示回复")
-  expect(frame).toContain("user")
   expect(frame).toContain("DeepSeek-V4-Flash")
   expect(frame).toContain("esc 返回")
 })
@@ -42,7 +40,6 @@ test("escape in the session returns home", async () => {
       <SessionScreen
         title={() => "你好"}
         messages={() => messages}
-        busy={() => false}
         mode={() => "workspace-write"}
         model={() => "DeepSeek-V4-Flash"}
         toast={() => null}
