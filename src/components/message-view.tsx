@@ -467,8 +467,13 @@ export function MessageView(props: { message: ChatMessage }) {
   }
   if (props.message.role === "user") {
     return (
-      <box backgroundColor={theme.backgroundPanel} flexDirection="row" marginBottom={1}>
-        <box width={1} backgroundColor={theme.primary} flexShrink={0} />
+      <box
+        backgroundColor={theme.backgroundPanel}
+        flexDirection="row"
+        marginBottom={1}
+        border={["left"]}
+        borderColor={theme.primary}
+      >
         <box paddingLeft={2} paddingRight={2} paddingTop={1} paddingBottom={1} flexGrow={1} minWidth={0}>
           <text fg={theme.text} wrapMode="char">
             {props.message.content}

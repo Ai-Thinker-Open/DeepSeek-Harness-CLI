@@ -30,8 +30,7 @@ export function Prompt(props: {
   }
 
   return (
-    <box backgroundColor={theme.backgroundPanel} flexDirection="row">
-      <box width={1} backgroundColor={theme.primary} flexShrink={0} />
+    <box backgroundColor={theme.backgroundPanel} flexDirection="row" border={["left"]} borderColor={theme.primary}>
       <box paddingLeft={2} paddingRight={2} paddingTop={1} paddingBottom={1} flexGrow={1} minWidth={0}>
         <textarea
           id={props.inputId ?? "prompt-input"}
