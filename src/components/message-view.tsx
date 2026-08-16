@@ -139,7 +139,8 @@ function ContextInjectionBlock({ message }: { message: ChatMessage }) {
       ? [...all.slice(0, INJECT_PREVIEW_LINES), `… (${all.length - INJECT_PREVIEW_LINES} more lines)`]
       : all
   }
-  const formLabel = inject.form ? CONTEXT_FORM_LABELS[inject.form] ?? inject.form : ""
+  const formLabel =
+    inject.form && inject.form !== "snapshot" ? CONTEXT_FORM_LABELS[inject.form] ?? inject.form : ""
   const toggle = () => setExpanded((v) => !v)
   return (
     <box flexDirection="column" marginBottom={1}>

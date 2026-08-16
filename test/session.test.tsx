@@ -275,6 +275,13 @@ test("injected context renders collapsed and expands on click", async () => {
       inject: { source: "skill-catalog", form: "catalog" },
       createdAt: 2,
     },
+    {
+      id: "i3",
+      role: "user",
+      content: "工作区快照",
+      inject: { source: "workspace", form: "snapshot" },
+      createdAt: 3,
+    },
     userMsg("你好"),
   ]
   const app = await renderSession({ messages })
@@ -287,6 +294,10 @@ test("injected context renders collapsed and expands on click", async () => {
   expect(frame).toContain("skill-catalog")
   expect(frame).toContain("指令")
   expect(frame).toContain("目录")
+  expect(frame).toContain("workspace")
+  // Snapshot injections render without a form label.
+  expect(frame).not.toContain("快照")
+  expect(frame).not.toContain("· snapshot")
   expect(frame).toContain("你好")
   // Collapsed by default: the injected body is hidden until clicked.
   expect(frame).not.toContain("你是 DeepSeek Harness CLI 的编码助手。")

@@ -32,7 +32,6 @@ export const MAX_THINKING_CHARS = 120_000
 export const CONTEXT_FORM_LABELS: Record<string, string> = {
   instructions: "指令",
   catalog: "目录",
-  snapshot: "快照",
   notice: "通知",
   relay: "转达",
   recall: "回顾",
