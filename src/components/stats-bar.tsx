@@ -29,7 +29,7 @@ export function StatsBar() {
       <Show when={hover()}>
         <box
           position="absolute"
-          bottom={1}
+          bottom={2}
           left={0}
           zIndex={7000}
           backgroundColor={theme.backgroundPanel}
