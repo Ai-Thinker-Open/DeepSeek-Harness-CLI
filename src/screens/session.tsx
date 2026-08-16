@@ -5,6 +5,7 @@ import { MessageView } from "../components/message-view"
 import { Prompt } from "../components/prompt"
 import { QuestionModal } from "../components/question-modal"
 import { StatusMarquee } from "../components/status-marquee"
+import type { StreamSnapshot } from "../components/footer"
 import { StatsBar } from "../components/stats-bar"
 import { Toast, type ToastMessage } from "../components/toast"
 import type { PermissionMode } from "../permission"
@@ -22,6 +23,7 @@ export function SessionScreen(props: {
   onSend: (text: string) => void
   onBack: () => void
   onQuestion: (choice: string) => void
+  stream?: () => StreamSnapshot | null
   visible?: boolean
   active?: () => boolean
 }) {
@@ -82,7 +84,7 @@ export function SessionScreen(props: {
         </box>
       </Show>
 
-      <Footer />
+      <Footer stream={props.stream} />
       <Toast toast={props.toast} />
       <Show when={props.question()}>
         <QuestionModal question={props.question} onAnswer={props.onQuestion} />

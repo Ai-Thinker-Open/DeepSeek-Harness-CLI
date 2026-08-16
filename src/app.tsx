@@ -69,6 +69,7 @@ export function App(props: { client?: HarnessClientLike } = {}) {
             model={session.modelName}
             toast={toast}
             onSubmit={handleSubmit}
+            stream={session.streamInfo}
             motion
             active={() => true}
           />
@@ -93,6 +94,7 @@ export function App(props: { client?: HarnessClientLike } = {}) {
           onSend={handleSubmit}
           onBack={() => setScreen("home")}
           onQuestion={session.answer}
+          stream={session.streamInfo}
           active={() => screen() === "session"}
         />
       </box>
