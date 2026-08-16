@@ -3,8 +3,10 @@ import {
   bashMarkers,
   classifyTool,
   editPair,
+  parseCardMeta,
   questionItems,
   todoItems,
+  toolIcon,
   toolSummary,
   toolTitle,
 } from "../src/harness/tool-card"
@@ -94,4 +96,44 @@ test("questionItems extracts questions and options", () => {
     { question: "继续？", options: ["是", "否"] },
     { question: "确认", options: [] },
   ])
+})
+
+test("parseCardMeta reads the web card shapes from tool/result meta", () => {
+  expect(parseCardMeta({ card: "terminal", output: "hi", exitCode: 2 })).toEqual({
+    kind: "terminal",
+    terminal: { output: "hi", exitCode: 2 },
+  })
+  expect(parseCardMeta({ card: "diff", diffs: [{ path: "a.ts", oldText: "old", newText: "new" }] })).toEqual({
+    kind: "diff",
+    diffs: [{ path: "a.ts", oldText: "old", newText: "new" }],
+  })
+  expect(parseCardMeta({ card: "read", lines: [{ number: 1, text: "x" }], totalLines: 10 })).toEqual({
+    kind: "read",
+    lines: [{ number: 1, text: "x" }],
+    totalLines: 10,
+  })
+  expect(
+    parseCardMeta({
+      card: "search",
+      shape: "matches",
+      files: [{ path: "a.ts", matches: [{ lineNumber: 3, line: "x" }] }],
+    }),
+  ).toEqual({ kind: "search", files: [{ path: "a.ts", matches: [{ lineNumber: 3, line: "x" }] }] })
+  expect(parseCardMeta({ card: "search", shape: "paths", paths: ["a.ts"] })).toEqual({
+    kind: "search",
+    paths: ["a.ts"],
+  })
+  expect(parseCardMeta({ card: "nope" })).toBeNull()
+  expect(parseCardMeta(undefined)).toBeNull()
+})
+
+test("web_search keeps its own globe-ish icon while local search stays a magnifier", () => {
+  expect(toolIcon("web_search")).toBe("❍")
+  expect(toolIcon("grep")).toBe("⌕")
+  expect(toolIcon("glob")).toBe("⌕")
+  expect(toolIcon("bash")).toBe("❯")
+  expect(toolIcon("read")).toBe("❐")
+  expect(toolIcon("edit")).toBe("✎")
+  expect(toolIcon("todo_write")).toBe("☑")
+  expect(toolIcon("unknown_tool")).toBe("✦")
 })

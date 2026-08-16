@@ -71,6 +71,9 @@ function OutputLines({ text }: { text: string }) {
 
 function BashCard({ model }: { model: ToolRowModel }) {
   const markers = model.markers
+  const terminal = model.card?.kind === "terminal" ? model.card.terminal : undefined
+  const displayText = terminal?.output !== undefined ? terminal.output : markers.text
+  const exitCode = terminal?.exitCode !== undefined ? terminal.exitCode : markers.exitCode
   return (
     <box flexDirection="column" border={["left"]} borderColor={theme.borderSubtle} paddingLeft={1}>
       <Show when={model.body}>
@@ -79,15 +82,15 @@ function BashCard({ model }: { model: ToolRowModel }) {
           {model.body}
         </text>
       </Show>
-      <Show when={markers.text}>
-        <OutputLines text={markers.text} />
+      <Show when={displayText}>
+        <OutputLines text={displayText} />
       </Show>
       <Show when={markers.sandbox}>
         <text fg={theme.warning}>⚠ {markers.sandbox}</text>
       </Show>
-      <Show when={markers.exitCode !== undefined}>
-        <text fg={markers.exitCode === 0 ? theme.textMuted : theme.error}>
-          {markers.exitCode === 0 ? "✓ 退出码 0" : `✗ 退出码 ${markers.exitCode}`}
+      <Show when={exitCode !== undefined}>
+        <text fg={exitCode === 0 ? theme.textMuted : theme.error}>
+          {exitCode === 0 ? "✓ 退出码 0" : `✗ 退出码 ${exitCode}`}
         </text>
       </Show>
     </box>
@@ -95,6 +98,24 @@ function BashCard({ model }: { model: ToolRowModel }) {
 }
 
 function ReadCard({ model }: { model: ToolRowModel }) {
+  const read = model.card?.kind === "read" ? model.card : null
+  const readLines = read?.lines
+  if (readLines && readLines.length > 0) {
+    return (
+      <box flexDirection="column" border={["left"]} borderColor={theme.borderSubtle} paddingLeft={1}>
+        <For each={readLines.slice(0, MAX_OUTPUT_LINES)}>
+          {(line) => (
+            <text fg={theme.textMuted} wrapMode="char">
+              {String(line.number).padStart(4, " ")} | {line.text}
+            </text>
+          )}
+        </For>
+        <Show when={readLines.length > MAX_OUTPUT_LINES}>
+          <text fg={theme.textMuted}>… ({readLines.length - MAX_OUTPUT_LINES} more lines)</text>
+        </Show>
+      </box>
+    )
+  }
   return (
     <box flexDirection="column" border={["left"]} borderColor={theme.borderSubtle} paddingLeft={1}>
       <Show when={model.output}>
@@ -104,9 +125,17 @@ function ReadCard({ model }: { model: ToolRowModel }) {
   )
 }
 
-function EditCard({ args, newOnly }: { args: Record<string, unknown>; newOnly?: boolean }) {
+function EditCard({ model, args, newOnly }: { model: ToolRowModel; args: Record<string, unknown>; newOnly?: boolean }) {
   const lines = createMemo(() => {
     const out: Array<{ sign: "+" | "-"; text: string }> = []
+    const hunks = model.card?.kind === "diff" ? model.card.diffs ?? null : null
+    if (hunks) {
+      for (const hunk of hunks) {
+        if (hunk.oldText) for (const line of hunk.oldText.split("\n")) out.push({ sign: "-", text: line })
+        if (hunk.newText) for (const line of hunk.newText.split("\n")) out.push({ sign: "+", text: line })
+      }
+      return out
+    }
     const pair = editPair(args)
     if (!newOnly && pair.oldText) {
       for (const line of pair.oldText.split("\n")) out.push({ sign: "-", text: line })
@@ -117,8 +146,16 @@ function EditCard({ args, newOnly }: { args: Record<string, unknown>; newOnly?: 
     }
     return out
   })
+  const paths = createMemo(() => (model.card?.kind === "diff" ? (model.card.diffs ?? []).map((d) => d.path) : []))
   return (
     <box flexDirection="column" border={["left"]} borderColor={theme.borderSubtle} paddingLeft={1}>
+      <For each={paths()}>
+        {(path) => (
+          <text fg={theme.textMuted}>
+            <b> {path}</b>
+          </text>
+        )}
+      </For>
       <For each={lines().slice(0, MAX_OUTPUT_LINES)}>
         {(item) => (
           <text fg={item.sign === "+" ? theme.success : theme.error} wrapMode="char">
@@ -188,10 +225,45 @@ function ToolBody({ model, args }: { model: ToolRowModel; args: Record<string, u
     case "read":
       return <ReadCard model={model} />
     case "edit":
-      return <EditCard args={args} />
+      return <EditCard model={model} args={args} />
     case "write":
-      return <EditCard args={args} newOnly />
-    case "search":
+      return <EditCard model={model} args={args} newOnly />
+    case "search": {
+      const search = model.card?.kind === "search" ? model.card : null
+      if (search?.files) {
+        return (
+          <box flexDirection="column" border={["left"]} borderColor={theme.borderSubtle} paddingLeft={1}>
+            <For each={search.files}>
+              {(file) => (
+                <box flexDirection="column">
+                  <text fg={theme.text}>{file.path}</text>
+                  <For each={file.matches.slice(0, MAX_OUTPUT_LINES)}>
+                    {(match) => (
+                      <text fg={theme.textMuted} wrapMode="char">
+                        {"  "}
+                        {match.lineNumber}: {match.line}
+                      </text>
+                    )}
+                  </For>
+                </box>
+              )}
+            </For>
+          </box>
+        )
+      }
+      if (search?.paths) {
+        return (
+          <box flexDirection="column" border={["left"]} borderColor={theme.borderSubtle} paddingLeft={1}>
+            <For each={search.paths}>
+              {(path) => (
+                <text fg={theme.textMuted} wrapMode="char">
+                  {path}
+                </text>
+              )}
+            </For>
+          </box>
+        )
+      }
       return (
         <box flexDirection="column" border={["left"]} borderColor={theme.borderSubtle} paddingLeft={1}>
           <Show when={model.output}>
@@ -199,6 +271,7 @@ function ToolBody({ model, args }: { model: ToolRowModel; args: Record<string, u
           </Show>
         </box>
       )
+    }
     case "todo":
       return <TodoCard args={args} />
     case "question":
@@ -294,19 +367,18 @@ function ThinkingBlock({ text, streaming }: { text: string; streaming?: boolean 
     <box flexDirection="column" paddingLeft={2}>
       <box
         flexDirection="row"
+        width="100%"
         onMouse={(evt) => {
           if (evt.type === "down" && evt.button === 0) setExpanded((v) => !v)
         }}
       >
         <text fg={theme.textMuted}>
-          {expanded() ? "▾" : "▸"} ✦
-        </text>
-        <text fg={theme.textMuted}>
+          <span>{expanded() ? "▾" : "▸"} ✦</span>
           <b> Think</b>
+          <Show when={streaming}>
+            <span> …</span>
+          </Show>
         </text>
-        <Show when={streaming}>
-          <text fg={theme.textMuted}> …</text>
-        </Show>
       </box>
       <Show when={expanded()}>
         <For each={preview()}>
@@ -339,6 +411,7 @@ function ContextInjectionBlock({ message }: { message: ChatMessage }) {
     <box flexDirection="column" marginBottom={1}>
       <box
         flexDirection="row"
+        width="100%"
         border={["left"]}
         borderColor={theme.borderSubtle}
         paddingLeft={1}
@@ -346,17 +419,17 @@ function ContextInjectionBlock({ message }: { message: ChatMessage }) {
           if (evt.type === "down" && evt.button === 0) toggle()
         }}
       >
-        <text fg={theme.textMuted}>{expanded() ? "▾" : "▸"} ❐</text>
         <text fg={theme.textMuted}>
+          <span>{expanded() ? "▾" : "▸"} ❐</span>
           <b> 上下文注入</b>
+          <span> · {inject.source}</span>
+          <Show when={formLabel}>
+            <span> · {formLabel}</span>
+          </Show>
+          <Show when={inject.form === "notice" && inject.summary}>
+            <span> · {inject.summary}</span>
+          </Show>
         </text>
-        <text fg={theme.textMuted}> · {inject.source}</text>
-        <Show when={formLabel}>
-          <text fg={theme.textMuted}> · {formLabel}</text>
-        </Show>
-        <Show when={inject.form === "notice" && inject.summary}>
-          <text fg={theme.textMuted}> · {inject.summary}</text>
-        </Show>
       </box>
       <Show when={expanded()}>
         <box paddingLeft={3} flexDirection="column" border={["left"]} borderColor={theme.borderSubtle}>

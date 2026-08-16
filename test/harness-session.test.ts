@@ -97,6 +97,29 @@ test("start creates a harness session and sends the first prompt", async () => {
   expect(session.connected()).toBe(true)
 })
 
+test("reconnect clears the interrupted status once frames flow again", async () => {
+  const client = new FakeClient()
+  const original = client.eventStream.bind(client)
+  let calls = 0
+  client.eventStream = (async function* (signal?: AbortSignal) {
+    calls += 1
+    if (calls === 1) throw new Error("simulated drop")
+    yield* original()
+  }) as typeof client.eventStream
+
+  const session = createHarnessSession(client, "/tmp")
+  await session.start("hello")
+  await tick()
+
+  // The first stream attempt failed, so the driver reports the drop…
+  expect(session.statusText()).toBe("连接中断，重连中…")
+
+  // …then reconnects and a live frame clears the stale status.
+  client.push(frame("session/event", { sessionId: "s-1", event: ev("step/start", { step: 1 }, 5) }))
+  await new Promise((resolve) => setTimeout(resolve, 1_700))
+  expect(session.statusText()).toBe("")
+})
+
 test("session streams assistant text, reasoning and tool call results", async () => {
   const client = new FakeClient()
   const session = createHarnessSession(client, "/tmp")

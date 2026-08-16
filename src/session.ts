@@ -50,6 +50,12 @@ export interface ToolResultRecord {
   /** True when `output` was truncated at fold time. */
   truncated?: boolean
   error?: string
+  /**
+   * The harness's private presentation payload (`tool/result` `meta`): the
+   * structured card material (diff hunks, read lines, terminal output) the web
+   * client renders through its card models.
+   */
+  meta?: unknown
 }
 
 /** Aggregated session statistics shown in the stats bar. */

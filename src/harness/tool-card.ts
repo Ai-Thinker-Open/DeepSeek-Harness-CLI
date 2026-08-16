@@ -126,8 +126,13 @@ const VARIANT_ICONS: Record<ToolVariant, string> = {
   others: "✦",
 }
 
+/** Tool-owned leading glyphs that refine a variant without replacing it. */
+const TOOL_ICONS: Record<string, string> = {
+  web_search: "❍",
+}
+
 export function toolIcon(name: string): string {
-  return VARIANT_ICONS[classifyTool(name)]
+  return TOOL_ICONS[name] ?? VARIANT_ICONS[classifyTool(name)]
 }
 
 /** Summary key preference per variant (args-derived). */
@@ -328,6 +333,83 @@ export interface ToolRowModel {
   body: string | null
   output: string | null
   markers: BashMarkers
+  /** Structured card material from `tool/result` meta, when present. */
+  card: ToolCardMeta | null
+}
+
+/** Narrowed `tool/result` presentation payload (the web's card models). */
+export interface ToolCardMeta {
+  kind: "terminal" | "diff" | "read" | "search"
+  terminal?: { output?: string; exitCode?: number }
+  diffs?: Array<{ path: string; oldText?: string; newText: string }>
+  lines?: Array<{ number: number; text: string }>
+  totalLines?: number
+  files?: Array<{ path: string; matches: Array<{ lineNumber: number; line: string }> }>
+  paths?: string[]
+  total?: number
+}
+
+function str(v: unknown): string | undefined {
+  return typeof v === "string" ? v : undefined
+}
+
+function num(v: unknown): number | undefined {
+  return typeof v === "number" ? v : undefined
+}
+
+/** Parse the harness's `tool/result` `meta` into renderable card material. */
+export function parseCardMeta(meta: unknown): ToolCardMeta | null {
+  if (typeof meta !== "object" || meta === null) return null
+  const m = meta as Record<string, unknown>
+  switch (m.card) {
+    case "terminal":
+      return { kind: "terminal", terminal: { output: str(m.output), exitCode: num(m.exitCode) } }
+    case "diff": {
+      if (!Array.isArray(m.diffs)) return null
+      const diffs = m.diffs
+        .filter((d): d is Record<string, unknown> => typeof d === "object" && d !== null)
+        .map((d) => ({
+          path: str(d.path) ?? "",
+          oldText: str(d.oldText),
+          newText: str(d.newText) ?? "",
+        }))
+        .filter((d) => d.path !== "")
+      return diffs.length > 0 ? { kind: "diff", diffs } : null
+    }
+    case "read": {
+      if (!Array.isArray(m.lines)) return null
+      const lines = m.lines
+        .filter((l): l is Record<string, unknown> => typeof l === "object" && l !== null)
+        .map((l) => ({ number: num(l.number) ?? 0, text: str(l.text) ?? "" }))
+      return { kind: "read", lines, totalLines: num(m.totalLines) }
+    }
+    case "search": {
+      if (m.shape === "paths" && Array.isArray(m.paths)) {
+        return {
+          kind: "search",
+          paths: m.paths.filter((p): p is string => typeof p === "string"),
+          total: num(m.total),
+        }
+      }
+      if (m.shape === "matches" && Array.isArray(m.files)) {
+        const files = m.files
+          .filter((f): f is Record<string, unknown> => typeof f === "object" && f !== null)
+          .map((f) => ({
+            path: str(f.path) ?? "",
+            matches: Array.isArray(f.matches)
+              ? f.matches
+                  .filter((mt): mt is Record<string, unknown> => typeof mt === "object" && mt !== null)
+                  .map((mt) => ({ lineNumber: num(mt.lineNumber) ?? 0, line: str(mt.line) ?? "" }))
+              : [],
+          }))
+          .filter((f) => f.path !== "")
+        return files.length > 0 ? { kind: "search", files, total: num(m.total) } : null
+      }
+      return null
+    }
+    default:
+      return null
+  }
 }
 
 /** Everything the TUI needs to draw one tool row, derived once. */
@@ -338,6 +420,10 @@ export function toolRowModel(call: ToolCallRecord, result: ToolResultRecord | un
   const summary = toolSummary(call.name, args)
   const body = toolBody(call.name, args)
   const output = result?.output ?? null
-  const markers = variant === "bash" && output !== null ? bashMarkers(output) : { text: output ?? "" }
-  return { variant, title, icon: VARIANT_ICONS[variant], summary, body, output, markers }
+  const card = result?.meta !== undefined ? parseCardMeta(result.meta) : null
+  const markers =
+    variant === "bash"
+      ? bashMarkers(card?.kind === "terminal" && card.terminal?.output !== undefined ? card.terminal.output : output ?? "")
+      : { text: output ?? "" }
+  return { variant, title, icon: toolIcon(call.name), summary, body, output, markers, card }
 }

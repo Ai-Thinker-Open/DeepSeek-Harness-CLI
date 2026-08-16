@@ -460,6 +460,7 @@ export function createHarnessSession(
       ok: !block.isError,
       output: text,
       truncated,
+      meta: (ev.data as { meta?: unknown }).meta,
     }
     const target = [...model].reverse().find((m) => m.toolCalls?.some((c) => c.id === block.toolCallId))
     if (target) {
@@ -547,15 +548,28 @@ export function createHarnessSession(
     while (!abortController.signal.aborted) {
       try {
         for await (const frame of client.eventStream(abortController.signal)) {
-          onFrame(frame)
+          // First frame after a drop: the link is alive again — clear the
+          // "连接中断，重连中…" status that would otherwise linger forever.
+          if (!connected()) {
+            setConnected(true)
+            setStatusText("")
+          }
+          try {
+            onFrame(frame)
+          } catch (err) {
+            // A malformed or unexpected frame must never be mistaken for a
+            // dropped downlink: log and keep consuming instead of reconnecting.
+            console.error("dsh-cli: failed to process frame", frame.method, err)
+          }
         }
-        break // stream ended cleanly
       } catch {
         if (abortController.signal.aborted) break
-        setConnected(false)
-        setStatusText("连接中断，重连中…")
-        await new Promise((r) => setTimeout(r, RECONNECT_DELAY_MS))
       }
+      // Both a clean close and an error mean the downlink is gone; reconnect.
+      if (abortController.signal.aborted) break
+      setConnected(false)
+      setStatusText("连接中断，重连中…")
+      await new Promise((r) => setTimeout(r, RECONNECT_DELAY_MS))
     }
     listening = false
   }

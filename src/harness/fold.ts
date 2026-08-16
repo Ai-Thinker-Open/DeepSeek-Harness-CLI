@@ -190,6 +190,7 @@ export function foldToolResult(messages: ChatMessage[], ev: SessionEvent): ToolR
     ok: !block.isError,
     output: text,
     truncated,
+    meta: (ev.data as { meta?: unknown }).meta,
   }
   const target = [...messages].reverse().find((m) => m.toolCalls?.some((c) => c.id === block.toolCallId))
   if (target) {

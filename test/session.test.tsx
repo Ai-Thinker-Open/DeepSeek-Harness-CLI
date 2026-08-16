@@ -269,7 +269,12 @@ test("tool cards render per-variant bodies (bash exit code, edit diff, todo chec
       ],
       toolResults: [
         { toolCallId: "t1", ok: true, output: "boom\n[exit code: 1]" },
-        { toolCallId: "t2", ok: true, output: "done" },
+        {
+          toolCallId: "t2",
+          ok: true,
+          output: "done",
+          meta: { card: "diff", diffs: [{ path: "src/main.ts", oldText: "OLD", newText: "NEW" }] },
+        },
       ],
     }),
   ]
@@ -299,8 +304,11 @@ test("tool cards render per-variant bodies (bash exit code, edit diff, todo chec
   await app.mockMouse.click(lines2[editY]!.indexOf("Edit") + 1, editY)
   await app.renderOnce()
   const afterEdit = app.captureCharFrame()
-  expect(afterEdit).toContain("- 旧代码")
-  expect(afterEdit).toContain("+ 新代码")
+  // Structured meta diffs win over args-derived old/new text.
+  expect(afterEdit).toContain("- OLD")
+  expect(afterEdit).toContain("+ NEW")
+  expect(afterEdit).not.toContain("- 旧代码")
+  expect(afterEdit).toContain("src/main.ts")
 
   const lines3 = afterEdit.split("\n")
   const todoY = lines3.findIndex((line) => line.includes("Todo ·"))
