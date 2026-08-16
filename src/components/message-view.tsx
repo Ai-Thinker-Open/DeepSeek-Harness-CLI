@@ -114,7 +114,6 @@ function ThinkingBlock({ text, streaming }: { text: string; streaming?: boolean 
         <Show when={streaming}>
           <text fg={theme.textMuted}> …</text>
         </Show>
-        <text fg={theme.textMuted}> · {lines().length} 行 · {expanded() ? "点击收起" : "点击展开"}</text>
       </box>
       <Show when={expanded()}>
         <For each={preview()}>

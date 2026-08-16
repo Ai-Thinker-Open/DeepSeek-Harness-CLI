@@ -190,7 +190,8 @@ test("assistant messages collapse thinking and render tool cards", async () => {
 
   const frame = app.captureCharFrame()
   expect(frame).toContain("思考")
-  expect(frame).toContain("点击展开")
+  expect(frame).not.toContain("点击展开")
+  expect(frame).not.toContain("行 ·")
   expect(frame).toContain("运行中…")
   expect(frame).toContain("●")
   expect(frame).toContain("echo hi")
@@ -206,7 +207,6 @@ test("assistant messages collapse thinking and render tool cards", async () => {
   await app.mockMouse.click(x + 1, y)
   await app.renderOnce()
   expect(app.captureCharFrame()).toContain("让我想想")
-  expect(app.captureCharFrame()).toContain("点击收起")
 })
 
 test("assistant markdown renders blocks and inline styles without raw markers", async () => {
