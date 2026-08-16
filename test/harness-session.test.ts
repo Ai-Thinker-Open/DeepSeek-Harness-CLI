@@ -86,6 +86,8 @@ test("start creates a harness session and sends the first prompt", async () => {
   expect(client.prompts).toEqual([{ sessionId: "s-1", text: "hello" }])
   expect(session.messages().map((m) => m.role)).toEqual(["user"])
   expect(session.messages()[0]?.content).toBe("hello")
+  // Deep diving starts immediately on send — no intermediate "发送中" phase.
+  expect(session.statusText()).toBe("Deep diving")
   // Turns are authoritative: they come from harness turn/start events.
   expect(session.stats().turns).toBe(0)
   client.push(frame("session/event", { sessionId: "s-1", event: ev("turn/start", { turn: 1 }, 5) }))

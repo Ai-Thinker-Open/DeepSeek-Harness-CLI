@@ -587,7 +587,7 @@ export function createHarnessSession(
   async function sendToSession(text: string): Promise<boolean> {
     appendUserMessage(text)
     setBusy(true)
-    setStatusText("发送中…")
+    setStatusText(DEEP_DIVING_STATUS)
     promptSentAt = Date.now()
     try {
       const res = await client.prompt(sessionId as string, text)
