@@ -256,7 +256,7 @@ test("late tool events attach to their turn's message instead of spawning a stra
   expect(session.messages().length).toBe(before)
   const last = session.messages()[session.messages().length - 1]
   expect(last?.toolCalls?.length).toBe(1)
-  expect(last?.id.startsWith("msg-")).toBe(true)
+  expect(last?.content).toBe("final")
 })
 
 test("session streams assistant text, reasoning and tool call results", async () => {
