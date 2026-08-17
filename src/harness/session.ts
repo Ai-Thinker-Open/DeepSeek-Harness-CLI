@@ -8,7 +8,14 @@ import {
   type ToolCallRecord,
   type ToolResultRecord,
 } from "../session"
-import { HarnessClient, type HarnessClientLike, type ServerRequest, type SessionEvent } from "./client"
+import {
+  HarnessClient,
+  type CommandDescriptor,
+  type HarnessClientLike,
+  type ServerRequest,
+  type SessionEvent,
+  type SessionSummary,
+} from "./client"
 import {
   assistantBlocksToMessage,
   blockText,
@@ -31,6 +38,10 @@ export interface HarnessSessionApi {
   stats: () => SessionStats
   busy: () => boolean
   statusText: () => string
+  commands: () => CommandDescriptor[]
+  refreshCommands: () => Promise<void>
+  runCommand: (line: string) => Promise<{ ok: boolean; text?: string }>
+  listSessions: () => Promise<SessionSummary[]>
   question: () => HarnessQuestion | null
   error: () => string | null
   connected: () => boolean
@@ -64,6 +75,7 @@ export function createHarnessSession(
   const [error, setError] = createSignal<string | null>(null)
   const [connected, setConnected] = createSignal(false)
   const [modelName, setModelName] = createSignal("DeepSeek-V4-Flash")
+  const [commands, setCommands] = createSignal<CommandDescriptor[]>([])
 
   let sessionId: string | null = null
   let listening = false
@@ -318,6 +330,32 @@ export function createHarnessSession(
         if (name) setModelName(name)
         break
       }
+      case "command/run": {
+        const data = ev.data as { commandId?: string; name?: string; args?: string }
+        if (!data.commandId || !data.name) break
+        if (!model.some((m) => m.command?.commandId === data.commandId)) {
+          model.push({
+            id: `cmd-${data.commandId}`,
+            role: "user",
+            content: `/${data.name}${data.args ?? ""}`,
+            command: { commandId: data.commandId, name: data.name, args: data.args, status: "running" },
+            createdAt: ev.time,
+          })
+          syncAll()
+        }
+        break
+      }
+      case "command/done": {
+        const data = ev.data as { commandId?: string; kind?: "success" | "error"; text?: string }
+        if (!data.commandId) break
+        const msg = model.find((m) => m.command?.commandId === data.commandId)
+        if (msg?.command) {
+          msg.command.status = data.kind === "success" ? "ok" : "error"
+          if (data.text) msg.command.resultText = data.text
+          touch(msg)
+        }
+        break
+      }
       default:
         break
     }
@@ -536,7 +574,7 @@ export function createHarnessSession(
 
   function onFrame(frame: ServerRequest): void {
     const payload = frame.payload as { sessionId?: string; [k: string]: unknown }
-    if (!payload.sessionId || payload.sessionId !== sessionId) return
+    if (frame.method !== "host/remote-event" && (!payload.sessionId || payload.sessionId !== sessionId)) return
     switch (frame.method) {
       case "session/event":
         onSessionEvent((payload as unknown as { event: SessionEvent }).event)
@@ -551,6 +589,11 @@ export function createHarnessSession(
         setError(String(payload.message ?? "agent error"))
         setBusy(false)
         setStatusText("")
+        break
+      case "host/remote-event":
+        if ((payload as { event?: string }).event === "commands/change") {
+          void refreshCommands()
+        }
         break
     }
   }
@@ -719,6 +762,38 @@ export function createHarnessSession(
     }
   }
 
+  /** Refresh the host slash-command directory for this session. */
+  async function refreshCommands(): Promise<void> {
+    if (!sessionId) return
+    try {
+      setCommands(await client.commandList(sessionId))
+    } catch {
+      // Keep the last known directory; a reconnect or commands/change will retry.
+    }
+  }
+
+  /** Execute a host slash-command line; the lifecycle renders via events. */
+  async function runCommand(line: string): Promise<{ ok: boolean; text?: string }> {
+    if (!sessionId) return { ok: false, text: "还没有可用的会话" }
+    try {
+      const execution = await client.commandExecute(sessionId, line)
+      if (!execution) return { ok: false, text: `未知或无法解析的命令：${line}` }
+      return { ok: true, text: execution.result.text }
+    } catch (e) {
+      return { ok: false, text: e instanceof Error ? e.message : String(e) }
+    }
+  }
+
+  /** List persisted sessions on the host (read-only query). */
+  async function listSessions(): Promise<SessionSummary[]> {
+    try {
+      const res = await client.listSessions()
+      return res.items
+    } catch {
+      return []
+    }
+  }
+
   async function answer(choice: string): Promise<void> {
     const q = question()
     if (!q || !sessionId) return
@@ -775,6 +850,10 @@ export function createHarnessSession(
     answer,
     cancelQuestion,
     abort,
+    commands,
+    refreshCommands,
+    runCommand,
+    listSessions,
     clearError,
     dispose,
   }

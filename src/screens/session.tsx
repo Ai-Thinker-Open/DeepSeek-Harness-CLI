@@ -1,6 +1,7 @@
-import { For, Show } from "solid-js"
+import { For, Show, createSignal } from "solid-js"
 import { useKeyboard } from "@opentui/solid"
 import { Footer } from "../components/footer"
+import type { CommandResultView } from "../components/command-popup"
 import { MessageView } from "../components/message-view"
 import { Prompt } from "../components/prompt"
 import { QuestionModal } from "../components/question-modal"
@@ -10,6 +11,7 @@ import { Toast, type ToastMessage } from "../components/toast"
 import type { PermissionMode } from "../permission"
 import { DEEP_DIVING_STATUS, type ChatMessage, type HarnessQuestion, type SessionStats } from "../session"
 import { theme } from "../theme"
+import type { CommandItem } from "../commands"
 
 export function SessionScreen(props: {
   messages: () => ChatMessage[]
@@ -22,11 +24,16 @@ export function SessionScreen(props: {
   onSend: (text: string) => void
   onBack: () => void
   onQuestion: (choice: string) => void
+  commandItems?: () => CommandItem[]
+  onCommand?: (line: string) => Promise<CommandResultView | null>
+  onCommandPopupOpen?: () => void
   visible?: boolean
   active?: () => boolean
 }) {
+  const [commandOpen, setCommandOpen] = createSignal(false)
   useKeyboard((key) => {
     if (props.question()) return
+    if (commandOpen()) return
     if ((props.active?.() ?? true) && key.name === "escape") props.onBack()
   })
 
@@ -75,6 +82,12 @@ export function SessionScreen(props: {
             mode={props.mode}
             model={props.model}
             onSubmit={(text) => props.onSend(text)}
+            commandItems={props.commandItems}
+            onCommand={props.onCommand}
+            onPopupOpenChange={(open) => {
+              setCommandOpen(open)
+              if (open) props.onCommandPopupOpen?.()
+            }}
             active={props.active}
             inputId="session-prompt-input"
           />

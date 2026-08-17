@@ -1,18 +1,27 @@
-import { createEffect, createSignal } from "solid-js"
+import { createEffect, createSignal, onCleanup, onMount } from "solid-js"
 import type { TextareaRenderable } from "@opentui/core"
+import { Show } from "solid-js"
+import type { CommandItem } from "../commands"
 import { modeLabel, type PermissionMode } from "../permission"
 import { ACCENT_BORDER, theme } from "../theme"
+import { CommandPopup, type CommandResultView } from "./command-popup"
 
 const PROMPT_PLACEHOLDER = "给智能体发消息"
 
 export function Prompt(props: {
   onSubmit?: (text: string) => void
+  onCommand?: (line: string) => Promise<CommandResultView | null>
+  commandItems?: () => CommandItem[]
+  onPopupOpenChange?: (open: boolean) => void
   mode?: () => PermissionMode
   model?: () => string
   active?: () => boolean
   inputId?: string
 } = {}) {
   const [value, setValue] = createSignal("")
+  const [popupOpen, setPopupOpen] = createSignal(false)
+  const [popupLine, setPopupLine] = createSignal("")
+  const [popupResult, setPopupResult] = createSignal<CommandResultView | null>(null)
   const mode = props.mode ?? (() => "workspace-write" as PermissionMode)
   const model = props.model ?? (() => "DeepSeek-V4-Flash")
   const active = props.active ?? (() => true)
@@ -29,8 +38,53 @@ export function Prompt(props: {
     if (text) props.onSubmit?.(text)
   }
 
+  const closePopup = () => {
+    setPopupOpen(false)
+    setPopupResult(null)
+    setPopupLine("")
+    props.onPopupOpenChange?.(false)
+    ref?.focus()
+  }
+
+  const runCommandLine = async (line: string) => {
+    if (!props.onCommand) {
+      closePopup()
+      return
+    }
+    const result = await props.onCommand(line)
+    if (result) {
+      setPopupResult(result)
+      // Keep the result visible; give typing focus back to the main input.
+      ref?.focus()
+    } else {
+      closePopup()
+    }
+  }
+
+  const handleContentChange = (next: unknown) => {
+    const text = String(next ?? "")
+    setValue(text)
+  }
+
+  // OpenTUI's textarea in this version does not reliably emit content-change
+  // events, so poll the plain text to detect a "/" command start.
+  onMount(() => {
+    const timer = setInterval(() => {
+      const text = ref?.plainText ?? ""
+      if (text.startsWith("/") && (!popupOpen() || popupResult() !== null)) {
+        setPopupLine(text)
+        setPopupResult(null)
+        setPopupOpen(true)
+        props.onPopupOpenChange?.(true)
+        ref?.clear()
+      }
+    }, 60)
+    onCleanup(() => clearInterval(timer))
+  })
+
   return (
     <box
+      position="relative"
       backgroundColor={theme.backgroundPanel}
       flexDirection="row"
       border={["left"]}
@@ -53,9 +107,7 @@ export function Prompt(props: {
           textColor={theme.text}
           placeholderColor={theme.textMuted}
           cursorColor={theme.primary}
-          onContentChange={(next) => {
-            setValue(next as string)
-          }}
+          onContentChange={handleContentChange}
           onSubmit={submit}
         />
         <box flexDirection="row" justifyContent="space-between" marginTop={1}>
@@ -65,6 +117,15 @@ export function Prompt(props: {
           <text fg={theme.text}>{model()}</text>
         </box>
       </box>
+      <Show when={popupOpen()}>
+        <CommandPopup
+          items={props.commandItems ?? (() => [])}
+          initialLine={popupLine()}
+          result={popupResult()}
+          onRun={(line) => void runCommandLine(line)}
+          onClose={closePopup}
+        />
+      </Show>
     </box>
   )
 }

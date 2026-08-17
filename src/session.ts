@@ -21,6 +21,8 @@ export type ChatMessage = {
   toolCalls?: ToolCallRecord[]
   /** Tool result rows attached to this assistant message. */
   toolResults?: ToolResultRecord[]
+  /** Slash-command lifecycle attached to a user-role command message. */
+  command?: CommandRecord
   /** True while the assistant message is still streaming. */
   streaming?: boolean
   /** Error state. */
@@ -32,6 +34,17 @@ export type ChatMessage = {
 export const DEEP_DIVING_STATUS = "Deep diving"
 
 export type ToolCallStatus = "running" | "ok" | "error" | "denied"
+
+export type CommandStatus = "running" | "ok" | "error"
+
+/** Folded `command/run` + `command/done` lifecycle for one slash command. */
+export interface CommandRecord {
+  commandId: string
+  name: string
+  args?: string
+  status: CommandStatus
+  resultText?: string
+}
 
 export interface ToolCallRecord {
   id: string

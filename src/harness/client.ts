@@ -47,6 +47,19 @@ export interface SessionSummary {
   projections?: Record<string, unknown>
 }
 
+/** Immutable command view returned by `command.list` (no leading slash). */
+export interface CommandDescriptor {
+  name: string
+  description: string
+  input?: { hint: string }
+}
+
+/** Settled command execution returned by `command.execute`. */
+export interface CommandExecutionResult {
+  commandId: string
+  result: { kind: "success" | "error"; text?: string; sourceEventSeq?: number }
+}
+
 export interface SessionEvent {
   type: string
   seq: number
@@ -80,6 +93,9 @@ export interface HarnessClientLike {
   cancel(sessionId: string): Promise<{ accepted: boolean }>
   respond(rpcIdToAnswer: string, sessionId: string, answers: Array<{ id: string; selected: string[] }>): Promise<void>
   history(sessionId: string, maxMessages?: number): Promise<{ events: HistoryEntry[]; hasMore: boolean; projections?: Record<string, unknown> }>
+  listSessions(): Promise<{ items: SessionSummary[] }>
+  commandList(sessionId: string): Promise<CommandDescriptor[]>
+  commandExecute(sessionId: string, line: string): Promise<CommandExecutionResult | undefined>
   eventStream(signal?: AbortSignal): AsyncGenerator<ServerRequest>
 }
 
@@ -192,6 +208,19 @@ export class HarnessClient implements HarnessClientLike {
     projections?: Record<string, unknown>
   }> {
     return this.call("session.history", { sessionId, ...(maxMessages ? { maxMessages } : {}) })
+  }
+
+  /** Discover the effective slash commands for a session's agent. */
+  commandList(sessionId: string): Promise<CommandDescriptor[]> {
+    return this.call<CommandDescriptor[]>("command.list", { sessionId })
+  }
+
+  /**
+   * Execute a slash-command line against the session's agent. Returns the
+   * settled execution, or undefined when the line does not resolve.
+   */
+  commandExecute(sessionId: string, line: string): Promise<CommandExecutionResult | undefined> {
+    return this.call<CommandExecutionResult | undefined>("command.execute", { sessionId, line })
   }
 
   /**

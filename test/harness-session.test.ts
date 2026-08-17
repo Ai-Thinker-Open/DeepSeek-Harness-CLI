@@ -39,6 +39,18 @@ class FakeClient implements HarnessClientLike {
     return { events: [], hasMore: false }
   }
 
+  async listSessions() {
+    return { items: [] }
+  }
+
+  async commandList() {
+    return []
+  }
+
+  async commandExecute() {
+    return undefined
+  }
+
   async *eventStream() {
     while (!this.closed) {
       if (this.frames.length) yield this.frames.shift() as ServerRequest
@@ -257,6 +269,69 @@ test("late tool events attach to their turn's message instead of spawning a stra
   const last = session.messages()[session.messages().length - 1]
   expect(last?.toolCalls?.length).toBe(1)
   expect(last?.content).toBe("final")
+})
+
+test("slash commands fold into message cards via command/run and command/done", async () => {
+  const client = new FakeClient()
+  const session = createHarnessSession(client, "/tmp")
+  await session.start("hello")
+
+  client.push(
+    frame("session/event", {
+      sessionId: "s-1",
+      event: ev("command/run", { commandId: "cmd-1", name: "compact", source: { kind: "user" } }, 6),
+    }),
+  )
+  await tick()
+  let last = session.messages()[session.messages().length - 1]
+  expect(last?.command?.name).toBe("compact")
+  expect(last?.command?.status).toBe("running")
+  expect(last?.content).toBe("/compact")
+
+  client.push(
+    frame("session/event", {
+      sessionId: "s-1",
+      event: ev("command/done", { commandId: "cmd-1", kind: "success", text: "已压缩" }, 7),
+    }),
+  )
+  await tick()
+  last = session.messages()[session.messages().length - 1]
+  expect(last?.command?.status).toBe("ok")
+  expect(last?.command?.resultText).toBe("已压缩")
+
+  // Idempotent: a replayed command/run never appends a duplicate card.
+  const before = session.messages().length
+  client.push(
+    frame("session/event", {
+      sessionId: "s-1",
+      event: ev("command/run", { commandId: "cmd-1", name: "compact", source: { kind: "user" } }, 8),
+    }),
+  )
+  await tick()
+  expect(session.messages().length).toBe(before)
+})
+
+test("command directory refresh and host dispatch", async () => {
+  const client = new FakeClient()
+  client.commandList = (async () => [{ name: "compact", description: "压缩历史", input: { hint: "" } }]) as unknown as typeof client.commandList
+  const session = createHarnessSession(client, "/tmp")
+  await session.start("hello")
+
+  await session.refreshCommands()
+  expect(session.commands()).toEqual([{ name: "compact", description: "压缩历史", input: { hint: "" } }])
+
+  let executed = ""
+  client.commandExecute = (async (_sessionId: string, line: string) => {
+    executed = line
+    return { commandId: "x", result: { kind: "success", text: "done" } }
+  }) as unknown as typeof client.commandExecute
+  const res = await session.runCommand("/compact")
+  expect(res.ok).toBe(true)
+  expect(executed).toBe("/compact")
+
+  client.commandExecute = (async () => undefined) as unknown as typeof client.commandExecute
+  const miss = await session.runCommand("/nope")
+  expect(miss.ok).toBe(false)
 })
 
 test("session streams assistant text, reasoning and tool call results", async () => {

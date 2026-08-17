@@ -53,6 +53,18 @@ class FakeClient implements HarnessClientLike {
     return { events: [], hasMore: false }
   }
 
+  async listSessions() {
+    return { items: [] }
+  }
+
+  async commandList() {
+    return []
+  }
+
+  async commandExecute() {
+    return undefined
+  }
+
   async *eventStream() {
     while (!this.closed) {
       if (this.frames.length) yield this.frames.shift() as ServerRequest

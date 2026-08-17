@@ -7,6 +7,8 @@ import type { HarnessClientLike } from "./harness/client"
 import { nextMode, type PermissionMode } from "./permission"
 import { Home } from "./screens/home"
 import { SessionScreen } from "./screens/session"
+import { LOCAL_COMMANDS, bareCommandName, hostCommandItems, type CommandItem } from "./commands"
+import type { CommandResultView } from "./components/command-popup"
 
 export function App(props: { client?: HarnessClientLike } = {}) {
   const renderer = useRenderer()
@@ -54,10 +56,38 @@ export function App(props: { client?: HarnessClientLike } = {}) {
     if (screen() === "home") {
       const ok = await session.start(trimmed)
       if (!ok) return
+      void session.refreshCommands()
       setScreen("session")
     } else {
       await session.send(trimmed)
     }
+  }
+
+  const commandItems = (): CommandItem[] => {
+    const host = session.commands().length ? hostCommandItems(session.commands()) : []
+    return [...LOCAL_COMMANDS, ...host]
+  }
+
+  const runCommand = async (line: string): Promise<CommandResultView | null> => {
+    const bare = bareCommandName(line)
+    const name = (bare ?? line.trim().slice(1).split(/\s+/)[0]?.toLowerCase() ?? "").toLowerCase()
+    if (name === "sessions") {
+      const items = await session.listSessions()
+      const rows = items.length
+        ? items.map((s) => {
+            const state = s.running ? "运行中" : s.blank ? "空白" : "已结束"
+            const when = new Date(s.updatedAt).toLocaleString()
+            return `${s.sessionId}  ${state}  ${s.cwd ?? ""}  ${when}`
+          })
+        : ["（没有会话）"]
+      return { title: `会话列表（${items.length}）`, rows }
+    }
+    if (name === "help") {
+      const rows = commandItems().map((i) => `/${i.name}  ${i.description}`)
+      return { title: "快捷命令", rows }
+    }
+    const res = await session.runCommand(line)
+    return res.ok ? null : { title: "命令", rows: [res.text ?? "执行失败"] }
   }
 
   return (
@@ -69,6 +99,9 @@ export function App(props: { client?: HarnessClientLike } = {}) {
             model={session.modelName}
             toast={toast}
             onSubmit={handleSubmit}
+            commandItems={commandItems}
+            onCommand={runCommand}
+            onCommandPopupOpen={() => void session.refreshCommands()}
             motion
             active={() => true}
           />
@@ -93,6 +126,9 @@ export function App(props: { client?: HarnessClientLike } = {}) {
           onSend={handleSubmit}
           onBack={() => setScreen("home")}
           onQuestion={session.answer}
+          commandItems={commandItems}
+          onCommand={runCommand}
+          onCommandPopupOpen={() => void session.refreshCommands()}
           active={() => screen() === "session"}
         />
       </box>

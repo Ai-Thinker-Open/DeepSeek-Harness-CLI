@@ -7,9 +7,11 @@ import { Toast, type ToastMessage } from "../components/toast"
 import { Tips } from "../components/tips"
 import { Footer } from "../components/footer"
 import { StartupLoading } from "../components/startup-loading"
+import type { CommandResultView } from "../components/command-popup"
 import { deepseek } from "../logo-art"
 import type { PermissionMode } from "../permission"
 import { theme } from "../theme"
+import type { CommandItem } from "../commands"
 
 export function Home(props: {
   motion?: boolean
@@ -18,6 +20,9 @@ export function Home(props: {
   model?: () => string
   toast?: () => ToastMessage | null
   onSubmit?: (text: string) => void
+  commandItems?: () => CommandItem[]
+  onCommand?: (line: string) => Promise<CommandResultView | null>
+  onCommandPopupOpen?: () => void
   visible?: boolean
   active?: () => boolean
 } = {}) {
@@ -67,6 +72,11 @@ export function Home(props: {
             mode={mode}
             model={model}
             onSubmit={props.onSubmit}
+            commandItems={props.commandItems}
+            onCommand={props.onCommand}
+            onPopupOpenChange={(open) => {
+              if (open) props.onCommandPopupOpen?.()
+            }}
             active={props.active}
             inputId="home-prompt-input"
           />

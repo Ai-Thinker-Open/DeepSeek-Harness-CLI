@@ -355,6 +355,46 @@ export function ToolCard({ call, result }: { call: ToolCallRecord; result?: Tool
   )
 }
 
+function CommandCard({ message }: { message: ChatMessage }) {
+  const command = message.command
+  if (!command) return null
+  const [expanded, setExpanded] = createSignal(false)
+  const statusGlyph =
+    command.status === "running" ? "●" : command.status === "ok" ? "✓" : "✗"
+  const statusColor =
+    command.status === "running" ? theme.info : command.status === "ok" ? theme.success : theme.error
+  return (
+    <box flexDirection="column" paddingLeft={2} marginTop={1}>
+      <box
+        flexDirection="row"
+        onMouse={(evt) => {
+          if (evt.type === "down" && evt.button === 0 && command.resultText) setExpanded((v) => !v)
+        }}
+      >
+        <text fg={statusColor}>{statusGlyph}</text>
+        <text fg={theme.text}>
+          <b> ❯ /{command.name}</b>
+        </text>
+        <Show when={command.args}>
+          <text fg={theme.textMuted} wrapMode="char">
+            {command.args}
+          </text>
+        </Show>
+        <Show when={command.resultText}>
+          <text fg={theme.textMuted}>{expanded() ? " ▾" : " ▸"}</text>
+        </Show>
+      </box>
+      <Show when={expanded() && command.resultText}>
+        <box paddingLeft={2}>
+          <text fg={theme.textMuted} wrapMode="char">
+            {command.resultText}
+          </text>
+        </box>
+      </Show>
+    </box>
+  )
+}
+
 function ThinkingBlock({ text, streaming }: { text: string; streaming?: boolean }) {
   const [expanded, setExpanded] = createSignal(false)
   // Bounded slice first so huge reasoning dumps never split in full.
@@ -462,6 +502,9 @@ function renderableContent(message: ChatMessage): { text: string; truncated: boo
 
 export function MessageView(props: { message: ChatMessage }) {
   const view = renderableContent(props.message)
+  if (props.message.command) {
+    return <CommandCard message={props.message} />
+  }
   if (props.message.inject) {
     return <ContextInjectionBlock message={props.message} />
   }

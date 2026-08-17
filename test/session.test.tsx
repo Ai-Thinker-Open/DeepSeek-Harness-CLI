@@ -4,6 +4,8 @@ import { testRender } from "@opentui/solid"
 import { createSignal } from "solid-js"
 import { SessionScreen } from "../src/screens/session"
 import { EMPTY_STATS, type ChatMessage, type HarnessQuestion, type SessionStats } from "../src/session"
+import type { CommandItem } from "../src/commands"
+import type { CommandResultView } from "../src/components/command-popup"
 
 const userMsg = (content: string): ChatMessage => ({ id: `u-${content}`, role: "user", content, createdAt: 1 })
 const assistantMsg = (content: string, extra: Partial<ChatMessage> = {}): ChatMessage => ({
@@ -23,6 +25,8 @@ async function renderSession(opts: {
   onQuestion?: (choice: string) => void
   onBack?: () => void
   onSend?: (text: string) => void
+  commandItems?: () => CommandItem[]
+  onCommand?: (line: string) => Promise<CommandResultView | null>
 } = {}) {
   const app = await testRender(
     () => (
@@ -37,6 +41,8 @@ async function renderSession(opts: {
         onSend={opts.onSend ?? (() => {})}
         onBack={opts.onBack ?? (() => {})}
         onQuestion={opts.onQuestion ?? (() => {})}
+        commandItems={opts.commandItems}
+        onCommand={opts.onCommand}
       />
     ),
     { width: 80, height: opts.height ?? 32 },
@@ -412,6 +418,65 @@ test("injected context renders collapsed and expands on click", async () => {
   await app.renderOnce()
 
   expect(app.captureCharFrame()).toContain("你是 DeepSeek Harness CLI 的编码助手。")
+})
+
+test("command cards render in the message window and expand on click", async () => {
+  const messages: ChatMessage[] = [
+    {
+      id: "cmd1",
+      role: "user",
+      content: "/compact",
+      command: { commandId: "c1", name: "compact", status: "ok", resultText: "已压缩历史" },
+      createdAt: 1,
+    },
+  ]
+  const app = await renderSession({ messages })
+  await app.renderOnce()
+  const frame = app.captureCharFrame()
+  expect(frame).toContain("/compact")
+  expect(frame).toContain("✓")
+  // Collapsed by default; the result text shows after clicking.
+  expect(frame).not.toContain("已压缩历史")
+  const lines = frame.split("\n")
+  const y = lines.findIndex((line) => line.includes("/compact"))
+  const x = lines[y]?.indexOf("/compact") ?? 0
+  await app.mockMouse.click(x + 1, y)
+  await app.renderOnce()
+  expect(app.captureCharFrame()).toContain("已压缩历史")
+})
+
+test("slash popup filters commands and runs a local command", async () => {
+  let ran = ""
+  const app = await renderSession({
+    messages: [userMsg("hi")],
+    commandItems: () => [
+      { name: "sessions", description: "列出会话", kind: "local" },
+      { name: "help", description: "显示命令", kind: "local" },
+    ],
+    onCommand: async (line) => {
+      ran = line
+      return line === "/sessions" ? { title: "会话列表", rows: ["s-1  运行中"] } : null
+    },
+  })
+  await app.renderOnce()
+
+  app.mockInput.typeText("/")
+  await new Promise((resolve) => setTimeout(resolve, 80))
+  await app.renderOnce()
+  app.mockInput.typeText("sess")
+  await new Promise((resolve) => setTimeout(resolve, 80))
+  await app.renderOnce()
+  const filtered = app.captureCharFrame()
+  expect(filtered).toContain("/sessions")
+  expect(filtered).not.toContain("/help")
+
+  app.mockInput.pressEnter()
+  await new Promise((resolve) => setTimeout(resolve, 30))
+  await app.renderOnce()
+  const frame = app.captureCharFrame()
+  expect(ran).toBe("/sessions")
+  expect(frame).toContain("会话列表")
+  expect(frame).toContain("s-1  运行中")
 })
 
 test("question modal answers with the selected option", async () => {
