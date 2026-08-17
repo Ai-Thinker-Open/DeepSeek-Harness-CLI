@@ -212,7 +212,7 @@ export class HarnessClient implements HarnessClientLike {
 
   /** Discover the effective slash commands for a session's agent. */
   commandList(sessionId: string): Promise<CommandDescriptor[]> {
-    return this.call<CommandDescriptor[]>("command.list", { sessionId })
+    return this.call<CommandDescriptor[]>("commands.list", { sessionId })
   }
 
   /**
@@ -220,7 +220,7 @@ export class HarnessClient implements HarnessClientLike {
    * settled execution, or undefined when the line does not resolve.
    */
   commandExecute(sessionId: string, line: string): Promise<CommandExecutionResult | undefined> {
-    return this.call<CommandExecutionResult | undefined>("command.execute", { sessionId, line })
+    return this.call<CommandExecutionResult | undefined>("commands.execute", { sessionId, line })
   }
 
   /**
