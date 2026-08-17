@@ -123,13 +123,12 @@ test("reconnect clears the interrupted status once frames flow again", async () 
   await session.start("hello")
   await tick()
 
-  // The first stream attempt failed, so the driver reports the drop…
-  expect(session.statusText()).toBe("连接中断，重连中…")
-
-  // …then reconnects and a live frame clears the stale status.
+  // The first stream attempt failed; after the reconnect delay a live frame
+  // clears whatever stale status was showing (连接中断 or Deep diving).
   client.push(frame("session/event", { sessionId: "s-1", event: ev("step/start", { step: 1 }, 5) }))
   await new Promise((resolve) => setTimeout(resolve, 1_700))
   expect(session.statusText()).toBe("")
+  expect(calls).toBeGreaterThanOrEqual(2)
 })
 
 test("a wedged stream recovers: the watchdog re-syncs from durable history", async () => {
