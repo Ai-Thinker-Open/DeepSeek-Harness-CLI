@@ -29,7 +29,7 @@ export const HARNESS_COMMANDS: CommandItem[] = [
     kind: "host",
     input: { hint: "[<objective>|clear|edit <objective>|pause|resume]" },
   },
-  { name: "plan", description: "Enter or leave plan mode", kind: "host", input: { hint: "[off|message]" } },
+  { name: "plan", description: "描述你的任务以生成计划（进入/退出计划模式）", kind: "host", input: { hint: "<任务描述|off>" } },
   { name: "export", description: "Export the session log", kind: "host" },
 ]
 

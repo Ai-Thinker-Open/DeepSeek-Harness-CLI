@@ -780,6 +780,12 @@ export function createHarnessSession(
       if (process.env.DSH_DEBUG) console.error("[dsh] command.list", JSON.stringify(list))
       setCommands(list)
     } catch (e) {
+      const message = e instanceof Error ? e.message : String(e)
+      if (/not found|404/i.test(message) && !process.env.DSH_DEBUG) {
+        // A harness without the commands service exposes no /api/commands.*.
+        setCommands([])
+        return
+      }
       if (process.env.DSH_DEBUG) console.error("[dsh] command.list failed", e)
       // Keep the last known directory; a reconnect or commands/change will retry.
     } finally {
@@ -795,7 +801,11 @@ export function createHarnessSession(
       if (!execution) return { ok: false, text: `未知或无法解析的命令：${line}` }
       return { ok: true, text: execution.result.text }
     } catch (e) {
-      return { ok: false, text: e instanceof Error ? e.message : String(e) }
+      const message = e instanceof Error ? e.message : String(e)
+      if (/not found|404/i.test(message)) {
+        return { ok: false, text: "当前 harness 未启用 commands 服务（版本过旧或未加载命令插件），host 命令不可用" }
+      }
+      return { ok: false, text: message }
     }
   }
 

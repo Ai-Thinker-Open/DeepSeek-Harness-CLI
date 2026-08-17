@@ -6,7 +6,7 @@ test("hardcoded harness commands always ship in the catalog", () => {
   expect(names).toEqual(expect.arrayContaining(["compact", "feedback", "goal", "plan", "export"]))
   expect(HARNESS_COMMANDS.find((c) => c.name === "feedback")?.input?.hint).toBe("<text>")
   expect(HARNESS_COMMANDS.find((c) => c.name === "goal")?.input?.hint).toContain("edit")
-  expect(HARNESS_COMMANDS.find((c) => c.name === "plan")?.input?.hint).toBe("[off|message]")
+  expect(HARNESS_COMMANDS.find((c) => c.name === "plan")?.input?.hint).toBe("<任务描述|off>")
   expect(LOCAL_COMMANDS.map((c) => c.name)).toEqual(["sessions", "resume", "help"])
 })
 

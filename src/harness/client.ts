@@ -211,16 +211,30 @@ export class HarnessClient implements HarnessClientLike {
   }
 
   /** Discover the effective slash commands for a session's agent. */
-  commandList(sessionId: string): Promise<CommandDescriptor[]> {
-    return this.call<CommandDescriptor[]>("commands.list", { sessionId })
+  async commandList(sessionId: string): Promise<CommandDescriptor[]> {
+    try {
+      return await this.call<CommandDescriptor[]>("commands.list", { agentId: sessionId })
+    } catch (e) {
+      if (e instanceof HarnessError && e.code === "not-found") {
+        return this.call<CommandDescriptor[]>("command.list", { agentId: sessionId })
+      }
+      throw e
+    }
   }
 
   /**
    * Execute a slash-command line against the session's agent. Returns the
    * settled execution, or undefined when the line does not resolve.
    */
-  commandExecute(sessionId: string, line: string): Promise<CommandExecutionResult | undefined> {
-    return this.call<CommandExecutionResult | undefined>("commands.execute", { sessionId, line })
+  async commandExecute(sessionId: string, line: string): Promise<CommandExecutionResult | undefined> {
+    try {
+      return await this.call<CommandExecutionResult | undefined>("commands.execute", { agentId: sessionId, line })
+    } catch (e) {
+      if (e instanceof HarnessError && e.code === "not-found") {
+        return this.call<CommandExecutionResult | undefined>("command.execute", { agentId: sessionId, line })
+      }
+      throw e
+    }
   }
 
   /**
