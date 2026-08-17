@@ -84,40 +84,7 @@ export function Prompt(props: {
   })
 
   return (
-    <box
-      position="relative"
-      backgroundColor={theme.backgroundPanel}
-      flexDirection="row"
-      border={["left"]}
-      borderColor={theme.primary}
-      customBorderChars={ACCENT_BORDER}
-    >
-      <box paddingLeft={2} paddingRight={2} paddingTop={1} paddingBottom={1} flexGrow={1} minWidth={0}>
-        <textarea
-          id={props.inputId ?? "prompt-input"}
-          ref={(el) => (ref = el)}
-          initialValue=""
-          placeholder={PROMPT_PLACEHOLDER}
-          minHeight={1}
-          maxHeight={5}
-          keyBindings={[
-            { name: "return", action: "submit" },
-            { name: "linefeed", action: "submit" },
-            { name: "return", meta: true, action: "newline" },
-          ]}
-          textColor={theme.text}
-          placeholderColor={theme.textMuted}
-          cursorColor={theme.primary}
-          onContentChange={handleContentChange}
-          onSubmit={submit}
-        />
-        <box flexDirection="row" justifyContent="space-between" marginTop={1}>
-          <text>
-            <span style={{ fg: theme.primary }}>{modeLabel(mode())}</span>
-          </text>
-          <text fg={theme.text}>{model()}</text>
-        </box>
-      </box>
+    <box flexDirection="column" width="100%">
       <Show when={popupOpen()}>
         <CommandPopup
           items={props.commandItems ?? (() => [])}
@@ -128,6 +95,40 @@ export function Prompt(props: {
           onClose={closePopup}
         />
       </Show>
+      <box
+        backgroundColor={theme.backgroundPanel}
+        flexDirection="row"
+        border={["left"]}
+        borderColor={theme.primary}
+        customBorderChars={ACCENT_BORDER}
+      >
+        <box paddingLeft={2} paddingRight={2} paddingTop={1} paddingBottom={1} flexGrow={1} minWidth={0}>
+          <textarea
+            id={props.inputId ?? "prompt-input"}
+            ref={(el) => (ref = el)}
+            initialValue=""
+            placeholder={PROMPT_PLACEHOLDER}
+            minHeight={1}
+            maxHeight={5}
+            keyBindings={[
+              { name: "return", action: "submit" },
+              { name: "linefeed", action: "submit" },
+              { name: "return", meta: true, action: "newline" },
+            ]}
+            textColor={theme.text}
+            placeholderColor={theme.textMuted}
+            cursorColor={theme.primary}
+            onContentChange={handleContentChange}
+            onSubmit={submit}
+          />
+          <box flexDirection="row" justifyContent="space-between" marginTop={1}>
+            <text>
+              <span style={{ fg: theme.primary }}>{modeLabel(mode())}</span>
+            </text>
+            <text fg={theme.text}>{model()}</text>
+          </box>
+        </box>
+      </box>
     </box>
   )
 }

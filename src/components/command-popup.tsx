@@ -27,13 +27,14 @@ export function CommandPopup(props: {
 }) {
   const [line, setLine] = createSignal(props.initialLine)
   const [selected, setSelected] = createSignal(0)
+  const [resultScroll, setResultScroll] = createSignal(0)
   let ref: InputRenderable | undefined
 
   onMount(() => ref?.focus())
 
   const filtered = createMemo(() => filterCommands(props.items(), line().slice(1)))
-  const listRows = () => Math.min(filtered().length, MAX_ROWS)
-  const height = () => (props.result ? Math.min(props.result.rows.length, MAX_ROWS) + 3 : listRows() + 4)
+  const resultRows = () => props.result?.rows ?? []
+  const visibleResultRows = () => resultRows().slice(resultScroll(), resultScroll() + MAX_ROWS)
 
   // Reopening the popup with a different initial line (e.g. after a result
   // view) resets the input and selection without remounting the component.
@@ -43,6 +44,16 @@ export function CommandPopup(props: {
   })
 
   useKeyboard((key) => {
+    if (props.result !== null && resultRows().length > MAX_ROWS) {
+      if (key.name === "up") {
+        setResultScroll((s) => Math.max(0, s - 1))
+        return
+      }
+      if (key.name === "down") {
+        setResultScroll((s) => Math.min(Math.max(0, resultRows().length - MAX_ROWS), s + 1))
+        return
+      }
+    }
     if (key.name === "up") {
       setSelected((s) => Math.max(0, s - 1))
       return
@@ -92,11 +103,7 @@ export function CommandPopup(props: {
 
   return (
     <box
-      position="absolute"
-      left={0}
       width="100%"
-      top={-height()}
-      zIndex={5}
       backgroundColor={theme.backgroundElement}
       border={["left", "right", "top"]}
       borderColor={theme.border}
@@ -145,7 +152,7 @@ export function CommandPopup(props: {
           <box flexShrink={0}>
             <text fg={theme.primary}>{props.result?.title}</text>
           </box>
-          <For each={props.result?.rows.slice(0, MAX_ROWS) ?? []}>
+          <For each={visibleResultRows()}>
             {(row) => (
               <box flexShrink={0}>
                 <text fg={theme.textMuted} wrapMode="char">
@@ -154,8 +161,10 @@ export function CommandPopup(props: {
               </box>
             )}
           </For>
-          <Show when={(props.result?.rows.length ?? 0) > MAX_ROWS}>
-            <text fg={theme.textMuted}>… 共 {props.result?.rows.length} 行（Esc 关闭）</text>
+          <Show when={resultRows().length > MAX_ROWS}>
+            <text fg={theme.textMuted}>
+              … 共 {resultRows().length} 行（↑/↓ 滚动，Esc 关闭）
+            </text>
           </Show>
         </box>
       </Show>
