@@ -66,9 +66,7 @@ export function App(props: { client?: HarnessClientLike } = {}) {
   const commandItems = (): CommandItem[] => {
     const dynamic = hostCommandItems(session.commands())
     // Hardcoded harness commands win over stale/partial dynamic discovery.
-    const host = session.hasSession() ? dynamic : []
-    const hardcoded = session.hasSession() ? HARNESS_COMMANDS : []
-    return mergeCommands(LOCAL_COMMANDS, host, hardcoded)
+    return mergeCommands(LOCAL_COMMANDS, dynamic, HARNESS_COMMANDS)
   }
 
   const runCommand = async (line: string): Promise<CommandResultView | null> => {
@@ -88,6 +86,13 @@ export function App(props: { client?: HarnessClientLike } = {}) {
     if (name === "help") {
       const rows = commandItems().map((i) => `/${i.name}  ${i.description}`)
       return { title: "快捷命令", rows }
+    }
+    // Host commands need a live session: create one on demand so commands
+    // still reach the harness when issued from the home screen.
+    if (!session.hasSession()) {
+      const ok = await session.ensureSession()
+      if (!ok) return { title: "命令", rows: ["无法创建会话，请检查 harness 连接"] }
+      void session.refreshCommands()
     }
     const res = await session.runCommand(line)
     if (res.ok) {

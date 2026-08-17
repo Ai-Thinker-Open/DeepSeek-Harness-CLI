@@ -41,6 +41,7 @@ export interface HarnessSessionApi {
   commands: () => CommandDescriptor[]
   commandsLoading: () => boolean
   hasSession: () => boolean
+  ensureSession: () => Promise<boolean>
   refreshCommands: () => Promise<void>
   runCommand: (line: string) => Promise<{ ok: boolean; text?: string }>
   listSessions: () => Promise<SessionSummary[]>
@@ -718,22 +719,27 @@ export function createHarnessSession(
   }
 
   async function start(text: string): Promise<boolean> {
-    if (!sessionId) {
-      try {
-        const info = await client.describe()
-        setConnected(true)
-        if (info.model) setModelName(info.model)
-        const created = await client.createSession(cwd)
-        sessionId = created.sessionId
-        startListening()
-        startStallWatchdog()
-      } catch (e) {
-        setConnected(false)
-        setError(describeHarnessError(e))
-        return false
-      }
-    }
+    if (!(await ensureSession())) return false
     return sendToSession(text)
+  }
+
+  /** Create the session if it does not exist yet (no prompt is sent). */
+  async function ensureSession(): Promise<boolean> {
+    if (sessionId) return true
+    try {
+      const info = await client.describe()
+      setConnected(true)
+      if (info.model) setModelName(info.model)
+      const created = await client.createSession(cwd)
+      sessionId = created.sessionId
+      startListening()
+      startStallWatchdog()
+      return true
+    } catch (e) {
+      setConnected(false)
+      setError(describeHarnessError(e))
+      return false
+    }
   }
 
   async function send(text: string): Promise<boolean> {
@@ -862,6 +868,7 @@ export function createHarnessSession(
     commands,
     commandsLoading,
     hasSession: () => sessionId !== null,
+    ensureSession,
     refreshCommands,
     runCommand,
     listSessions,

@@ -263,6 +263,28 @@ test("slash commands dispatch to the harness and render the command card", async
   expect(app.captureCharFrame()).toContain("/goal")
 })
 
+test("host slash command from home auto-creates a session and reaches the harness", async () => {
+  const client = new FakeClient()
+  const app = await testRender(() => <App client={client} />, { width: 80, height: 32 })
+  await app.renderOnce()
+
+  // Home screen: no session has been started yet.
+  app.mockInput.typeText("/")
+  await new Promise((r) => setTimeout(r, 80))
+  await app.renderOnce()
+  app.mockInput.typeText("plan")
+  await new Promise((r) => setTimeout(r, 80))
+  await app.renderOnce()
+  app.mockInput.pressEnter() // enters argument mode (hint: [off|message])
+  await new Promise((r) => setTimeout(r, 30))
+  app.mockInput.pressEnter() // submit the command
+  await new Promise((r) => setTimeout(r, 80))
+  await app.renderOnce()
+
+  expect(client.created).toBe(1)
+  expect(client.commandCalls).toContain("/plan")
+})
+
 test("connection failure shows an error toast and stays on home", async () => {
   const client = new FakeClient()
   client.failDescribe = true
