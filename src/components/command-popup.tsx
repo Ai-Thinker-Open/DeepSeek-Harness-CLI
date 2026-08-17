@@ -1,4 +1,4 @@
-import { For, Show, createEffect, createMemo, createSignal, onMount } from "solid-js"
+import { For, Show, createEffect, createMemo, createSignal, onCleanup, onMount } from "solid-js"
 import { useKeyboard } from "@opentui/solid"
 import type { InputRenderable } from "@opentui/core"
 import { bareCommandName, filterCommands, type CommandItem } from "../commands"
@@ -29,18 +29,40 @@ export function CommandPopup(props: {
   const [selected, setSelected] = createSignal(0)
   const [resultScroll, setResultScroll] = createSignal(0)
   let ref: InputRenderable | undefined
+  let argsRef: InputRenderable | undefined
+  let argsSettled = false
 
   onMount(() => ref?.focus())
 
   const filtered = createMemo(() => filterCommands(props.items(), line().slice(1)))
   const resultRows = () => props.result?.rows ?? []
   const visibleResultRows = () => resultRows().slice(resultScroll(), resultScroll() + MAX_ROWS)
+  /**
+   * Argument (leading-input) mode: the line is "/name args…". The command
+   * prefix renders emphasized (orange) with the typed args in a separate
+   * input, matching the web's plan-mode composition.
+   */
+  const argMode = createMemo(() => {
+    const match = /^(\/[a-z][a-z0-9_-]*)(?: (.*))?$/.exec(line())
+    if (!match || match[2] === undefined) return null
+    return { prefix: match[1], args: match[2] }
+  })
 
   // Reopening the popup with a different initial line (e.g. after a result
   // view) resets the input and selection without remounting the component.
   createEffect(() => {
     setLine(props.initialLine)
     setSelected(0)
+  })
+  // Keep typing focus on the args input while composing a leading-input command.
+  createEffect(() => {
+    if (argMode() !== null) {
+      const timer = setTimeout(() => {
+        if (argsRef) argsRef.value = argMode()?.args ?? ""
+        argsRef?.focus()
+      }, 15)
+      onCleanup(() => clearTimeout(timer))
+    }
   })
 
   useKeyboard((key) => {
@@ -117,38 +139,78 @@ export function CommandPopup(props: {
       flexDirection="column"
     >
       <Show when={props.result === null}>
-        <input
-          id="command-popup-input"
-          ref={(el) => (ref = el)}
-          value={props.initialLine}
-          textColor={theme.text}
-          placeholderColor={theme.textMuted}
-          cursorColor={theme.primary}
-          onInput={(value) => {
-            const next = String(value ?? "")
-            setLine(next)
-            setSelected(0)
-            if (next === "") props.onClose()
-          }}
-          onSubmit={(value) => submit(typeof value === "string" ? value : "")}
-        />
-        <box flexDirection="column" marginTop={1}>
-          <Show when={props.loading && filtered().length === 0}>
-            <text fg={theme.textMuted}>加载命令中…</text>
-          </Show>
-          <For each={filtered().slice(0, MAX_ROWS)}>
-            {(item, index) => (
-              <box flexDirection="row" backgroundColor={index() === selected() ? theme.backgroundPanel : undefined}>
-                <text fg={index() === selected() ? theme.primary : theme.textMuted} wrapMode="char">
-                  /{item.name}  {item.description}
-                </text>
-              </box>
-            )}
-          </For>
-          <Show when={filtered().length === 0}>
-            <text fg={theme.textMuted}>没有匹配的命令</text>
-          </Show>
-        </box>
+        <Show
+          when={argMode() === null}
+          fallback={
+            <box flexDirection="row">
+              <text fg={theme.warning}>
+                <b>{argMode()?.prefix}</b>
+              </text>
+              <input
+                id="command-popup-args-input"
+                ref={(el) => {
+                  ref = el
+                  argsRef = el
+                  argsSettled = false
+                  setTimeout(() => {
+                    argsSettled = true
+                  }, 0)
+                }}
+                value={argMode()?.args ?? ""}
+                textColor={theme.text}
+                placeholderColor={theme.textMuted}
+                cursorColor={theme.primary}
+                onInput={(value) => {
+                  // Ignore the mount-time input event that echoes the reused
+                  // buffer; only accept real typing.
+                  if (!argsSettled) return
+                  const next = String(value ?? "")
+                  setLine(`${argMode()?.prefix ?? ""} ${next}`)
+                  setSelected(0)
+                }}
+                onSubmit={(value) => submit(`${argMode()?.prefix ?? ""} ${typeof value === "string" ? value : ""}`)}
+              />
+            </box>
+          }
+        >
+          <input
+            id="command-popup-input"
+            ref={(el) => {
+              ref = el
+              argsRef = undefined
+            }}
+            value={props.initialLine}
+            textColor={theme.text}
+            placeholderColor={theme.textMuted}
+            cursorColor={theme.primary}
+            onInput={(value) => {
+              const next = String(value ?? "")
+              setLine(next)
+              setSelected(0)
+              if (next === "") props.onClose()
+            }}
+            onSubmit={(value) => submit(typeof value === "string" ? value : "")}
+          />
+        </Show>
+        <Show when={argMode() === null}>
+          <box flexDirection="column" marginTop={1}>
+            <Show when={props.loading && filtered().length === 0}>
+              <text fg={theme.textMuted}>加载命令中…</text>
+            </Show>
+            <For each={filtered().slice(0, MAX_ROWS)}>
+              {(item, index) => (
+                <box flexDirection="row" backgroundColor={index() === selected() ? theme.backgroundPanel : undefined}>
+                  <text fg={index() === selected() ? theme.primary : theme.textMuted} wrapMode="char">
+                    /{item.name}  {item.description}
+                  </text>
+                </box>
+              )}
+            </For>
+            <Show when={filtered().length === 0}>
+              <text fg={theme.textMuted}>没有匹配的命令</text>
+            </Show>
+          </box>
+        </Show>
       </Show>
       <Show when={props.result !== null}>
         <box flexDirection="column">
