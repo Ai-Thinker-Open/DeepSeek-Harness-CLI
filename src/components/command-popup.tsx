@@ -68,13 +68,16 @@ export function CommandPopup(props: {
   })
 
   const submit = (text: string) => {
-    const value = text.trim()
+    const raw = String(text ?? "")
+    const value = raw.trim()
     const pick = filtered()[selected()]
     if (!value || value === "/") {
       if (pick) props.onRun(`/${pick.name}`)
       return
     }
-    const bare = bareCommandName(value)
+    // A trailing space (argument mode) means the user already confirmed the
+    // name — Enter now submits the full line instead of re-entering arg mode.
+    const bare = bareCommandName(raw)
     if (bare !== undefined) {
       const item = props.items().find((i) => i.name === bare)
       if (item?.input?.hint) {
@@ -95,7 +98,7 @@ export function CommandPopup(props: {
         props.onRun(`/${pick.name}`)
         return
       }
-      props.onRun(value)
+      props.onRun(`/${bare}`)
       return
     }
     props.onRun(value)

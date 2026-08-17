@@ -24,6 +24,7 @@ class FakeClient implements HarnessClientLike {
   failDescribe = false
   created = 0
   prompts: Array<{ sessionId: string; text: string }> = []
+  commandCalls: string[] = []
   private frames: ServerRequest[] = []
   private waiters: Array<(r: IteratorResult<ServerRequest>) => void> = []
   private closed = false
@@ -58,11 +59,12 @@ class FakeClient implements HarnessClientLike {
   }
 
   async commandList() {
-    return []
+    return [{ name: "compact", description: "Compact", input: undefined }]
   }
 
-  async commandExecute() {
-    return undefined
+  async commandExecute(_sessionId: string, line: string) {
+    this.commandCalls.push(line)
+    return { commandId: "cmd-1", result: { kind: "success" as const, text: "No goal set." } }
   }
 
   async *eventStream() {
@@ -212,6 +214,53 @@ test("session streams assistant replies and tool calls from the harness", async 
   await app.mockMouse.click(x + 1, y)
   await app.renderOnce()
   expect(app.captureCharFrame()).toContain("hi from mock")
+})
+
+test("slash commands dispatch to the harness and render the command card", async () => {
+  const client = new FakeClient()
+  const app = await testRender(() => <App client={client} />, { width: 80, height: 32 })
+  await app.renderOnce()
+
+  app.mockInput.typeText("hello")
+  await app.renderOnce()
+  app.mockInput.pressEnter()
+  await tick()
+  await app.renderOnce()
+
+  // Type "/goal": popup opens, filters, first Enter enters argument mode,
+  // second Enter submits the command.
+  app.mockInput.typeText("/")
+  await new Promise((r) => setTimeout(r, 80))
+  await app.renderOnce()
+  app.mockInput.typeText("goal")
+  await new Promise((r) => setTimeout(r, 80))
+  await app.renderOnce()
+  app.mockInput.pressEnter()
+  await new Promise((r) => setTimeout(r, 30))
+  app.mockInput.pressEnter()
+  await new Promise((r) => setTimeout(r, 50))
+  await app.renderOnce()
+
+  expect(client.commandCalls).toContain("/goal")
+  expect(app.captureCharFrame()).toContain("No goal set.")
+
+  // The harness emits the lifecycle events, which render the durable card.
+  client.push({
+    type: "server-request",
+    rpcId: "m1",
+    method: "session/event",
+    payload: { sessionId: "s-1", event: ev("command/run", { commandId: "cmd-1", name: "goal", source: { kind: "user" } }, 11) },
+  })
+  await tick()
+  client.push({
+    type: "server-request",
+    rpcId: "m2",
+    method: "session/event",
+    payload: { sessionId: "s-1", event: ev("command/done", { commandId: "cmd-1", kind: "success", text: "No goal set." }, 12) },
+  })
+  await tick()
+  await app.renderOnce()
+  expect(app.captureCharFrame()).toContain("/goal")
 })
 
 test("connection failure shows an error toast and stays on home", async () => {

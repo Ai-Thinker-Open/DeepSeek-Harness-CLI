@@ -88,7 +88,10 @@ export function App(props: { client?: HarnessClientLike } = {}) {
       return { title: "快捷命令", rows }
     }
     const res = await session.runCommand(line)
-    return res.ok ? null : { title: "命令", rows: [res.text ?? "执行失败"] }
+    if (res.ok) {
+      return { title: `/${bare ?? name}`, rows: [res.text ?? "已执行（完整结果见消息窗口）"] }
+    }
+    return { title: "命令", rows: [res.text ?? "执行失败"] }
   }
 
   return (
