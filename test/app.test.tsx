@@ -204,7 +204,6 @@ test("session streams assistant replies and tool calls from the harness", async 
   const frame = app.captureCharFrame()
   expect(frame).toContain("好的")
   expect(frame).toContain("Bash · echo hi")
-  expect(frame).toContain("✓")
   // The settled tool card is collapsed; expand it to reveal the output.
   expect(frame).not.toContain("hi from mock")
   const lines = frame.split("\n")

@@ -20,32 +20,6 @@ const MAX_RENDERED_CONTENT = 32_000
 const INJECT_PREVIEW_LINES = 8
 const MAX_OUTPUT_LINES = 20
 
-function statusColor(status: ToolCallStatus) {
-  switch (status) {
-    case "running":
-      return theme.info
-    case "ok":
-      return theme.success
-    case "error":
-      return theme.error
-    case "denied":
-      return theme.warning
-  }
-}
-
-function ToolIcon({ status }: { status: ToolCallStatus }) {
-  switch (status) {
-    case "running":
-      return <text fg={theme.info}>●</text>
-    case "ok":
-      return <text fg={theme.success}>✓</text>
-    case "error":
-      return <text fg={theme.error}>✗</text>
-    case "denied":
-      return <text fg={theme.warning}>⊘</text>
-  }
-}
-
 function formatDuration(ms: number): string {
   if (ms < 1000) return `${Math.round(ms)}ms`
   return `${(ms / 1000).toFixed(1)}s`
@@ -316,29 +290,30 @@ export function ToolCard({ call, result }: { call: ToolCallRecord; result?: Tool
     <box flexDirection="column" paddingLeft={2} marginTop={1}>
       <box
         flexDirection="row"
+        width="100%"
         onMouse={(evt) => {
           if (evt.type === "down" && evt.button === 0 && expandable()) toggle()
         }}
       >
-        <ToolIcon status={call.status} />
-        <text fg={theme.text}>
-          <b>
-            {" "}
-            {model().icon} {model().title}
-          </b>
+        <text fg={theme.textMuted}>
+          <Show when={expandable()}>
+            <span>{expanded() ? "▾" : "▸"} </span>
+          </Show>
+          <span>{model().icon}</span>
+          <b> {model().title}</b>
+          <Show when={model().summary || errorLine()}>
+            <span style={{ fg: call.status === "error" && errorLine() ? theme.error : theme.textMuted }}>
+              {" · "}
+              {errorLine() ?? model().summary}
+            </span>
+          </Show>
+          <Show when={dur}>
+            <span>{dur}</span>
+          </Show>
+          <Show when={call.status === "running"}>
+            <span> …</span>
+          </Show>
         </text>
-        <Show when={model().summary || errorLine()}>
-          <text fg={call.status === "error" && errorLine() ? theme.error : theme.textMuted} wrapMode="char">
-            {" · "}
-            {errorLine() ?? model().summary}
-          </text>
-        </Show>
-        <Show when={dur}>
-          <text fg={theme.textMuted}>{dur}</text>
-        </Show>
-        <Show when={expandable()}>
-          <text fg={theme.textMuted}>{expanded() ? " ▾" : " ▸"}</text>
-        </Show>
       </box>
       <Show when={call.status === "running"}>
         <box paddingLeft={2}>
@@ -359,30 +334,32 @@ function CommandCard({ message }: { message: ChatMessage }) {
   const command = message.command
   if (!command) return null
   const [expanded, setExpanded] = createSignal(false)
-  const statusGlyph =
-    command.status === "running" ? "●" : command.status === "ok" ? "✓" : "✗"
-  const statusColor =
-    command.status === "running" ? theme.info : command.status === "ok" ? theme.success : theme.error
+  const expandable = () => Boolean(command.resultText)
   return (
     <box flexDirection="column" paddingLeft={2} marginTop={1}>
       <box
         flexDirection="row"
+        width="100%"
         onMouse={(evt) => {
-          if (evt.type === "down" && evt.button === 0 && command.resultText) setExpanded((v) => !v)
+          if (evt.type === "down" && evt.button === 0 && expandable()) setExpanded((v) => !v)
         }}
       >
-        <text fg={statusColor}>{statusGlyph}</text>
-        <text fg={theme.text}>
-          <b> ❯ /{command.name}</b>
+        <text fg={theme.textMuted}>
+          <Show when={expandable()}>
+            <span>{expanded() ? "▾" : "▸"} </span>
+          </Show>
+          <span>❯</span>
+          <b> /{command.name}</b>
+          <Show when={command.args}>
+            <span>{command.args}</span>
+          </Show>
+          <Show when={command.status === "running"}>
+            <span> …</span>
+          </Show>
+          <Show when={command.status === "error" && command.resultText}>
+            <span style={{ fg: theme.error }}> · {command.resultText}</span>
+          </Show>
         </text>
-        <Show when={command.args}>
-          <text fg={theme.textMuted} wrapMode="char">
-            {command.args}
-          </text>
-        </Show>
-        <Show when={command.resultText}>
-          <text fg={theme.textMuted}>{expanded() ? " ▾" : " ▸"}</text>
-        </Show>
       </box>
       <Show when={expanded() && command.resultText}>
         <box paddingLeft={2}>

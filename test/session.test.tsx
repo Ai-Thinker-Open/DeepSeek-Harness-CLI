@@ -207,9 +207,7 @@ test("assistant messages collapse thinking and render tool cards", async () => {
   expect(frame).not.toContain("点击展开")
   expect(frame).not.toContain("行 ·")
   expect(frame).toContain("运行中…")
-  expect(frame).toContain("●")
   expect(frame).toContain("echo hi")
-  expect(frame).toContain("✓")
   expect(frame).toContain("Bash · ls")
   // Tool cards are collapsed by default; output stays hidden until expanded.
   expect(frame).not.toContain("src")
@@ -434,7 +432,6 @@ test("command cards render in the message window and expand on click", async () 
   await app.renderOnce()
   const frame = app.captureCharFrame()
   expect(frame).toContain("/compact")
-  expect(frame).toContain("✓")
   // Collapsed by default; the result text shows after clicking.
   expect(frame).not.toContain("已压缩历史")
   const lines = frame.split("\n")
