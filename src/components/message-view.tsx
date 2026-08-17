@@ -336,7 +336,7 @@ function CommandCard({ message }: { message: ChatMessage }) {
   const [expanded, setExpanded] = createSignal(false)
   const expandable = () => Boolean(command.resultText)
   return (
-    <box flexDirection="column" paddingLeft={2} marginTop={1}>
+    <box flexDirection="column" paddingLeft={2} marginBottom={1}>
       <box
         flexDirection="row"
         width="100%"
