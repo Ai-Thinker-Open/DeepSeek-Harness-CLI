@@ -66,7 +66,9 @@ export function App(props: { client?: HarnessClientLike } = {}) {
   const commandItems = (): CommandItem[] => {
     const dynamic = hostCommandItems(session.commands())
     // Hardcoded harness commands win over stale/partial dynamic discovery.
-    return mergeCommands(LOCAL_COMMANDS, dynamic, HARNESS_COMMANDS)
+    const host = session.hasSession() ? dynamic : []
+    const hardcoded = session.hasSession() ? HARNESS_COMMANDS : []
+    return mergeCommands(LOCAL_COMMANDS, host, hardcoded)
   }
 
   const runCommand = async (line: string): Promise<CommandResultView | null> => {

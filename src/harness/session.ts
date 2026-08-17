@@ -40,6 +40,7 @@ export interface HarnessSessionApi {
   statusText: () => string
   commands: () => CommandDescriptor[]
   commandsLoading: () => boolean
+  hasSession: () => boolean
   refreshCommands: () => Promise<void>
   runCommand: (line: string) => Promise<{ ok: boolean; text?: string }>
   listSessions: () => Promise<SessionSummary[]>
@@ -782,7 +783,7 @@ export function createHarnessSession(
 
   /** Execute a host slash-command line; the lifecycle renders via events. */
   async function runCommand(line: string): Promise<{ ok: boolean; text?: string }> {
-    if (!sessionId) return { ok: false, text: "还没有可用的会话" }
+    if (!sessionId) return { ok: false, text: "请先开始一个会话（发一条消息），再使用该命令" }
     try {
       const execution = await client.commandExecute(sessionId, line)
       if (!execution) return { ok: false, text: `未知或无法解析的命令：${line}` }
@@ -860,6 +861,7 @@ export function createHarnessSession(
     abort,
     commands,
     commandsLoading,
+    hasSession: () => sessionId !== null,
     refreshCommands,
     runCommand,
     listSessions,
