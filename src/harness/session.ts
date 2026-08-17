@@ -12,6 +12,8 @@ import {
   HarnessClient,
   type CommandDescriptor,
   type HarnessClientLike,
+  type QueueAction,
+  type QueueItem,
   type ServerRequest,
   type SessionEvent,
   type SessionSummary,
@@ -42,6 +44,8 @@ export interface HarnessSessionApi {
   commandsLoading: () => boolean
   hasSession: () => boolean
   ensureSession: () => Promise<boolean>
+  queue: () => QueueItem[]
+  updateQueueItem: (itemId: string, action: QueueAction) => Promise<boolean>
   refreshCommands: () => Promise<void>
   runCommand: (line: string) => Promise<{ ok: boolean; text?: string }>
   listSessions: () => Promise<SessionSummary[]>
@@ -80,6 +84,7 @@ export function createHarnessSession(
   const [modelName, setModelName] = createSignal("DeepSeek-V4-Flash")
   const [commands, setCommands] = createSignal<CommandDescriptor[]>([])
   const [commandsLoading, setCommandsLoading] = createSignal(false)
+  const [queue, setQueue] = createSignal<QueueItem[]>([])
 
   let sessionId: string | null = null
   let listening = false
@@ -599,6 +604,27 @@ export function createHarnessSession(
           void refreshCommands()
         }
         break
+      case "session/queue": {
+        const items = (payload.items as Array<Record<string, unknown>> | undefined) ?? []
+        setQueue(
+          items.map((item) => {
+            const message = (item.message ?? {}) as Record<string, unknown>
+            const content = (message.content ?? []) as Array<{ type?: string; text?: string }>
+            const text = content.every((b) => b.type === "text")
+              ? content.map((b) => b.text ?? "").join("")
+              : null
+            const preview = text ?? content.map((b) => (b.type === "text" ? b.text ?? "" : `[${b.type}]`)).join(" ").trim()
+            return {
+              id: String(item.id ?? ""),
+              messageId: String(message.id ?? ""),
+              placement: (item.placement as QueueItem["placement"]) ?? "queued",
+              text: text ?? null,
+              preview: preview.slice(0, 200),
+            }
+          }),
+        )
+        break
+      }
     }
   }
 
@@ -819,6 +845,17 @@ export function createHarnessSession(
     }
   }
 
+  /** Edit/remove/steer one pending queue occurrence. */
+  async function updateQueueItem(itemId: string, action: QueueAction): Promise<boolean> {
+    if (!sessionId) return false
+    try {
+      const res = await client.updateQueue(sessionId, itemId, action)
+      return res.accepted
+    } catch {
+      return false
+    }
+  }
+
   async function answer(choice: string): Promise<void> {
     const q = question()
     if (!q || !sessionId) return
@@ -879,6 +916,8 @@ export function createHarnessSession(
     commandsLoading,
     hasSession: () => sessionId !== null,
     ensureSession,
+    queue,
+    updateQueueItem,
     refreshCommands,
     runCommand,
     listSessions,

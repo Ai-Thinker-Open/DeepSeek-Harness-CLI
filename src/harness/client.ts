@@ -75,6 +75,21 @@ export interface HistoryEntry {
   view?: { for: "call" | "result"; view: { card?: string } }
 }
 
+/** One transient queued/steering message from the `session/queue` snapshot. */
+export interface QueueItem {
+  id: string
+  messageId: string
+  placement: "queued" | "steering" | "context"
+  text: string | null
+  preview: string
+}
+
+/** One mutation accepted by the session queue verb. */
+export type QueueAction =
+  | { kind: "edit"; content: Array<{ type: "text"; text: string }> }
+  | { kind: "remove" }
+  | { kind: "steer" }
+
 export interface QuestionItem {
   id: string
   question: string
@@ -96,6 +111,7 @@ export interface HarnessClientLike {
   listSessions(): Promise<{ items: SessionSummary[] }>
   commandList(sessionId: string): Promise<CommandDescriptor[]>
   commandExecute(sessionId: string, line: string): Promise<CommandExecutionResult | undefined>
+  updateQueue(sessionId: string, itemId: string, action: QueueAction): Promise<{ accepted: boolean }>
   eventStream(signal?: AbortSignal): AsyncGenerator<ServerRequest>
 }
 
@@ -237,6 +253,18 @@ export class HarnessClient implements HarnessClientLike {
     }
   }
 
+  /** Apply an edit/remove/steer operation to a pending queue occurrence. */
+  async updateQueue(sessionId: string, itemId: string, action: QueueAction): Promise<{ accepted: boolean }> {
+    try {
+      return await this.call<{ accepted: boolean }>("session.updateQueue", { sessionId, itemId, action })
+    } catch (e) {
+      if (e instanceof HarnessError && e.code === "not-found") {
+        return this.call<{ accepted: boolean }>("sessions.updateQueue", { sessionId, itemId, action })
+      }
+      throw e
+    }
+  }
+
   /**
    * Open the mux event stream (WebSocket downlink). Yields decoded
    * `server-request` envelopes until the socket closes or the signal aborts.
@@ -257,10 +285,22 @@ export class HarnessClient implements HarnessClientLike {
     }
     ws.onmessage = (e) => {
       try {
-        const frame = JSON.parse(String(e.data)) as ServerRequest
-        if (frame?.type === "server-request" && frame.method) {
+        const raw = JSON.parse(String(e.data)) as Record<string, unknown>
+        const frame = raw as unknown as ServerRequest
+        if (raw.type === "server-request" && typeof raw.method === "string") {
           if (waiters.length) (waiters.shift() as (r: IteratorResult<ServerRequest>) => void)({ value: frame, done: false })
           else queue.push(frame)
+        } else if (raw.type === "session/queue") {
+          // The queue snapshot is its own mux frame; normalize it into the
+          // server-request envelope the driver consumes.
+          const normalized: ServerRequest = {
+            type: "server-request",
+            rpcId: "",
+            method: "session/queue",
+            payload: raw,
+          }
+          if (waiters.length) (waiters.shift() as (r: IteratorResult<ServerRequest>) => void)({ value: normalized, done: false })
+          else queue.push(normalized)
         }
       } catch {
         /* skip malformed frame */

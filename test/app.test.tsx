@@ -67,6 +67,10 @@ class FakeClient implements HarnessClientLike {
     return { commandId: "cmd-1", result: { kind: "success" as const, text: "No goal set." } }
   }
 
+  async updateQueue() {
+    return { accepted: true }
+  }
+
   async *eventStream() {
     while (!this.closed) {
       if (this.frames.length) yield this.frames.shift() as ServerRequest

@@ -6,6 +6,7 @@ import { SessionScreen } from "../src/screens/session"
 import { EMPTY_STATS, type ChatMessage, type HarnessQuestion, type SessionStats } from "../src/session"
 import type { CommandItem } from "../src/commands"
 import type { CommandResultView } from "../src/components/command-popup"
+import type { QueueAction, QueueItem } from "../src/harness/client"
 
 const userMsg = (content: string): ChatMessage => ({ id: `u-${content}`, role: "user", content, createdAt: 1 })
 const assistantMsg = (content: string, extra: Partial<ChatMessage> = {}): ChatMessage => ({
@@ -27,6 +28,8 @@ async function renderSession(opts: {
   onSend?: (text: string) => void
   commandItems?: () => CommandItem[]
   onCommand?: (line: string) => Promise<CommandResultView | null>
+  queue?: () => QueueItem[]
+  onQueueAction?: (itemId: string, action: QueueAction) => void
 } = {}) {
   const app = await testRender(
     () => (
@@ -43,6 +46,8 @@ async function renderSession(opts: {
         onQuestion={opts.onQuestion ?? (() => {})}
         commandItems={opts.commandItems}
         onCommand={opts.onCommand}
+        queue={opts.queue}
+        onQueueAction={opts.onQueueAction}
       />
     ),
     { width: 80, height: opts.height ?? 32 },
@@ -440,6 +445,22 @@ test("command cards render in the message window and expand on click", async () 
   await app.mockMouse.click(x + 1, y)
   await app.renderOnce()
   expect(app.captureCharFrame()).toContain("已压缩历史")
+})
+
+test("pending message dock renders queued rows with action icons", async () => {
+  const app = await renderSession({
+    messages: [userMsg("hi")],
+    queue: () => [
+      { id: "q1", messageId: "m1", placement: "queued", text: "排队消息", preview: "排队消息" },
+    ],
+  })
+  await app.renderOnce()
+  const frame = app.captureCharFrame()
+  expect(frame).toContain("待处理消息")
+  expect(frame).toContain("排队消息")
+  expect(frame).toContain("✎")
+  expect(frame).toContain("✕")
+  expect(frame).toContain("➤")
 })
 
 test("slash popup filters commands and runs a local command", async () => {

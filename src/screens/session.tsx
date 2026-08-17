@@ -4,6 +4,7 @@ import { Footer } from "../components/footer"
 import type { CommandResultView } from "../components/command-popup"
 import { MessageView } from "../components/message-view"
 import { Prompt } from "../components/prompt"
+import { QueueDock } from "../components/queue-dock"
 import { QuestionModal } from "../components/question-modal"
 import { StatusMarquee } from "../components/status-marquee"
 import { StatsBar } from "../components/stats-bar"
@@ -12,6 +13,7 @@ import type { PermissionMode } from "../permission"
 import { DEEP_DIVING_STATUS, type ChatMessage, type HarnessQuestion, type SessionStats } from "../session"
 import { theme } from "../theme"
 import type { CommandItem } from "../commands"
+import type { QueueAction, QueueItem } from "../harness/client"
 
 export function SessionScreen(props: {
   messages: () => ChatMessage[]
@@ -28,6 +30,8 @@ export function SessionScreen(props: {
   onCommand?: (line: string) => Promise<CommandResultView | null>
   onCommandPopupOpen?: () => void
   commandsLoading?: () => boolean
+  queue?: () => QueueItem[]
+  onQueueAction?: (itemId: string, action: QueueAction) => void
   visible?: boolean
   active?: () => boolean
 }) {
@@ -77,6 +81,11 @@ export function SessionScreen(props: {
                 text={props.statusText()}
                 animated={props.statusText() === DEEP_DIVING_STATUS}
               />
+            </box>
+          </Show>
+          <Show when={(props.queue?.().length ?? 0) > 0}>
+            <box paddingBottom={1}>
+              <QueueDock queue={props.queue ?? (() => [])} onAction={props.onQueueAction ?? (() => {})} />
             </box>
           </Show>
           <Prompt

@@ -51,6 +51,10 @@ class FakeClient implements HarnessClientLike {
     return undefined
   }
 
+  async updateQueue() {
+    return { accepted: true }
+  }
+
   async *eventStream() {
     while (!this.closed) {
       if (this.frames.length) yield this.frames.shift() as ServerRequest
@@ -331,6 +335,49 @@ test("command directory refresh and host dispatch", async () => {
   client.commandExecute = (async () => undefined) as unknown as typeof client.commandExecute
   const miss = await session.runCommand("/nope")
   expect(miss.ok).toBe(false)
+})
+
+test("session/queue frames fold into the pending-message dock", async () => {
+  const client = new FakeClient()
+  const session = createHarnessSession(client, "/tmp")
+  await session.start("hello")
+
+  client.push({
+    type: "server-request",
+    rpcId: "q",
+    method: "session/queue",
+    payload: {
+      sessionId: "s-1",
+      items: [
+        { id: "item-1", message: { id: "m-1", content: [{ type: "text", text: "排队消息" }] }, placement: "queued" },
+        { id: "item-2", message: { id: "m-2", content: [{ type: "image", id: "i" }] }, placement: "steering" },
+      ],
+    },
+  })
+  await tick()
+  const queue = session.queue()
+  expect(queue.length).toBe(2)
+  expect(queue[0]?.preview).toBe("排队消息")
+  expect(queue[0]?.text).toBe("排队消息")
+  expect(queue[1]?.text).toBeNull()
+  expect(queue[1]?.preview).toContain("image")
+})
+
+test("queue actions dispatch edit/remove/steer to the harness", async () => {
+  const client = new FakeClient()
+  const calls: Array<{ itemId: string; action: unknown }> = []
+  client.updateQueue = (async (_sessionId: string, itemId: string, action: never) => {
+    calls.push({ itemId, action })
+    return { accepted: true }
+  }) as typeof client.updateQueue
+  const session = createHarnessSession(client, "/tmp")
+  await session.start("hello")
+
+  expect(await session.updateQueueItem("q1", { kind: "remove" })).toBe(true)
+  expect(await session.updateQueueItem("q2", { kind: "edit", content: [{ type: "text", text: "改" }] })).toBe(true)
+  expect(await session.updateQueueItem("q3", { kind: "steer" })).toBe(true)
+  expect(calls.map((c) => c.itemId)).toEqual(["q1", "q2", "q3"])
+  expect(calls[1]?.action).toEqual({ kind: "edit", content: [{ type: "text", text: "改" }] })
 })
 
 test("session streams assistant text, reasoning and tool call results", async () => {

@@ -142,6 +142,8 @@ export function App(props: { client?: HarnessClientLike } = {}) {
           onCommand={runCommand}
           onCommandPopupOpen={() => void session.refreshCommands()}
           commandsLoading={session.commandsLoading}
+          queue={session.queue}
+          onQueueAction={(itemId, action) => void session.updateQueueItem(itemId, action)}
           active={() => screen() === "session"}
         />
       </box>
