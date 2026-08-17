@@ -39,6 +39,7 @@ export interface HarnessSessionApi {
   busy: () => boolean
   statusText: () => string
   commands: () => CommandDescriptor[]
+  commandsLoading: () => boolean
   refreshCommands: () => Promise<void>
   runCommand: (line: string) => Promise<{ ok: boolean; text?: string }>
   listSessions: () => Promise<SessionSummary[]>
@@ -76,6 +77,7 @@ export function createHarnessSession(
   const [connected, setConnected] = createSignal(false)
   const [modelName, setModelName] = createSignal("DeepSeek-V4-Flash")
   const [commands, setCommands] = createSignal<CommandDescriptor[]>([])
+  const [commandsLoading, setCommandsLoading] = createSignal(false)
 
   let sessionId: string | null = null
   let listening = false
@@ -765,10 +767,16 @@ export function createHarnessSession(
   /** Refresh the host slash-command directory for this session. */
   async function refreshCommands(): Promise<void> {
     if (!sessionId) return
+    setCommandsLoading(true)
     try {
-      setCommands(await client.commandList(sessionId))
-    } catch {
+      const list = await client.commandList(sessionId)
+      if (process.env.DSH_DEBUG) console.error("[dsh] command.list", JSON.stringify(list))
+      setCommands(list)
+    } catch (e) {
+      if (process.env.DSH_DEBUG) console.error("[dsh] command.list failed", e)
       // Keep the last known directory; a reconnect or commands/change will retry.
+    } finally {
+      setCommandsLoading(false)
     }
   }
 
@@ -851,6 +859,7 @@ export function createHarnessSession(
     cancelQuestion,
     abort,
     commands,
+    commandsLoading,
     refreshCommands,
     runCommand,
     listSessions,

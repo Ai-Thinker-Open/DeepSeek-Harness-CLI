@@ -19,6 +19,7 @@ const MAX_ROWS = 12
  */
 export function CommandPopup(props: {
   items: () => CommandItem[]
+  loading?: boolean
   initialLine: string
   result: CommandResultView | null
   onRun: (line: string) => void
@@ -122,6 +123,9 @@ export function CommandPopup(props: {
           onSubmit={(value) => submit(typeof value === "string" ? value : "")}
         />
         <box flexDirection="column" marginTop={1}>
+          <Show when={props.loading && filtered().length === 0}>
+            <text fg={theme.textMuted}>加载命令中…</text>
+          </Show>
           <For each={filtered().slice(0, MAX_ROWS)}>
             {(item, index) => (
               <box flexDirection="row" backgroundColor={index() === selected() ? theme.backgroundPanel : undefined}>

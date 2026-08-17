@@ -27,6 +27,7 @@ export function SessionScreen(props: {
   commandItems?: () => CommandItem[]
   onCommand?: (line: string) => Promise<CommandResultView | null>
   onCommandPopupOpen?: () => void
+  commandsLoading?: () => boolean
   visible?: boolean
   active?: () => boolean
 }) {
@@ -88,6 +89,7 @@ export function SessionScreen(props: {
               setCommandOpen(open)
               if (open) props.onCommandPopupOpen?.()
             }}
+            commandsLoading={props.commandsLoading}
             active={props.active}
             inputId="session-prompt-input"
           />

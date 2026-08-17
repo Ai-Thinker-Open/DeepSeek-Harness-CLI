@@ -13,6 +13,7 @@ export function Prompt(props: {
   onCommand?: (line: string) => Promise<CommandResultView | null>
   commandItems?: () => CommandItem[]
   onPopupOpenChange?: (open: boolean) => void
+  commandsLoading?: () => boolean
   mode?: () => PermissionMode
   model?: () => string
   active?: () => boolean
@@ -120,6 +121,7 @@ export function Prompt(props: {
       <Show when={popupOpen()}>
         <CommandPopup
           items={props.commandItems ?? (() => [])}
+          loading={props.commandsLoading?.() ?? false}
           initialLine={popupLine()}
           result={popupResult()}
           onRun={(line) => void runCommandLine(line)}

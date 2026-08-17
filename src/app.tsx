@@ -102,6 +102,7 @@ export function App(props: { client?: HarnessClientLike } = {}) {
             commandItems={commandItems}
             onCommand={runCommand}
             onCommandPopupOpen={() => void session.refreshCommands()}
+            commandsLoading={session.commandsLoading}
             motion
             active={() => true}
           />
@@ -129,6 +130,7 @@ export function App(props: { client?: HarnessClientLike } = {}) {
           commandItems={commandItems}
           onCommand={runCommand}
           onCommandPopupOpen={() => void session.refreshCommands()}
+          commandsLoading={session.commandsLoading}
           active={() => screen() === "session"}
         />
       </box>
