@@ -7,7 +7,7 @@ import type { HarnessClientLike } from "./harness/client"
 import { nextMode, type PermissionMode } from "./permission"
 import { Home } from "./screens/home"
 import { SessionScreen } from "./screens/session"
-import { LOCAL_COMMANDS, bareCommandName, hostCommandItems, type CommandItem } from "./commands"
+import { HARNESS_COMMANDS, LOCAL_COMMANDS, bareCommandName, hostCommandItems, mergeCommands, type CommandItem } from "./commands"
 import type { CommandResultView } from "./components/command-popup"
 
 export function App(props: { client?: HarnessClientLike } = {}) {
@@ -64,14 +64,15 @@ export function App(props: { client?: HarnessClientLike } = {}) {
   }
 
   const commandItems = (): CommandItem[] => {
-    const host = session.commands().length ? hostCommandItems(session.commands()) : []
-    return [...LOCAL_COMMANDS, ...host]
+    const dynamic = hostCommandItems(session.commands())
+    // Hardcoded harness commands win over stale/partial dynamic discovery.
+    return mergeCommands(LOCAL_COMMANDS, dynamic, HARNESS_COMMANDS)
   }
 
   const runCommand = async (line: string): Promise<CommandResultView | null> => {
     const bare = bareCommandName(line)
     const name = (bare ?? line.trim().slice(1).split(/\s+/)[0]?.toLowerCase() ?? "").toLowerCase()
-    if (name === "sessions") {
+    if (name === "sessions" || name === "resume") {
       const items = await session.listSessions()
       const rows = items.length
         ? items.map((s) => {
