@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test"
 import type { HarnessClientLike, HostDescribe, ServerRequest, SessionEvent } from "../src/harness/client"
+import { HarnessError } from "../src/harness/client"
 import { createHarnessSession } from "../src/harness/session"
 
 class FakeClient implements HarnessClientLike {
@@ -111,6 +112,35 @@ test("start creates a harness session and sends the first prompt", async () => {
   expect(session.stats().turns).toBe(1)
   expect(session.messages().map((m) => m.role)).toEqual(["user", "assistant"])
   expect(session.connected()).toBe(true)
+})
+
+test("plan mode follows the session projection and plan/mode events", async () => {
+  const client = new FakeClient()
+  client.history = (async () => ({
+    events: [],
+    hasMore: false,
+    projections: { plan: { active: true, pending: false } },
+  })) as unknown as typeof client.history
+  const session = createHarnessSession(client, "/tmp")
+
+  await session.ensureSession()
+  await tick()
+
+  // Seeded from the durable projection right after the session is created.
+  expect(session.planMode()).toBe(true)
+  expect(session.planPending()).toBe(false)
+
+  // The committed switch arrives as a live plan/mode event.
+  client.push(frame("session/event", { sessionId: "s-1", event: ev("plan/mode", { active: false }, 6) }))
+  await tick()
+  expect(session.planMode()).toBe(false)
+  expect(session.planPending()).toBe(false)
+
+  // /plan off while a later snapshot still reports the old projection: the
+  // live event wins and the badge reflects the harness's committed state.
+  client.push(frame("session/event", { sessionId: "s-1", event: ev("plan/mode", { active: true }, 7) }))
+  await tick()
+  expect(session.planMode()).toBe(true)
 })
 
 test("reconnect clears the interrupted status once frames flow again", async () => {
@@ -335,6 +365,66 @@ test("command directory refresh and host dispatch", async () => {
   client.commandExecute = (async () => undefined) as unknown as typeof client.commandExecute
   const miss = await session.runCommand("/nope")
   expect(miss.ok).toBe(false)
+})
+
+test("/plan degrades to a plan-first message when the commands service is missing", async () => {
+  const client = new FakeClient()
+  client.commandExecute = (async () => {
+    throw new HarnessError("harness endpoint /api/commands.execute not found — is this a DSH web instance?", "not-found")
+  }) as unknown as typeof client.commandExecute
+  const session = createHarnessSession(client, "/tmp")
+  await session.start("hello")
+
+  const res = await session.runCommand("/plan 重构模块 A")
+  expect(res.ok).toBe(true)
+  expect(res.text).toContain("commands 服务")
+  expect(client.prompts.at(-1)?.text).toContain("重构模块 A")
+  expect(client.prompts.at(-1)?.text).toContain("先只读探查")
+})
+
+test("/plan off degrades to an exit-plan-mode message when the commands service is missing", async () => {
+  const client = new FakeClient()
+  client.commandExecute = (async () => {
+    throw new HarnessError("endpoint not found", "not-found")
+  }) as unknown as typeof client.commandExecute
+  const session = createHarnessSession(client, "/tmp")
+  await session.start("hello")
+
+  const res = await session.runCommand("/plan off")
+  expect(res.ok).toBe(true)
+  expect(client.prompts.at(-1)?.text).toContain("退出计划模式")
+  expect(client.prompts.at(-1)?.text).toContain("exit_plan_mode")
+})
+
+test("bare /plan asks the agent to plan from the next step when the commands service is missing", async () => {
+  const client = new FakeClient()
+  client.commandExecute = (async () => {
+    throw new HarnessError("endpoint not found", "not-found")
+  }) as unknown as typeof client.commandExecute
+  const session = createHarnessSession(client, "/tmp")
+  await session.start("hello")
+
+  const res = await session.runCommand("/plan")
+  expect(res.ok).toBe(true)
+  expect(res.text).toContain("从下一步开始按计划模式执行")
+  expect(client.prompts).toHaveLength(2)
+  expect(client.prompts.at(-1)?.text).toContain("从下一步开始按计划模式执行")
+})
+
+test("/plan degrades too when the commands service reports it unknown", async () => {
+  const client = new FakeClient()
+  client.commandExecute = (async () => undefined) as unknown as typeof client.commandExecute
+  const session = createHarnessSession(client, "/tmp")
+  await session.start("hello")
+
+  const res = await session.runCommand("/plan 写测试")
+  expect(res.ok).toBe(true)
+  expect(client.prompts.at(-1)?.text).toContain("写测试")
+
+  // Non-plan commands still report an unknown line instead of degrading.
+  const miss = await session.runCommand("/nope")
+  expect(miss.ok).toBe(false)
+  expect(miss.text).toContain("未知或无法解析的命令")
 })
 
 test("session/queue frames fold into the pending-message dock", async () => {

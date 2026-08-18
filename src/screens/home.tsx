@@ -7,11 +7,11 @@ import { Toast, type ToastMessage } from "../components/toast"
 import { Tips } from "../components/tips"
 import { Footer } from "../components/footer"
 import { StartupLoading } from "../components/startup-loading"
-import type { CommandResultView } from "../components/command-popup"
+import { PlanModeBadge } from "../components/plan-mode-badge"
 import { deepseek } from "../logo-art"
 import type { PermissionMode } from "../permission"
 import { theme } from "../theme"
-import type { CommandItem } from "../commands"
+import type { CommandItem, CommandResultView } from "../commands"
 
 export function Home(props: {
   motion?: boolean
@@ -22,8 +22,10 @@ export function Home(props: {
   onSubmit?: (text: string) => void
   commandItems?: () => CommandItem[]
   onCommand?: (line: string) => Promise<CommandResultView | null>
-  onCommandPopupOpen?: () => void
+  onCommandPopupOpen?: (open: boolean) => void
   commandsLoading?: () => boolean
+  planMode?: () => boolean
+  planPending?: () => boolean
   visible?: boolean
   active?: () => boolean
 } = {}) {
@@ -32,6 +34,8 @@ export function Home(props: {
   const mode = props.mode ?? (() => "workspace-write" as PermissionMode)
   const model = props.model ?? (() => "DeepSeek-V4-Flash")
   const toast = props.toast ?? (() => null)
+  const planMode = props.planMode ?? (() => false)
+  const planPending = props.planPending ?? (() => false)
   const [ready, setReady] = createSignal(props.loading === false)
 
   onMount(() => {
@@ -76,7 +80,7 @@ export function Home(props: {
             commandItems={props.commandItems}
             onCommand={props.onCommand}
             onPopupOpenChange={(open) => {
-              if (open) props.onCommandPopupOpen?.()
+              props.onCommandPopupOpen?.(open)
             }}
             commandsLoading={props.commandsLoading}
             active={props.active}
@@ -85,7 +89,12 @@ export function Home(props: {
         </box>
 
         <box width="100%" maxWidth={75} paddingTop={1} flexShrink={0}>
-          <ModeHint />
+          <box flexDirection="row" width="100%" alignItems="center">
+            <box flexGrow={1} minWidth={0}>
+              <ModeHint />
+            </box>
+            <PlanModeBadge active={planMode} pending={planPending} />
+          </box>
         </box>
 
         <box width="100%" maxWidth={75} paddingTop={2} flexShrink={0}>

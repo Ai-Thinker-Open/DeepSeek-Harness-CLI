@@ -231,17 +231,19 @@ test("slash commands dispatch to the harness and render the command card", async
   await tick()
   await app.renderOnce()
 
-  // Type "/goal": popup opens, filters, first Enter enters argument mode,
-  // second Enter submits the command.
+  // Type "/goal": the inline slash menu filters to the command; Enter fills
+  // it into the input, and a second Enter dispatches "/goal".
   app.mockInput.typeText("/")
   await new Promise((r) => setTimeout(r, 80))
   await app.renderOnce()
   app.mockInput.typeText("goal")
   await new Promise((r) => setTimeout(r, 80))
   await app.renderOnce()
-  app.mockInput.pressEnter()
-  await new Promise((r) => setTimeout(r, 30))
-  app.mockInput.pressEnter()
+  app.mockInput.pressEnter() // fills "/goal "
+  await new Promise((r) => setTimeout(r, 50))
+  await app.renderOnce()
+  expect(app.captureCharFrame()).toContain("/goal")
+  app.mockInput.pressEnter() // submits /goal
   await new Promise((r) => setTimeout(r, 50))
   await app.renderOnce()
 
@@ -279,14 +281,63 @@ test("host slash command from home auto-creates a session and reaches the harnes
   app.mockInput.typeText("plan")
   await new Promise((r) => setTimeout(r, 80))
   await app.renderOnce()
-  app.mockInput.pressEnter() // enters argument mode (hint: [off|message])
-  await new Promise((r) => setTimeout(r, 30))
-  app.mockInput.pressEnter() // submit the command
+  app.mockInput.pressEnter() // fills "/plan "
+  await new Promise((r) => setTimeout(r, 50))
+  await app.renderOnce()
+  app.mockInput.pressEnter() // submits /plan
   await new Promise((r) => setTimeout(r, 80))
   await app.renderOnce()
 
   expect(client.created).toBe(1)
   expect(client.commandCalls).toContain("/plan")
+})
+
+test("host /plan with a task from home mirrors the message and opens the session", async () => {
+  const client = new FakeClient()
+  client.commandExecute = (async (_sessionId: string, line: string) => {
+    client.commandCalls.push(line)
+    return { commandId: "cmd-plan", result: { kind: "success" as const, text: "Plan mode on. Use /plan off to leave." } }
+  }) as typeof client.commandExecute
+  const app = await testRender(() => <App client={client} />, { width: 80, height: 32 })
+  await app.renderOnce()
+
+  app.mockInput.typeText("/")
+  await new Promise((r) => setTimeout(r, 80))
+  await app.renderOnce()
+  app.mockInput.typeText("plan 帮我看看这个项目")
+  await new Promise((r) => setTimeout(r, 80))
+  await app.renderOnce()
+  app.mockInput.pressEnter() // submits "/plan 帮我看看这个项目"
+  await new Promise((r) => setTimeout(r, 80))
+  await app.renderOnce()
+
+  expect(client.created).toBe(1)
+  expect(client.commandCalls).toContain("/plan 帮我看看这个项目")
+  // The task message is mirrored as a user message and the session screen is shown.
+  expect(app.captureCharFrame()).toContain("帮我看看这个项目")
+})
+
+test("unknown slash command shows a toast instead of a result panel", async () => {
+  const client = new FakeClient()
+  client.commandExecute = (async () => undefined) as unknown as typeof client.commandExecute
+  const app = await testRender(() => <App client={client} />, { width: 80, height: 32 })
+  await app.renderOnce()
+
+  app.mockInput.typeText("/")
+  await new Promise((r) => setTimeout(r, 80))
+  await app.renderOnce()
+  app.mockInput.typeText("nope")
+  await new Promise((r) => setTimeout(r, 80))
+  await app.renderOnce()
+  app.mockInput.pressEnter()
+  await new Promise((r) => setTimeout(r, 50))
+  await app.renderOnce()
+
+  const frame = app.captureCharFrame()
+  expect(frame).toContain("未知或无法解析的命令")
+  expect(frame).not.toContain("▸ /nope")
+  // The input is clear again instead of showing a command-result panel.
+  expect(app.captureCharFrame().includes("给智能体发消息")).toBe(true)
 })
 
 test("connection failure shows an error toast and stays on home", async () => {

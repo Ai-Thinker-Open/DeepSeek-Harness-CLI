@@ -229,10 +229,12 @@ export class HarnessClient implements HarnessClientLike {
   /** Discover the effective slash commands for a session's agent. */
   async commandList(sessionId: string): Promise<CommandDescriptor[]> {
     try {
-      return await this.call<CommandDescriptor[]>("commands.list", { agentId: sessionId })
+      // The commands service is a Typert Remote (`commands/list`): the
+      // gateway resolves the agent from `args.agentId`.
+      return await this.call<CommandDescriptor[]>("commands/list", { args: { agentId: sessionId } })
     } catch (e) {
       if (e instanceof HarnessError && e.code === "not-found") {
-        return this.call<CommandDescriptor[]>("command.list", { agentId: sessionId })
+        return this.call<CommandDescriptor[]>("commands.list", { agentId: sessionId })
       }
       throw e
     }
@@ -244,10 +246,12 @@ export class HarnessClient implements HarnessClientLike {
    */
   async commandExecute(sessionId: string, line: string): Promise<CommandExecutionResult | undefined> {
     try {
-      return await this.call<CommandExecutionResult | undefined>("commands.execute", { agentId: sessionId, line })
+      return await this.call<CommandExecutionResult | undefined>("commands/execute", {
+        args: { agentId: sessionId, line },
+      })
     } catch (e) {
       if (e instanceof HarnessError && e.code === "not-found") {
-        return this.call<CommandExecutionResult | undefined>("command.execute", { agentId: sessionId, line })
+        return this.call<CommandExecutionResult | undefined>("commands.execute", { agentId: sessionId, line })
       }
       throw e
     }

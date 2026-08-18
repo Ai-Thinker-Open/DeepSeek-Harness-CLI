@@ -1,0 +1,17 @@
+#!/usr/bin/env node
+import { spawnSync } from "node:child_process"
+import { existsSync } from "node:fs"
+import { dirname, join } from "node:path"
+import { fileURLToPath } from "node:url"
+
+const root = join(dirname(fileURLToPath(import.meta.url)), "..")
+const dispatcher = join(root, "dist", "dispatcher.js")
+
+if (!existsSync(dispatcher)) {
+  process.stderr.write("dsh-cli: building dist/ first (bun run scripts/build.ts)...\n")
+  const build = spawnSync("bun", ["run", "scripts/build.ts"], { cwd: root, stdio: "inherit" })
+  if (build.status !== 0) process.exit(build.status ?? 1)
+}
+
+const { run } = await import(dispatcher)
+process.exit(await run(process.argv.slice(2)))

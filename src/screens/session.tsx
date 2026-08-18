@@ -1,18 +1,18 @@
 import { For, Show, createSignal } from "solid-js"
 import { useKeyboard } from "@opentui/solid"
 import { Footer } from "../components/footer"
-import type { CommandResultView } from "../components/command-popup"
 import { MessageView } from "../components/message-view"
 import { Prompt } from "../components/prompt"
 import { QueueDock } from "../components/queue-dock"
 import { QuestionModal } from "../components/question-modal"
 import { StatusMarquee } from "../components/status-marquee"
+import { PlanModeBadge } from "../components/plan-mode-badge"
 import { StatsBar } from "../components/stats-bar"
 import { Toast, type ToastMessage } from "../components/toast"
 import type { PermissionMode } from "../permission"
 import { DEEP_DIVING_STATUS, type ChatMessage, type HarnessQuestion, type SessionStats } from "../session"
 import { theme } from "../theme"
-import type { CommandItem } from "../commands"
+import type { CommandItem, CommandResultView } from "../commands"
 import type { QueueAction, QueueItem } from "../harness/client"
 
 export function SessionScreen(props: {
@@ -22,13 +22,15 @@ export function SessionScreen(props: {
   toast: () => ToastMessage | null
   stats: () => SessionStats
   statusText: () => string
+  planMode: () => boolean
+  planPending: () => boolean
   question: () => HarnessQuestion | null
   onSend: (text: string) => void
   onBack: () => void
   onQuestion: (choice: string) => void
   commandItems?: () => CommandItem[]
   onCommand?: (line: string) => Promise<CommandResultView | null>
-  onCommandPopupOpen?: () => void
+  onCommandPopupOpen?: (open: boolean) => void
   commandsLoading?: () => boolean
   queue?: () => QueueItem[]
   onQueueAction?: (itemId: string, action: QueueAction) => void
@@ -75,12 +77,17 @@ export function SessionScreen(props: {
 
       <Show when={!props.question()}>
         <box width="100%" paddingLeft={2} paddingRight={2} paddingTop={1} flexShrink={0}>
-          <Show when={props.statusText()}>
-            <box paddingBottom={1}>
-              <StatusMarquee
-                text={props.statusText()}
-                animated={props.statusText() === DEEP_DIVING_STATUS}
-              />
+          <Show when={props.statusText() || props.planMode() || props.planPending()}>
+            <box flexDirection="row" width="100%" paddingBottom={1} alignItems="center">
+              <box flexGrow={1} minWidth={0}>
+                <Show when={props.statusText()}>
+                  <StatusMarquee
+                    text={props.statusText()}
+                    animated={props.statusText() === DEEP_DIVING_STATUS}
+                  />
+                </Show>
+              </box>
+              <PlanModeBadge active={props.planMode} pending={props.planPending} />
             </box>
           </Show>
           <Show when={(props.queue?.().length ?? 0) > 0}>
@@ -96,7 +103,7 @@ export function SessionScreen(props: {
             onCommand={props.onCommand}
             onPopupOpenChange={(open) => {
               setCommandOpen(open)
-              if (open) props.onCommandPopupOpen?.()
+              props.onCommandPopupOpen?.(open)
             }}
             commandsLoading={props.commandsLoading}
             active={props.active}

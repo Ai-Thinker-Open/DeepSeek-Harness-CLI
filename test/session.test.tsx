@@ -5,7 +5,7 @@ import { createSignal } from "solid-js"
 import { SessionScreen } from "../src/screens/session"
 import { EMPTY_STATS, type ChatMessage, type HarnessQuestion, type SessionStats } from "../src/session"
 import type { CommandItem } from "../src/commands"
-import type { CommandResultView } from "../src/components/command-popup"
+import type { CommandResultView } from "../src/commands"
 import type { QueueAction, QueueItem } from "../src/harness/client"
 
 const userMsg = (content: string): ChatMessage => ({ id: `u-${content}`, role: "user", content, createdAt: 1 })
@@ -21,6 +21,8 @@ async function renderSession(opts: {
   messages?: ChatMessage[]
   stats?: SessionStats
   statusText?: string
+  planMode?: () => boolean
+  planPending?: () => boolean
   height?: number
   question?: () => HarnessQuestion | null
   onQuestion?: (choice: string) => void
@@ -40,6 +42,8 @@ async function renderSession(opts: {
         toast={() => null}
         stats={() => opts.stats ?? EMPTY_STATS}
         statusText={() => opts.statusText ?? ""}
+        planMode={opts.planMode ?? (() => false)}
+        planPending={opts.planPending ?? (() => false)}
         question={opts.question ?? (() => null)}
         onSend={opts.onSend ?? (() => {})}
         onBack={opts.onBack ?? (() => {})}
@@ -68,6 +72,26 @@ test("session screen renders messages and model without a top header", async () 
   expect(frame).not.toContain("esc 返回")
   expect(frame).toContain("给智能体发消息")
   expect(frame).not.toContain("ls -la")
+})
+
+test("session screen shows a Plan mode badge above the composer", async () => {
+  const app = await renderSession({
+    messages: [userMsg("任务")],
+    planMode: () => true,
+  })
+  await app.renderOnce()
+  const frame = app.captureCharFrame()
+  expect(frame).toContain("Plan mode")
+})
+
+test("pending plan transition renders the muted Plan mode… badge", async () => {
+  const app = await renderSession({
+    planMode: () => false,
+    planPending: () => true,
+  })
+  await app.renderOnce()
+  const frame = app.captureCharFrame()
+  expect(frame).toContain("Plan mode…")
 })
 
 test("escape in the session returns home", async () => {
@@ -456,11 +480,49 @@ test("pending message dock renders queued rows with action icons", async () => {
   })
   await app.renderOnce()
   const frame = app.captureCharFrame()
-  expect(frame).toContain("待处理消息")
+  expect(frame).not.toContain("待处理消息")
   expect(frame).toContain("排队消息")
+  expect(frame).toContain("▸")
   expect(frame).toContain("✎")
   expect(frame).toContain("✕")
   expect(frame).toContain("➤")
+})
+
+test("pending message preview collapses to one line and expands on click", async () => {
+  const longPreview =
+    "这是一条很长的排队消息，用来验证预览在默认状态下只显示一行，点击之后才会展开显示完整内容，尾部文字：结尾标记"
+  const tail = "尾部文字：结尾标记"
+  const app = await renderSession({
+    messages: [userMsg("hi")],
+    queue: () => [
+      { id: "q1", messageId: "m1", placement: "queued", text: longPreview, preview: longPreview },
+    ],
+  })
+  await app.renderOnce()
+
+  const collapsed = app.captureCharFrame()
+  expect(collapsed).toContain("这是一条很长的排队消息")
+  expect(collapsed).not.toContain(tail)
+
+  const lines = collapsed.split("\n")
+  const y = lines.findIndex((line) => line.includes("这是一条很长的排队消息"))
+  const x = lines[y]?.indexOf("这是一条很长的排队消息") ?? 0
+  await app.mockMouse.click(x + 1, y)
+  await app.renderOnce()
+
+  const expanded = app.captureCharFrame()
+  expect(expanded).toContain(tail)
+  expect(expanded).toContain("▾")
+
+  const expandedLines = expanded.split("\n")
+  const tailY = expandedLines.findIndex((line) => line.includes(tail))
+  const tailX = expandedLines[tailY]?.indexOf(tail) ?? 0
+  await app.mockMouse.click(tailX + 1, tailY)
+  await app.renderOnce()
+
+  const collapsedAgain = app.captureCharFrame()
+  expect(collapsedAgain).not.toContain(tail)
+  expect(collapsedAgain).toContain("▸")
 })
 
 test("slash popup filters commands and runs a local command", async () => {
@@ -468,8 +530,8 @@ test("slash popup filters commands and runs a local command", async () => {
   const app = await renderSession({
     messages: [userMsg("hi")],
     commandItems: () => [
-      { name: "sessions", description: "列出会话", kind: "local" },
-      { name: "help", description: "显示命令", kind: "local" },
+      { name: "sessions", description: "列出会话", kind: "local", behavior: "run" },
+      { name: "help", description: "显示命令", kind: "local", behavior: "run" },
     ],
     onCommand: async (line) => {
       ran = line
@@ -488,13 +550,281 @@ test("slash popup filters commands and runs a local command", async () => {
   expect(filtered).toContain("/sessions")
   expect(filtered).not.toContain("/help")
 
-  app.mockInput.pressEnter()
+  app.mockInput.pressEnter() // no-argument command runs immediately
   await new Promise((resolve) => setTimeout(resolve, 30))
   await app.renderOnce()
   const frame = app.captureCharFrame()
   expect(ran).toBe("/sessions")
   expect(frame).toContain("会话列表")
   expect(frame).toContain("s-1  运行中")
+})
+
+test("slash menu Enter fills argument-taking commands instead of running them", async () => {
+  let ran = ""
+  const app = await renderSession({
+    messages: [userMsg("hi")],
+    commandItems: () => [
+      { name: "plan", description: "描述任务以生成计划", kind: "host", input: { hint: "[<任务|off>]" }, behavior: "fill" },
+      { name: "sessions", description: "列出会话", kind: "local", behavior: "run" },
+    ],
+    onCommand: async (line) => {
+      ran = line
+      return null
+    },
+  })
+  await app.renderOnce()
+
+  app.mockInput.typeText("/")
+  await new Promise((resolve) => setTimeout(resolve, 80))
+  await app.renderOnce()
+  app.mockInput.typeText("plan")
+  await new Promise((resolve) => setTimeout(resolve, 80))
+  await app.renderOnce()
+
+  app.mockInput.pressEnter() // "/plan <任务>" needs args: fill, don't run
+  await new Promise((resolve) => setTimeout(resolve, 50))
+  await app.renderOnce()
+  expect(ran).toBe("")
+  expect(app.captureCharFrame()).toContain("/plan ")
+})
+
+test("slash menu tab-completes the command and Enter dispatches the full line", async () => {
+  let ran = ""
+  const app = await renderSession({
+    messages: [userMsg("hi")],
+    commandItems: () => [
+      { name: "plan", description: "描述任务以生成计划", kind: "host", input: { hint: "[<任务描述|off>]" }, behavior: "fill" },
+      { name: "permission", description: "权限模式", kind: "host", behavior: "fill" },
+    ],
+    onCommand: async (line) => {
+      ran = line
+      return null
+    },
+  })
+  await app.renderOnce()
+
+  app.mockInput.typeText("/")
+  await new Promise((resolve) => setTimeout(resolve, 80))
+  await app.renderOnce()
+  app.mockInput.typeText("pl")
+  await new Promise((resolve) => setTimeout(resolve, 80))
+  await app.renderOnce()
+  expect(app.captureCharFrame()).toContain("/plan")
+
+  app.mockInput.pressTab()
+  await new Promise((resolve) => setTimeout(resolve, 80))
+  await app.renderOnce()
+  // Tab completes "/plan " with a trailing space and closes the menu.
+  expect(app.captureCharFrame()).not.toContain("▸ /plan")
+
+  app.mockInput.typeText("重构")
+  await new Promise((resolve) => setTimeout(resolve, 80))
+  await app.renderOnce()
+  expect(app.captureCharFrame()).toContain("/plan 重构")
+
+  app.mockInput.pressEnter()
+  await new Promise((resolve) => setTimeout(resolve, 50))
+  await app.renderOnce()
+  expect(ran).toBe("/plan 重构")
+})
+
+test("slash menu scrolls the selection window past the ten-row limit", async () => {
+  const app = await renderSession({
+    messages: [userMsg("hi")],
+    commandItems: () =>
+      Array.from({ length: 14 }, (_, i) => ({
+        name: `cmd${i + 1}`,
+        description: `desc-${i + 1}`,
+        kind: "local" as const,
+        behavior: "run" as const,
+      })),
+  })
+  await app.renderOnce()
+
+  app.mockInput.typeText("/")
+  await new Promise((resolve) => setTimeout(resolve, 80))
+  await app.renderOnce()
+  expect(app.captureCharFrame()).toContain("/cmd1")
+
+  // Eleven downs move the selection past the 10-row window; the window follows.
+  for (let i = 0; i < 11; i++) {
+    app.mockInput.pressArrow("down")
+    await new Promise((resolve) => setTimeout(resolve, 20))
+  }
+  await new Promise((resolve) => setTimeout(resolve, 80))
+  await app.renderOnce()
+
+  const scrolled = app.captureCharFrame()
+  expect(scrolled).toContain("/cmd12")
+  expect(scrolled).not.toContain("/cmd1 ")
+  expect(scrolled).toContain("↑/↓ 滚动")
+})
+
+test("slash menu mouse click runs no-argument commands immediately", async () => {
+  let ran = ""
+  const app = await renderSession({
+    messages: [userMsg("hi")],
+    commandItems: () => [
+      { name: "sessions", description: "列出会话", kind: "local", behavior: "run" },
+      { name: "help", description: "显示命令", kind: "local", behavior: "run" },
+    ],
+    onCommand: async (line) => {
+      ran = line
+      return null
+    },
+  })
+  await app.renderOnce()
+
+  app.mockInput.typeText("/")
+  await new Promise((resolve) => setTimeout(resolve, 80))
+  await app.renderOnce()
+
+  const lines = app.captureCharFrame().split("\n")
+  const y = lines.findIndex((line) => line.includes("/help"))
+  const x = lines[y]?.indexOf("/help") ?? 0
+  await app.mockMouse.click(x + 1, y)
+  await new Promise((resolve) => setTimeout(resolve, 50))
+  await app.renderOnce()
+
+  expect(ran).toBe("/help")
+})
+
+test("slash menu mouse wheel moves the selection", async () => {
+  let ran = ""
+  const app = await renderSession({
+    messages: [userMsg("hi")],
+    commandItems: () =>
+      Array.from({ length: 14 }, (_, i) => ({
+        name: `cmd${i + 1}`,
+        description: `desc-${i + 1}`,
+        kind: "local" as const,
+        behavior: "run" as const,
+      })),
+    onCommand: async (line) => {
+      ran = line
+      return null
+    },
+  })
+  await app.renderOnce()
+
+  app.mockInput.typeText("/")
+  await new Promise((resolve) => setTimeout(resolve, 80))
+  await app.renderOnce()
+  expect(app.captureCharFrame()).toContain("/cmd1")
+
+  const lines = app.captureCharFrame().split("\n")
+  // Scroll over the menu's top padding row so the wheel event lands on the
+  // container (no synthetic hover resets the selection in the test driver).
+  const firstRowY = lines.findIndex((line) => line.includes("/cmd1"))
+  const y = Math.max(0, firstRowY - 1)
+  // The container's left padding column (inside the border) so the wheel
+  // event lands on the menu box itself.
+  const x = 2
+  for (let i = 0; i < 3; i++) {
+    await app.mockMouse.scroll(x + 1, y, "down")
+  }
+  await new Promise((resolve) => setTimeout(resolve, 50))
+  await app.renderOnce()
+
+  app.mockInput.pressEnter() // no-argument command runs immediately
+  await new Promise((resolve) => setTimeout(resolve, 50))
+  await app.renderOnce()
+  expect(ran).toBe("/cmd4")
+})
+
+test("slash menu highlight follows the selection and spans the row", async () => {
+  const app = await renderSession({
+    messages: [userMsg("hi")],
+    commandItems: () => [
+      { name: "sessions", description: "列出会话", kind: "local", behavior: "run" },
+      { name: "resume", description: "浏览会话", kind: "local", behavior: "run" },
+      { name: "help", description: "显示命令", kind: "local", behavior: "run" },
+    ],
+  })
+  await app.renderOnce()
+
+  app.mockInput.typeText("/")
+  await new Promise((resolve) => setTimeout(resolve, 100))
+  await app.renderOnce()
+
+  const primaryBgWidth = (needle: string): number => {
+    const frame = app.captureSpans()
+    const line = frame.lines.find((l) => l.spans.some((s) => s.text.includes(needle)))
+    if (!line) return 0
+    const isPrimaryBg = (s: { bg?: { r: number; g: number; b: number } }) =>
+      s.bg !== undefined &&
+      Math.abs(s.bg.r - 77 / 255) < 0.02 &&
+      Math.abs(s.bg.g - 107 / 255) < 0.02 &&
+      Math.abs(s.bg.b - 254 / 255) < 0.02
+    return line.spans
+      .filter(isPrimaryBg)
+      .reduce((sum, s) => sum + s.text.length, 0)
+  }
+
+  expect(primaryBgWidth("/sessions")).toBeGreaterThan(0)
+  expect(primaryBgWidth("/resume")).toBe(0)
+
+  app.mockInput.pressArrow("down")
+  await new Promise((resolve) => setTimeout(resolve, 80))
+  await app.renderOnce()
+
+  expect(primaryBgWidth("/sessions")).toBe(0)
+  expect(primaryBgWidth("/resume")).toBeGreaterThan(0)
+  // The highlight covers the full row, not just the text: at 80 columns the
+  // row content box is ~74 cells wide.
+  expect(primaryBgWidth("/resume")).toBeGreaterThan(50)
+})
+
+test("slash menu aligns descriptions MiMo-style (name column + description)", async () => {
+  const app = await renderSession({
+    messages: [userMsg("hi")],
+    commandItems: () => [
+      { name: "sessions", description: "列出主机上的全部会话", kind: "local", behavior: "run" },
+      { name: "help", description: "显示全部快捷命令", kind: "local", behavior: "run" },
+    ],
+  })
+  await app.renderOnce()
+
+  app.mockInput.typeText("/")
+  await new Promise((resolve) => setTimeout(resolve, 80))
+  await app.renderOnce()
+
+  const frame = app.captureCharFrame()
+  const row = frame.split("\n").find((line) => line.includes("/sessions")) ?? ""
+  const helpRow = frame.split("\n").find((line) => line.includes("/help")) ?? ""
+  // Names share one padded column, descriptions start at the same offset and
+  // stay inside the panel (no overflow past the right border).
+  const sessionsDesc = row.indexOf("列出")
+  const helpDesc = helpRow.indexOf("显示")
+  expect(row.startsWith("  │")).toBe(true)
+  expect(sessionsDesc).toBe(helpDesc)
+  expect(row.replace(/\s+$/, "").endsWith("│")).toBe(true)
+  expect(helpRow.replace(/\s+$/, "").endsWith("│")).toBe(true)
+})
+
+test("slash menu hides input hints and keeps long descriptions inside the panel", async () => {
+  const app = await renderSession({
+    messages: [userMsg("hi")],
+    commandItems: () => [
+      { name: "plan", description: "描述你的任务以生成计划（进入/退出计划模式）", kind: "host", input: { hint: "[<任务描述|off>]" }, behavior: "fill" },
+      { name: "goal", description: "设置或查看当前长任务的长期目标", kind: "host", input: { hint: "[<objective>|clear|edit <objective>|pause|resume]" }, behavior: "fill" },
+    ],
+  })
+  await app.renderOnce()
+
+  app.mockInput.typeText("/")
+  await new Promise((resolve) => setTimeout(resolve, 80))
+  await app.renderOnce()
+
+  const frame = app.captureCharFrame()
+  const planRow = frame.split("\n").find((line) => line.includes("/plan")) ?? ""
+  const goalRow = frame.split("\n").find((line) => line.includes("/goal")) ?? ""
+  // No "[…]" hints anywhere in the menu.
+  expect(frame).not.toContain("[<任务描述|off>]")
+  expect(frame).not.toContain("[<objective>")
+  // Both descriptions stay inside the panel (before its right border).
+  expect(planRow.replace(/\s+$/, "").endsWith("│")).toBe(true)
+  expect(goalRow.replace(/\s+$/, "").endsWith("│")).toBe(true)
 })
 
 test("question modal answers with the selected option", async () => {

@@ -1,0 +1,53 @@
+import { readFileSync } from "node:fs"
+import { join } from "node:path"
+import { expect, test } from "bun:test"
+import { load as parseYaml } from "js-yaml"
+
+const root = join(import.meta.dir, "..")
+
+interface PatchEntry {
+  id?: string
+  name?: string
+  disabled?: boolean
+  inject?: string[]
+  config?: Record<string, unknown>
+  insert?: PatchEntry[]
+}
+
+// The loader's YAML schema evaluates `!!js` expressions itself; the test only
+// inspects patch structure, so strip the custom tag before parsing.
+const patch = parseYaml(
+  readFileSync(join(root, "cordis.patch.yml"), "utf8").replace(/!!js\s+/g, ""),
+) as unknown as PatchEntry[]
+
+function rows(): PatchEntry[] {
+  const out: PatchEntry[] = []
+  for (const entry of patch) {
+    if (entry.id) out.push(entry)
+    if (Array.isArray(entry.insert)) out.push(...entry.insert)
+  }
+  return out
+}
+
+test("bundle patch declares the terminal surface over dsh-base", () => {
+  const byId = new Map(rows().map((r) => [r.id, r]))
+  for (const id of ["code-runtime", "tui-startup", "api-gateway", "webserver", "connection", "tui-runner"]) {
+    expect(byId.get(id), `missing row ${id}`).toBeDefined()
+  }
+  expect(byId.get("tui-startup")?.name).toBe("deepseek-harness-cli/startup")
+  expect(byId.get("tui-runner")?.name).toBe("deepseek-harness-cli")
+  expect(byId.get("webserver")?.inject).toContain("tuiStartup")
+  expect(byId.get("tui-runner")?.inject).toEqual(["tuiStartup", "webServer"])
+  expect(byId.get("hmr")?.disabled).toBe(true)
+  expect(String(byId.get("system-prompt")?.config?.persona)).toContain("{{model}}")
+})
+
+test("bundle manifest resolves the patch and exports", () => {
+  const manifest = JSON.parse(readFileSync(join(root, "package.json"), "utf8")) as {
+    dsh?: { bundle?: { patch?: string } }
+    exports?: Record<string, string>
+  }
+  expect(manifest.dsh?.bundle?.patch).toBe("./cordis.patch.yml")
+  expect(manifest.exports?.["."]).toBe("./dist/runner.js")
+  expect(manifest.exports?.["./startup"]).toBe("./dist/startup.js")
+})

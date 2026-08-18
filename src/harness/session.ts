@@ -48,11 +48,15 @@ export interface HarnessSessionApi {
   updateQueueItem: (itemId: string, action: QueueAction) => Promise<boolean>
   refreshCommands: () => Promise<void>
   runCommand: (line: string) => Promise<{ ok: boolean; text?: string }>
+  /** Mirror a task message the harness already received via a command (e.g. `/plan <任务>`). */
+  mirrorUserMessage: (text: string) => void
   listSessions: () => Promise<SessionSummary[]>
   question: () => HarnessQuestion | null
   error: () => string | null
   connected: () => boolean
   modelName: () => string
+  planMode: () => boolean
+  planPending: () => boolean
   start: (text: string) => Promise<boolean>
   send: (text: string) => Promise<boolean>
   answer: (choice: string) => Promise<void>
@@ -71,7 +75,7 @@ export function describeHarnessError(e: unknown): string {
 
 export function createHarnessSession(
   client: HarnessClientLike = new HarnessClient(process.env.DSH_URL ?? "http://127.0.0.1:3080"),
-  cwd = process.cwd(),
+  cwd = process.env.DSH_CWD ?? process.cwd(),
   options: { stallResyncMs?: number } = {},
 ): HarnessSessionApi {
   const [messages, setMessages] = createSignal<ChatMessage[]>([])
@@ -82,6 +86,8 @@ export function createHarnessSession(
   const [error, setError] = createSignal<string | null>(null)
   const [connected, setConnected] = createSignal(false)
   const [modelName, setModelName] = createSignal("DeepSeek-V4-Flash")
+  const [planMode, setPlanMode] = createSignal(false)
+  const [planPending, setPlanPending] = createSignal(false)
   const [commands, setCommands] = createSignal<CommandDescriptor[]>([])
   const [commandsLoading, setCommandsLoading] = createSignal(false)
   const [queue, setQueue] = createSignal<QueueItem[]>([])
@@ -243,6 +249,13 @@ export function createHarnessSession(
 
   function onSessionEvent(ev: SessionEvent): void {
     switch (ev.type) {
+      case "plan/mode": {
+        // The plan-mode plugin logs the session-wide mode switch; the badge
+        // follows the committed value and clears any pending transition.
+        setPlanMode(Boolean((ev.data as { active?: boolean }).active))
+        setPlanPending(false)
+        break
+      }
       case "user/message": {
         const data = ev.data as unknown as { id?: string; content?: Block[]; source?: UserMessageSource }
         if (isInjectedSource(data.source)) {
@@ -688,7 +701,8 @@ export function createHarnessSession(
   async function resyncFromHistory(): Promise<void> {
     if (!sessionId) return
     try {
-      const { events } = await client.history(sessionId)
+      const { events, projections } = await client.history(sessionId)
+      applyPlanProjection(projections)
       const fresh = foldHistory(events.map((e) => e.event))
       if (fresh.length === 0) return
       model = fresh
@@ -760,6 +774,9 @@ export function createHarnessSession(
       sessionId = created.sessionId
       startListening()
       startStallWatchdog()
+      // Seed the plan badge from the durable projection (covers a resumed
+      // session that is already in plan mode before the live stream emits).
+      void seedPlanFromHistory()
       return true
     } catch (e) {
       setConnected(false)
@@ -824,15 +841,85 @@ export function createHarnessSession(
     if (!sessionId) return { ok: false, text: "请先开始一个会话（发一条消息），再使用该命令" }
     try {
       const execution = await client.commandExecute(sessionId, line)
-      if (!execution) return { ok: false, text: `未知或无法解析的命令：${line}` }
+      if (!execution) {
+        // The commands service exists but this command is not registered
+        // (e.g. the plan-mode plugin is missing) — degrade /plan instead of
+        // pretending the line was simply misspelled.
+        const plan = await runPlanFallback(line)
+        if (plan) return plan
+        return { ok: false, text: `未知或无法解析的命令：${line}` }
+      }
+      // `/plan` and `/plan off` change session mode; the projection snapshot
+      // confirms the committed/pending state even when the live event was
+      // missed (fresh mux socket, resume, plugin-side commit timing).
+      if (/^\/plan(?:\s|$)/i.test(line.trim())) void seedPlanFromHistory()
       return { ok: true, text: execution.result.text }
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e)
       if (/not found|404/i.test(message)) {
+        const plan = await runPlanFallback(line)
+        if (plan) return plan
         return { ok: false, text: "当前 harness 未启用 commands 服务（版本过旧或未加载命令插件），host 命令不可用" }
       }
       return { ok: false, text: message }
     }
+  }
+
+  /** Fold the harness's `plan` projection (`{active, pending}`) into signals. */
+  function applyPlanProjection(projections: Record<string, unknown> | undefined): void {
+    if (!projections) return
+    const plan = projections.plan as { active?: boolean; pending?: boolean } | undefined
+    if (plan === undefined || typeof plan !== "object") return
+    if (typeof plan.active === "boolean") setPlanMode(plan.active)
+    if (typeof plan.pending === "boolean") setPlanPending(plan.pending)
+  }
+
+  /** Re-read the durable `plan` projection for the current session. */
+  async function seedPlanFromHistory(): Promise<void> {
+    if (!sessionId) return
+    try {
+      const { projections } = await client.history(sessionId, 1)
+      applyPlanProjection(projections)
+    } catch {
+      // The projection seam may be absent on old harnesses; the badge simply
+      // stays hidden and the live `plan/mode` event path remains available.
+    }
+  }
+
+  /**
+   * Degrade `/plan` when the harness has no commands service (or the
+   * plan-mode command plugin is not loaded). Plan mode is switched remotely
+   * only through the commands channel — the official web UI runs `/plan off`
+   * through it too — so the best available fallback is a plan-first ordinary
+   * message, and for `off` an ask to exit through the agent's own
+   * `exit_plan_mode` tool (which still raises the plan-review question).
+   */
+  async function runPlanFallback(line: string): Promise<{ ok: boolean; text?: string } | null> {
+    const match = /^\/plan(?:\s+(.*))?$/i.exec(line.trim())
+    if (!match) return null
+    const args = (match[1] ?? "").trim()
+    const unavailable =
+      "harness 未启用 commands 服务，无法真正切换计划模式（升级 harness 或加载命令插件后 /plan 才会直接生效）"
+    if (args === "off") {
+      const sent = await sendToSession(
+        "请退出计划模式：如果已生成计划，请通过 exit_plan_mode 提交审批；否则直接退出计划模式。如果当前不在计划模式，请忽略本条。",
+      )
+      return sent
+        ? { ok: true, text: `${unavailable}；已请模型退出计划模式（通过 exit_plan_mode 提交审批）。` }
+        : { ok: false, text: `${unavailable}，且退出消息发送失败，请检查 harness 连接` }
+    }
+    // Bare /plan and /plan <任务> both ask the agent to plan first; a task
+    // rides along as the next message, mirroring the host command's flow.
+    const task = args ? `\n\n任务：${args}` : ""
+    const sent = await sendToSession(
+      `请从下一步开始按计划模式执行：先只读探查，给出完整的实施计划（含具体改动），等我批准后再修改代码或执行命令。${task}`,
+    )
+    return sent
+      ? {
+          ok: true,
+          text: `${unavailable}；已${args ? "把任务作为下一条消息提交" : "请求从下一步开始按计划模式执行"}，模型会先规划并等待你的批准。`,
+        }
+      : { ok: false, text: `${unavailable}，且消息发送失败，请检查 harness 连接` }
   }
 
   /** List persisted sessions on the host (read-only query). */
@@ -907,6 +994,8 @@ export function createHarnessSession(
     error,
     connected,
     modelName,
+    planMode,
+    planPending,
     start,
     send,
     answer,
@@ -920,6 +1009,7 @@ export function createHarnessSession(
     updateQueueItem,
     refreshCommands,
     runCommand,
+    mirrorUserMessage: appendUserMessage,
     listSessions,
     clearError,
     dispose,

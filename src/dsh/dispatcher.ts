@@ -1,0 +1,131 @@
+/**
+ * `dsh-cli` command dispatcher: reuse an already-running harness when one is
+ * reachable, otherwise ensure the official `dsh` CLI and the `tui` profile
+ * (this package as a bundle) exist, then boot `dsh --profile tui` which
+ * starts the harness transport and the terminal client together.
+ */
+
+import { spawn, spawnSync } from "node:child_process"
+import { existsSync, readFileSync } from "node:fs"
+import { homedir } from "node:os"
+import { dirname, join } from "node:path"
+import { fileURLToPath } from "node:url"
+
+export const DEFAULT_HARNESS_URL = "http://127.0.0.1:3080"
+export const PROFILE_NAME = "tui"
+
+/** Locate the package root from a source or built module location. */
+function findRoot(start: string): string {
+  let dir = start
+  for (;;) {
+    if (existsSync(join(dir, "package.json"))) return dir
+    const parent = dirname(dir)
+    if (parent === dir) throw new Error("dsh-cli: unable to locate package root")
+    dir = parent
+  }
+}
+
+const PKG_ROOT = findRoot(dirname(fileURLToPath(import.meta.url)))
+const TUI_CLI = join(PKG_ROOT, "dist", "cli.js")
+
+function readManifest(): { name?: string } {
+  return JSON.parse(readFileSync(join(PKG_ROOT, "package.json"), "utf8")) as { name?: string }
+}
+
+const PKG_NAME = readManifest().name ?? "deepseek-harness-cli"
+
+function profileDir(): string {
+  const home = process.env.DSH_HOME ?? join(homedir(), ".dsh")
+  return join(home, "profiles", PROFILE_NAME)
+}
+
+function profileHasBundle(): boolean {
+  try {
+    const manifest = JSON.parse(readFileSync(join(profileDir(), "package.json"), "utf8")) as {
+      dsh?: { profile?: { bundles?: string[] } }
+    }
+    return (manifest.dsh?.profile?.bundles ?? []).includes(PKG_NAME)
+  } catch {
+    return false
+  }
+}
+
+/** Probe a harness at `url` with a cheap `host.describe` RPC. */
+async function probe(url: string): Promise<boolean> {
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), 1500)
+  try {
+    const res = await fetch(`${url.replace(/\/$/, "")}/api/host.describe`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        type: "client-request",
+        rpcId: "dsh-cli-probe",
+        method: "host.describe",
+        payload: {},
+      }),
+      signal: controller.signal,
+    })
+    if (!res.ok) return false
+    const body = (await res.json()) as { result?: { ok?: boolean } }
+    return body.result?.ok === true
+  } catch {
+    return false
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
+/** Resolve how to invoke the official dsh CLI: global binary or npx. */
+function resolveDsh(): { bin: string; prefix: string[] } {
+  const probeResult = internals.spawnSync("dsh", ["--help"], { stdio: "ignore" })
+  if (probeResult.status === 0) return { bin: "dsh", prefix: [] }
+  return { bin: "npx", prefix: ["--yes", "@deepseek-ai/dsh"] }
+}
+
+function exitCodeOf(child: ReturnType<typeof spawn>): Promise<number> {
+  return new Promise((resolveExit) => {
+    child.on("error", () => resolveExit(1))
+    child.on("exit", (code) => resolveExit(code ?? 1))
+  })
+}
+
+/** Test seam: probe, process spawn, and synchronous spawn. */
+export const internals: {
+  probe: typeof probe
+  spawn: typeof spawn
+  spawnSync: typeof spawnSync
+} = { probe, spawn, spawnSync }
+
+/**
+ * Run the dispatcher and resolve with the process exit code.
+ * @param args - arguments forwarded verbatim to `dsh --profile tui`.
+ */
+export async function run(args: readonly string[]): Promise<number> {
+  const url = process.env.DSH_URL ?? DEFAULT_HARNESS_URL
+
+  if (await internals.probe(url)) {
+    // An instance is already serving: run the terminal client directly.
+    const child = internals.spawn("bun", [TUI_CLI], {
+      stdio: "inherit",
+      env: { ...process.env, DSH_URL: url, DSH_CWD: process.cwd() },
+    })
+    return exitCodeOf(child)
+  }
+
+  const dsh = resolveDsh()
+  if (!profileHasBundle()) {
+    const setup = internals.spawnSync(
+      dsh.bin,
+      [...dsh.prefix, "plugin", "--profile", PROFILE_NAME, "add", `file:${PKG_ROOT}`],
+      { stdio: "inherit" },
+    )
+    if (setup.status !== 0) return setup.status ?? 1
+  }
+
+  const child = internals.spawn(dsh.bin, [...dsh.prefix, "--profile", PROFILE_NAME, ...args], {
+    stdio: "inherit",
+    env: process.env,
+  })
+  return exitCodeOf(child)
+}
