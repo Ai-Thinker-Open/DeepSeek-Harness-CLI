@@ -59,6 +59,7 @@ export function Prompt(props: {
   const [scroll, setScroll] = createSignal(0)
   const [result, setResult] = createSignal<CommandResultView | null>(null)
   const [resultScroll, setResultScroll] = createSignal(0)
+  const [resultSelected, setResultSelected] = createSignal(0)
   const mode = props.mode ?? (() => "workspace-write" as PermissionMode)
   const model = props.model ?? (() => "DeepSeek-V4-Flash")
   const active = props.active ?? (() => true)
@@ -117,6 +118,20 @@ export function Prompt(props: {
     buildRowsFrom(start).filter((r) => r.type === "command").length
   const resultRows = () => result()?.rows ?? []
   const visibleResultRows = () => resultRows().slice(resultScroll(), resultScroll() + MAX_RESULT_ROWS)
+  /** Interactive rows (carrying onClick) with their real row index. */
+  const interactiveRows = () =>
+    resultRows()
+      .map((r, i) => ({ r, i }))
+      .filter((x): x is { r: { text: string; onClick: () => void }; i: number } =>
+        typeof x.r !== "string" && x.r.onClick !== undefined)
+  /** Select an interactive row and keep it inside the visible window. */
+  const selectResultRow = (sel: number) => {
+    setResultSelected(sel)
+    const real = interactiveRows()[sel]?.i
+    if (real === undefined) return
+    if (real < resultScroll()) setResultScroll(real)
+    else if (real >= resultScroll() + MAX_RESULT_ROWS) setResultScroll(real - MAX_RESULT_ROWS + 1)
+  }
 
   /**
    * Screens use this to keep Esc/keys local while a slash draft is live.
@@ -223,12 +238,36 @@ export function Prompt(props: {
     if (process.env.DSH_DEBUG) console.error(`[dsh-cli] key=${key.name} menuOpen=${menuOpen()} selected=${selected()}`)
     if (result()) {
       if (key.name === "up") {
-        setResultScroll((s) => Math.max(0, s - 1))
-        key.preventDefault()
+        const interactive = interactiveRows()
+        if (interactive.length > 0) {
+          selectResultRow(Math.max(0, resultSelected() - 1))
+          key.preventDefault()
+        } else {
+          setResultScroll((s) => Math.max(0, s - 1))
+          key.preventDefault()
+        }
       } else if (key.name === "down") {
-        setResultScroll((s) => Math.min(Math.max(0, resultRows().length - MAX_RESULT_ROWS), s + 1))
-        key.preventDefault()
-      } else if (key.name === "escape" || key.name === "return") {
+        const interactive = interactiveRows()
+        if (interactive.length > 0) {
+          selectResultRow(Math.min(interactive.length - 1, resultSelected() + 1))
+          key.preventDefault()
+        } else {
+          setResultScroll((s) => Math.min(Math.max(0, resultRows().length - MAX_RESULT_ROWS), s + 1))
+          key.preventDefault()
+        }
+      } else if (key.name === "return") {
+        const interactive = interactiveRows()
+        const pick = interactive.length > 0
+          ? interactive[Math.max(0, Math.min(resultSelected(), interactive.length - 1))]
+          : undefined
+        if (pick) {
+          pick.r.onClick()
+          key.preventDefault()
+        } else {
+          setResult(null)
+          key.preventDefault()
+        }
+      } else if (key.name === "escape") {
         setResult(null)
         key.preventDefault()
       }
@@ -284,22 +323,43 @@ export function Prompt(props: {
             <b>{result()?.title}</b>
           </text>
           <For each={visibleResultRows()}>
-            {(row) => (
-              <text
-                fg={theme.text}
-                wrapMode="char"
-                onMouse={(evt) => {
-                  if (typeof row !== "string" && row.onClick && evt.type === "down" && evt.button === 0) {
-                    row.onClick()
-                  }
-                }}
-              >
-                {typeof row === "string" ? row : row.text}
-              </text>
-            )}
+            {(row) => {
+              const interactive = typeof row !== "string" && row.onClick !== undefined
+              const realIndex = resultRows().indexOf(row)
+              const selected = interactive && interactiveRows()[resultSelected()]?.i === realIndex
+              const label = typeof row === "string" ? row : row.text
+              return interactive ? (
+                <box
+                  width="100%"
+                  paddingLeft={1}
+                  paddingRight={1}
+                  backgroundColor={selected ? theme.primary : RGBA.fromInts(0, 0, 0, 0)}
+                  onMouse={(evt) => {
+                    if (evt.type === "over" && typeof row !== "string") {
+                      const idx = interactiveRows().findIndex((x) => x.i === realIndex)
+                      if (idx >= 0) selectResultRow(idx)
+                    }
+                    if (evt.type === "down" && evt.button === 0 && typeof row !== "string") {
+                      row.onClick?.()
+                      evt.preventDefault()
+                    }
+                  }}
+                >
+                  <text fg={selected ? theme.text : theme.text} wrapMode="char">
+                    {label}
+                  </text>
+                </box>
+              ) : (
+                <text fg={theme.text} wrapMode="char">
+                  {label}
+                </text>
+              )
+            }}
           </For>
           <Show when={resultRows().length > MAX_RESULT_ROWS}>
-            <text fg={theme.textMuted}>… ↑/↓ 滚动 · esc 关闭</text>
+            <text fg={theme.textMuted}>
+              … ↑/↓ 选择 · Enter 确认 · esc 关闭
+            </text>
           </Show>
         </box>
       </Show>

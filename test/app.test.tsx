@@ -485,6 +485,33 @@ test("/model lists models and clicking a row switches the LLM", async () => {
   expect(frame).toContain("DeepSeek-V4-Flash")
 })
 
+test("/model panel navigates with arrow keys and Enter confirms", async () => {
+  const client = new FakeClient()
+  const app = await testRender(() => <App client={client} />, { width: 90, height: 32 })
+  await app.renderOnce()
+
+  app.mockInput.typeText("/")
+  await new Promise((r) => setTimeout(r, 80))
+  await app.renderOnce()
+  app.mockInput.typeText("model")
+  await new Promise((r) => setTimeout(r, 80))
+  await app.renderOnce()
+  app.mockInput.pressEnter()
+  await tick()
+  await app.renderOnce()
+
+  // First interactive row is the current model (DeepSeek-V4); move down to
+  // DeepSeek-V4-Flash and press Enter to confirm the switch.
+  app.mockInput.pressArrow("down")
+  await new Promise((r) => setTimeout(r, 50))
+  await app.renderOnce()
+  app.mockInput.pressEnter()
+  await tick()
+  await app.renderOnce()
+
+  expect(client.selectedModel?.model).toBe("deepseek-v4-flash")
+})
+
 test("/rename renames the session and /fork creates a child session", async () => {
   const client = new FakeClient()
   client.renameSession = (async (_id: string, title: string) => ({ title })) as typeof client.renameSession
