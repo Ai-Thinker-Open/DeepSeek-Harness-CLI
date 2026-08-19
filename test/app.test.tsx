@@ -328,7 +328,7 @@ test("host slash command from home auto-creates a session and reaches the harnes
   expect(client.commandCalls).toContain("/plan")
 })
 
-test("host /plan with a task from home mirrors the message and opens the session", async () => {
+test("host /plan from home shows the command result and stays on home", async () => {
   const client = new FakeClient()
   client.commandExecute = (async (_sessionId: string, line: string) => {
     client.commandCalls.push(line)
@@ -349,8 +349,12 @@ test("host /plan with a task from home mirrors the message and opens the session
 
   expect(client.created).toBe(1)
   expect(client.commandCalls).toContain("/plan 帮我看看这个项目")
-  // The task message is mirrored as a user message and the session screen is shown.
-  expect(app.captureCharFrame()).toContain("帮我看看这个项目")
+  // The command result panel shows on the home screen; no session switch
+  // happens until the user actually sends a message.
+  const frame = app.captureCharFrame()
+  expect(frame).toContain("Plan mode on")
+  expect(frame).toContain("给智能体发消息")
+  expect(frame).not.toContain("发送消息开始对话")
 })
 
 test("/sessions lists first message, time and short id", async () => {

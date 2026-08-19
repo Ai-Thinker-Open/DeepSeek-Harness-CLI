@@ -190,7 +190,6 @@ export function App(props: { client?: HarnessClientLike } = {}) {
         const ok = await session.ensureSession()
         if (!ok) return { title: "模型", rows: ["无法创建会话，请检查 harness 连接"] }
         void session.refreshCommands()
-        setScreen("session")
       }
       const catalog = await session.listModels()
       if (!catalog) {
@@ -232,7 +231,6 @@ export function App(props: { client?: HarnessClientLike } = {}) {
         const ok = await session.ensureSession()
         if (!ok) return { title: "重命名", rows: ["无法创建会话，请检查 harness 连接"] }
         void session.refreshCommands()
-        setScreen("session")
       }
       const ok = await session.renameSession(title)
       const view = { title: "重命名", rows: [ok ? `已重命名为：${title}` : "重命名失败"] }
@@ -252,7 +250,6 @@ export function App(props: { client?: HarnessClientLike } = {}) {
         return view
       }
       void session.refreshCommands()
-      setScreen("session")
       const view = { title: "分叉", rows: [`已创建新会话 ${childId.replace(/^s-/, "").slice(0, 8)}`] }
       setResultOverride(view)
       return view
@@ -272,9 +269,6 @@ export function App(props: { client?: HarnessClientLike } = {}) {
       // as a user message so the conversation shows what is being worked on.
       const task = planTaskMessage(line, name)
       if (task) session.mirrorUserMessage(task)
-      // The session now exists and may already be running; leave home so the
-      // command card and the agent's plan are visible.
-      if (createdSession) setScreen("session")
       return { title: `/${bare ?? name}`, rows: [res.text ?? "已执行（完整结果见消息窗口）"] }
     }
     // Unknown lines are a typing slip, not a failure worth a panel: toast and
