@@ -26,6 +26,7 @@ export function Home(props: {
   commandsLoading?: () => boolean
   planMode?: () => boolean
   planPending?: () => boolean
+  resultOverride?: () => CommandResultView | null
   visible?: boolean
   active?: () => boolean
 } = {}) {
@@ -83,6 +84,7 @@ export function Home(props: {
               props.onCommandPopupOpen?.(open)
             }}
             commandsLoading={props.commandsLoading}
+            resultOverride={props.resultOverride}
             active={props.active}
             inputId="home-prompt-input"
           />

@@ -12,6 +12,7 @@ import {
   HarnessClient,
   type CommandDescriptor,
   type HarnessClientLike,
+  type ModelCatalog,
   type QueueAction,
   type QueueItem,
   type ServerRequest,
@@ -44,6 +45,7 @@ export interface HarnessSessionApi {
   commandsLoading: () => boolean
   hasSession: () => boolean
   ensureSession: () => Promise<boolean>
+  resumeSession: (sessionId: string) => Promise<boolean>
   queue: () => QueueItem[]
   updateQueueItem: (itemId: string, action: QueueAction) => Promise<boolean>
   refreshCommands: () => Promise<void>
@@ -51,6 +53,10 @@ export interface HarnessSessionApi {
   /** Mirror a task message the harness already received via a command (e.g. `/plan <任务>`). */
   mirrorUserMessage: (text: string) => void
   listSessions: () => Promise<SessionSummary[]>
+  listModels: () => Promise<ModelCatalog | null>
+  selectModel: (provider: string, model: string, reasoningEffort?: string) => Promise<boolean>
+  renameSession: (title: string) => Promise<boolean>
+  forkSession: () => Promise<string | null>
   question: () => HarnessQuestion | null
   error: () => string | null
   connected: () => boolean
@@ -785,6 +791,31 @@ export function createHarnessSession(
     }
   }
 
+  /** Attach to an existing session (resume) so its history streams into the UI. */
+  async function resumeSession(target: string): Promise<boolean> {
+    if (!target) return false
+    try {
+      if (!sessionId) {
+        const info = await client.describe()
+        setConnected(true)
+        if (info.model) setModelName(info.model)
+      }
+      const created = await client.createSession(cwd, undefined, target)
+      sessionId = created.sessionId
+      if (!listening) startListening()
+      startStallWatchdog()
+      // Rebuild the transcript from durable history so the resumed session
+      // shows its existing conversation instead of an empty window.
+      await resyncFromHistory()
+      void seedPlanFromHistory()
+      return true
+    } catch (e) {
+      setConnected(false)
+      setError(describeHarnessError(e))
+      return false
+    }
+  }
+
   async function send(text: string): Promise<boolean> {
     if (!sessionId) return start(text)
     return sendToSession(text)
@@ -926,9 +957,74 @@ export function createHarnessSession(
   async function listSessions(): Promise<SessionSummary[]> {
     try {
       const res = await client.listSessions()
-      return res.items
+      // Blank sessions have no conversation to show; skip them entirely.
+      const items = res.items.filter((s) => !s.blank)
+      // Each row carries the first user message so the list reads as a
+      // conversation directory: `<首轮对话内容>  时间  会话ID前8位`.
+      await Promise.all(
+        items.map(async (s) => {
+          try {
+            const { events } = await client.history(s.sessionId, 50)
+            const firstUser = foldHistory(events.map((e) => e.event)).find((m) => m.role === "user" && !m.inject)
+            if (firstUser) s.preview = firstUser.content.trim().slice(0, 80)
+          } catch {
+            // A history read failure leaves the preview empty; the row still lists.
+          }
+        }),
+      )
+      return items
     } catch {
       return []
+    }
+  }
+
+  /** Read the session's model directory (current + available groups). */
+  async function listModels(): Promise<ModelCatalog | null> {
+    if (!sessionId) return null
+    try {
+      return await client.listModels(sessionId)
+    } catch {
+      return null
+    }
+  }
+
+  /** Switch the session's LLM model; returns false on failure. */
+  async function selectModel(provider: string, model: string, reasoningEffort?: string): Promise<boolean> {
+    if (!sessionId) return false
+    try {
+      const res = await client.selectModel(sessionId, provider, model, reasoningEffort)
+      if (res.selected.model) setModelName(res.selected.model)
+      return true
+    } catch {
+      return false
+    }
+  }
+
+  /** Rename the session title. */
+  async function renameSession(title: string): Promise<boolean> {
+    if (!sessionId || !title.trim()) return false
+    try {
+      await client.renameSession(sessionId, title.trim())
+      return true
+    } catch {
+      return false
+    }
+  }
+
+  /** Fork the current session into a new one and switch to it. */
+  async function forkSession(): Promise<string | null> {
+    if (!sessionId) return null
+    try {
+      const { sessionId: childId } = await client.forkSession(sessionId)
+      sessionId = childId
+      setMessages([])
+      setPlanMode(false)
+      setPlanPending(false)
+      void resyncFromHistory()
+      void seedPlanFromHistory()
+      return childId
+    } catch {
+      return null
     }
   }
 
@@ -1005,12 +1101,17 @@ export function createHarnessSession(
     commandsLoading,
     hasSession: () => sessionId !== null,
     ensureSession,
+    resumeSession,
     queue,
     updateQueueItem,
     refreshCommands,
     runCommand,
     mirrorUserMessage: appendUserMessage,
     listSessions,
+    listModels,
+    selectModel,
+    renameSession,
+    forkSession,
     clearError,
     dispose,
   }

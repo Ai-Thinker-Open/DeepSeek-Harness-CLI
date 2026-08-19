@@ -689,6 +689,37 @@ test("slash menu mouse click runs no-argument commands immediately", async () =>
   expect(ran).toBe("/help")
 })
 
+test("slash menu mouse click fills argument-taking commands like Enter", async () => {
+  let ran = ""
+  const app = await renderSession({
+    messages: [userMsg("hi")],
+    commandItems: () => [
+      { name: "plan", description: "描述任务以生成计划", kind: "host", behavior: "fill" },
+      { name: "sessions", description: "列出会话", kind: "local", behavior: "run" },
+    ],
+    onCommand: async (line) => {
+      ran = line
+      return null
+    },
+  })
+  await app.renderOnce()
+
+  app.mockInput.typeText("/")
+  await new Promise((resolve) => setTimeout(resolve, 80))
+  await app.renderOnce()
+
+  const lines = app.captureCharFrame().split("\n")
+  const y = lines.findIndex((line) => line.includes("/plan"))
+  const x = lines[y]?.indexOf("/plan") ?? 0
+  await app.mockMouse.click(x + 1, y)
+  await new Promise((resolve) => setTimeout(resolve, 50))
+  await app.renderOnce()
+
+  // Same as Enter: "/plan " is filled for arguments, nothing runs yet.
+  expect(ran).toBe("")
+  expect(app.captureCharFrame()).toContain("/plan ")
+})
+
 test("slash menu mouse wheel moves the selection", async () => {
   let ran = ""
   const app = await renderSession({

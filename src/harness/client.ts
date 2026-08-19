@@ -45,6 +45,34 @@ export interface SessionSummary {
   cwd?: string
   agentPreset?: string
   projections?: Record<string, unknown>
+  /** First user message text of the conversation, when it can be read. */
+  preview?: string
+}
+
+/** One selectable model advertised by a provider group. */
+export interface ModelEntry {
+  id: string
+  name: string
+  description?: string
+  reasoning?: {
+    efforts: Array<{ id: string; name: string; description?: string }>
+    defaultEffort?: string
+  }
+}
+
+/** One provider group in the model catalog. */
+export interface ModelGroup {
+  id: string
+  name: string
+  models: ModelEntry[]
+}
+
+/** The model directory returned by `session.models`. */
+export interface ModelCatalog {
+  current: { provider: string; model: string; reasoningEffort?: string }
+  routable: boolean
+  groups: ModelGroup[]
+  failures: Array<{ id: string; name: string; message: string }>
 }
 
 /** Immutable command view returned by `command.list` (no leading slash). */
@@ -103,7 +131,7 @@ export interface QuestionItem {
 /** The subset of HarnessClient the session driver depends on (test seam). */
 export interface HarnessClientLike {
   describe(): Promise<HostDescribe>
-  createSession(cwd?: string): Promise<{ sessionId: string; agentPreset?: string }>
+  createSession(cwd?: string, agentPreset?: string, sessionId?: string): Promise<{ sessionId: string; agentPreset?: string }>
   prompt(sessionId: string, text: string, mode?: "queue" | "steer"): Promise<{ accepted: boolean }>
   cancel(sessionId: string): Promise<{ accepted: boolean }>
   respond(rpcIdToAnswer: string, sessionId: string, answers: Array<{ id: string; selected: string[] }>): Promise<void>
@@ -111,6 +139,10 @@ export interface HarnessClientLike {
   listSessions(): Promise<{ items: SessionSummary[] }>
   commandList(sessionId: string): Promise<CommandDescriptor[]>
   commandExecute(sessionId: string, line: string): Promise<CommandExecutionResult | undefined>
+  listModels(sessionId: string): Promise<ModelCatalog>
+  selectModel(sessionId: string, provider: string, model: string, reasoningEffort?: string): Promise<{ selected: ModelCatalog["current"] }>
+  renameSession(sessionId: string, title: string): Promise<{ title: string }>
+  forkSession(sessionId: string): Promise<{ sessionId: string }>
   updateQueue(sessionId: string, itemId: string, action: QueueAction): Promise<{ accepted: boolean }>
   eventStream(signal?: AbortSignal): AsyncGenerator<ServerRequest>
 }
@@ -198,10 +230,11 @@ export class HarnessClient implements HarnessClientLike {
     return this.call("session.list", {})
   }
 
-  createSession(cwd?: string, agentPreset?: string): Promise<{ sessionId: string; agentPreset?: string }> {
+  createSession(cwd?: string, agentPreset?: string, sessionId?: string): Promise<{ sessionId: string; agentPreset?: string }> {
     return this.call("session.create", {
       ...(cwd ? { cwd } : {}),
       ...(agentPreset ? { agentPreset } : {}),
+      ...(sessionId ? { sessionId } : {}),
     })
   }
 
@@ -224,6 +257,27 @@ export class HarnessClient implements HarnessClientLike {
     projections?: Record<string, unknown>
   }> {
     return this.call("session.history", { sessionId, ...(maxMessages ? { maxMessages } : {}) })
+  }
+
+  listModels(sessionId: string): Promise<ModelCatalog> {
+    return this.call("session.models", { sessionId })
+  }
+
+  selectModel(sessionId: string, provider: string, model: string, reasoningEffort?: string): Promise<{ selected: ModelCatalog["current"] }> {
+    return this.call("session.selectModel", {
+      sessionId,
+      provider,
+      model,
+      ...(reasoningEffort ? { reasoningEffort } : {}),
+    })
+  }
+
+  renameSession(sessionId: string, title: string): Promise<{ title: string }> {
+    return this.call("session.rename", { sessionId, title })
+  }
+
+  forkSession(sessionId: string): Promise<{ sessionId: string }> {
+    return this.call("session.fork", { sessionId })
   }
 
   /** Discover the effective slash commands for a session's agent. */

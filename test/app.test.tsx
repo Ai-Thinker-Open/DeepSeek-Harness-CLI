@@ -25,6 +25,7 @@ class FakeClient implements HarnessClientLike {
   created = 0
   prompts: Array<{ sessionId: string; text: string }> = []
   commandCalls: string[] = []
+  selectedModel: { provider: string; model: string } | null = null
   private frames: ServerRequest[] = []
   private waiters: Array<(r: IteratorResult<ServerRequest>) => void> = []
   private closed = false
@@ -65,6 +66,37 @@ class FakeClient implements HarnessClientLike {
   async commandExecute(_sessionId: string, line: string) {
     this.commandCalls.push(line)
     return { commandId: "cmd-1", result: { kind: "success" as const, text: "No goal set." } }
+  }
+
+  async listModels() {
+    return {
+      current: { provider: "deepseek", model: "deepseek-v4" },
+      routable: true,
+      groups: [
+        {
+          id: "deepseek",
+          name: "DeepSeek",
+          models: [
+            { id: "deepseek-v4", name: "DeepSeek-V4" },
+            { id: "deepseek-v4-flash", name: "DeepSeek-V4-Flash" },
+          ],
+        },
+      ],
+      failures: [],
+    }
+  }
+
+  async selectModel(_sessionId: string, provider: string, model: string) {
+    this.selectedModel = { provider, model }
+    return { selected: { provider, model } }
+  }
+
+  async renameSession() {
+    return { title: "t" }
+  }
+
+  async forkSession() {
+    return { sessionId: "s-forked" }
   }
 
   async updateQueue() {
@@ -315,6 +347,176 @@ test("host /plan with a task from home mirrors the message and opens the session
   expect(client.commandCalls).toContain("/plan 帮我看看这个项目")
   // The task message is mirrored as a user message and the session screen is shown.
   expect(app.captureCharFrame()).toContain("帮我看看这个项目")
+})
+
+test("/sessions lists first message, time and short id", async () => {
+  const client = new FakeClient()
+  client.listSessions = (async () => ({
+    items: [
+      {
+        sessionId: "s-msuixsmncjo6gs",
+        updatedAt: 1_787_060_000_000,
+        running: false,
+        blank: false,
+        cwd: "/tmp",
+      },
+    ],
+  })) as unknown as typeof client.listSessions
+  client.history = (async (_sessionId: string) => ({
+    events: [
+      {
+        event: {
+          type: "user/message",
+          seq: 1,
+          time: 1_787_060_000_000,
+          data: { id: "m1", content: [{ type: "text", text: "帮我看看这个项目" }], source: { kind: "user" } },
+        },
+      },
+    ],
+    hasMore: false,
+  })) as unknown as typeof client.history
+  const app = await testRender(() => <App client={client} />, { width: 80, height: 32 })
+  await app.renderOnce()
+
+  app.mockInput.typeText("/")
+  await new Promise((r) => setTimeout(r, 80))
+  await app.renderOnce()
+  app.mockInput.typeText("sess")
+  await new Promise((r) => setTimeout(r, 80))
+  await app.renderOnce()
+  app.mockInput.pressEnter() // run-type command executes immediately
+  await tick()
+  await app.renderOnce()
+
+  const frame = app.captureCharFrame()
+  expect(frame).toContain("帮我看看这个项目")
+  expect(frame).toContain("msuixsmn") // session id without the `s-` prefix, first 8
+})
+
+test("clicking a session row resumes it into the session screen", async () => {
+  const client = new FakeClient()
+  let historyCalls = 0
+  client.listSessions = (async () => ({
+    items: [
+      {
+        sessionId: "s-msuixsmncjo6gs",
+        updatedAt: 1_787_060_000_000,
+        running: false,
+        blank: false,
+        cwd: "/tmp",
+      },
+    ],
+  })) as unknown as typeof client.listSessions
+  client.history = (async (sessionId: string) => {
+    historyCalls += 1
+    return {
+      events: [
+        {
+          event: {
+            type: "user/message",
+            seq: 1,
+            time: 1_787_060_000_000,
+            data: { id: "m1", content: [{ type: "text", text: "帮我看看这个项目" }], source: { kind: "user" } },
+          },
+        },
+      ],
+      hasMore: false,
+      projections: sessionId ? {} : undefined,
+    }
+  }) as unknown as typeof client.history
+  const app = await testRender(() => <App client={client} />, { width: 90, height: 32 })
+  await app.renderOnce()
+
+  app.mockInput.typeText("/")
+  await new Promise((r) => setTimeout(r, 80))
+  await app.renderOnce()
+  app.mockInput.typeText("sess")
+  await new Promise((r) => setTimeout(r, 80))
+  await app.renderOnce()
+  app.mockInput.pressEnter()
+  await tick()
+  await app.renderOnce()
+
+  const lines = app.captureCharFrame().split("\n")
+  const y = lines.findIndex((line) => line.includes("msuixsmn"))
+  const x = lines[y]?.indexOf("msuixsmn") ?? 0
+  await app.mockMouse.click(x + 1, y)
+  await tick()
+  await app.renderOnce()
+
+  // The session screen is shown with the resumed transcript.
+  expect(app.captureCharFrame()).toContain("帮我看看这个项目")
+  expect(historyCalls).toBeGreaterThanOrEqual(2) // list preview + resume replay
+})
+
+test("/model lists models and clicking a row switches the LLM", async () => {
+  const client = new FakeClient()
+  const app = await testRender(() => <App client={client} />, { width: 90, height: 32 })
+  await app.renderOnce()
+
+  app.mockInput.typeText("/")
+  await new Promise((r) => setTimeout(r, 80))
+  await app.renderOnce()
+  app.mockInput.typeText("model")
+  await new Promise((r) => setTimeout(r, 80))
+  await app.renderOnce()
+  app.mockInput.pressEnter() // run-type command executes immediately
+  await tick()
+  await app.renderOnce()
+
+  let frame = app.captureCharFrame()
+  expect(frame).toContain("当前模型")
+  expect(frame).toContain("DeepSeek-V4-Flash")
+
+  const lines = frame.split("\n")
+  const y = lines.findIndex((line) => line.includes("DeepSeek-V4-Flash"))
+  const x = lines[y]?.indexOf("DeepSeek-V4-Flash") ?? 0
+  await app.mockMouse.click(x + 1, y)
+  await tick()
+  await app.renderOnce()
+
+  expect(client.selectedModel?.model).toBe("deepseek-v4-flash")
+  frame = app.captureCharFrame()
+  // The refreshed panel marks the new model as current.
+  expect(frame).toContain("DeepSeek-V4-Flash")
+})
+
+test("/rename renames the session and /fork creates a child session", async () => {
+  const client = new FakeClient()
+  client.renameSession = (async (_id: string, title: string) => ({ title })) as typeof client.renameSession
+  client.forkSession = (async () => ({ sessionId: "s-forked123456" })) as typeof client.forkSession
+  const app = await testRender(() => <App client={client} />, { width: 90, height: 32 })
+  await app.renderOnce()
+
+  // /rename <标题> fills the input first, then submits.
+  app.mockInput.typeText("/")
+  await new Promise((r) => setTimeout(r, 80))
+  await app.renderOnce()
+  app.mockInput.typeText("rename")
+  await new Promise((r) => setTimeout(r, 80))
+  await app.renderOnce()
+  app.mockInput.pressEnter() // fill "/rename "
+  await new Promise((r) => setTimeout(r, 50))
+  await app.renderOnce()
+  app.mockInput.typeText("我的新会话")
+  await new Promise((r) => setTimeout(r, 50))
+  await app.renderOnce()
+  app.mockInput.pressEnter() // submit /rename 我的新会话
+  await tick()
+  await app.renderOnce()
+  expect(app.captureCharFrame()).toContain("已重命名为：我的新会话")
+
+  // /fork runs immediately.
+  app.mockInput.typeText("/")
+  await new Promise((r) => setTimeout(r, 80))
+  await app.renderOnce()
+  app.mockInput.typeText("fork")
+  await new Promise((r) => setTimeout(r, 80))
+  await app.renderOnce()
+  app.mockInput.pressEnter()
+  await tick()
+  await app.renderOnce()
+  expect(app.captureCharFrame()).toContain("已创建新会话")
 })
 
 test("unknown slash command shows a toast instead of a result panel", async () => {

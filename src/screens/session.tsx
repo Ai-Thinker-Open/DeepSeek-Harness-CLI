@@ -32,6 +32,7 @@ export function SessionScreen(props: {
   onCommand?: (line: string) => Promise<CommandResultView | null>
   onCommandPopupOpen?: (open: boolean) => void
   commandsLoading?: () => boolean
+  resultOverride?: () => CommandResultView | null
   queue?: () => QueueItem[]
   onQueueAction?: (itemId: string, action: QueueAction) => void
   visible?: boolean
@@ -106,6 +107,7 @@ export function SessionScreen(props: {
               props.onCommandPopupOpen?.(open)
             }}
             commandsLoading={props.commandsLoading}
+            resultOverride={props.resultOverride}
             active={props.active}
             inputId="session-prompt-input"
           />

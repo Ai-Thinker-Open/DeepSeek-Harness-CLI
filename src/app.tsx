@@ -3,11 +3,40 @@ import { useKeyboard, useRenderer, useSelectionHandler } from "@opentui/solid"
 import { copySelection } from "./clipboard"
 import { Toast, type ToastMessage } from "./components/toast"
 import { createHarnessSession } from "./harness/session"
-import type { HarnessClientLike } from "./harness/client"
+import type { HarnessClientLike, ModelCatalog } from "./harness/client"
 import { nextMode, type PermissionMode } from "./permission"
 import { Home } from "./screens/home"
 import { SessionScreen } from "./screens/session"
 import { HARNESS_COMMANDS, LOCAL_COMMANDS, bareCommandName, hostCommandItems, mergeCommands, type CommandItem, type CommandResultView } from "./commands"
+
+/** Terminal display width: CJK glyphs occupy two cells in a monospace font. */
+function displayWidth(text: string): number {
+  let width = 0
+  for (const ch of text) {
+    width += /[\u2e80-\u9fff\uf900-\ufaff\uff00-\uffef\u3000-\u303f]/.test(ch) ? 2 : 1
+  }
+  return width
+}
+
+/** Truncate to `width` terminal cells, appending an ellipsis when cut. */
+function truncateTo(text: string, width: number): string {
+  if (displayWidth(text) <= width) return text
+  let out = ""
+  let used = 0
+  for (const ch of text) {
+    const w = /[\u2e80-\u9fff\uf900-\ufaff\uff00-\uffef\u3000-\u303f]/.test(ch) ? 2 : 1
+    if (used + w > width - 1) break
+    out += ch
+    used += w
+  }
+  return `${out}…`
+}
+
+/** Right-pad to `width` terminal cells so the session rows line up. */
+function padTo(text: string, width: number): string {
+  const pad = width - displayWidth(text)
+  return pad > 0 ? text + " ".repeat(pad) : text
+}
 
 /** The task message carried by `/plan <任务>` (the harness steers it to the agent). */
 function planTaskMessage(line: string, name: string): string | undefined {
@@ -23,6 +52,7 @@ export function App(props: { client?: HarnessClientLike } = {}) {
   const [toast, setToast] = createSignal<ToastMessage | null>(null)
   const [screen, setScreen] = createSignal<"home" | "session">("home")
   const [commandOpen, setCommandOpen] = createSignal(false)
+  const [resultOverride, setResultOverride] = createSignal<CommandResultView | null>(null)
   const session = createHarnessSession(props.client)
   let toastTimer: ReturnType<typeof setTimeout> | undefined
 
@@ -91,16 +121,107 @@ export function App(props: { client?: HarnessClientLike } = {}) {
       const items = await session.listSessions()
       const rows = items.length
         ? items.map((s) => {
-            const state = s.running ? "运行中" : s.blank ? "空白" : "已结束"
-            const when = new Date(s.updatedAt).toLocaleString()
-            return `${s.sessionId}  ${state}  ${s.cwd ?? ""}  ${when}`
+            const first = truncateTo(s.preview ?? "（空白会话）", 34)
+            const when = new Date(s.updatedAt)
+            const time = `${String(when.getMonth() + 1).padStart(2, "0")}-${String(when.getDate()).padStart(2, "0")} ${String(when.getHours()).padStart(2, "0")}:${String(when.getMinutes()).padStart(2, "0")}`
+            const state = s.running ? "●" : s.blank ? "○" : "·"
+            // The harness session ids are prefixed (`s-…`); the meaningful
+            // tail is the random part, so keep its first 8 chars.
+            const shortId = s.sessionId.replace(/^s-/, "").slice(0, 8)
+            const text = `${state} ${padTo(first, 34)}  ${time}  ${shortId}`
+            return {
+              text,
+              onClick: async () => {
+                const ok = await session.resumeSession(s.sessionId)
+                if (ok) {
+                  void session.refreshCommands()
+                  setScreen("session")
+                }
+              },
+            }
           })
         : ["（没有会话）"]
-      return { title: `会话列表（${items.length}）`, rows }
+      return {
+        title: `会话列表（${items.length}）· 点击行恢复会话`,
+        rows,
+      }
     }
     if (name === "help") {
       const rows = commandItems().map((i) => `/${i.name}  ${i.description}`)
       return { title: "快捷命令", rows }
+    }
+    if (name === "model") {
+      if (!session.hasSession()) {
+        const ok = await session.ensureSession()
+        if (!ok) return { title: "模型", rows: ["无法创建会话，请检查 harness 连接"] }
+        void session.refreshCommands()
+        setScreen("session")
+      }
+      const catalog = await session.listModels()
+      if (!catalog) {
+        const view = { title: "模型", rows: ["无法读取模型目录，请检查 harness 连接"] }
+        setResultOverride(view)
+        return view
+      }
+      const build = (c: ModelCatalog) => {
+        const current = `${c.current.provider}/${c.current.model}`
+        const rows: Array<string | { text: string; onClick: () => void }> = [
+          `当前模型：${current}`,
+          "",
+        ]
+        for (const group of c.groups) {
+          rows.push(`── ${group.name} ──`)
+          for (const m of group.models) {
+            const isCurrent = c.current.provider === group.id && c.current.model === m.id
+            const label = `${isCurrent ? "● " : "○ "}${m.name}${m.description ? `  ${truncateTo(m.description, 36)}` : ""}`
+            rows.push({
+              text: label,
+              onClick: async () => {
+                const ok = await session.selectModel(group.id, m.id)
+                const next = await session.listModels()
+                if (next) setResultOverride({ title: "模型（点击行切换）", rows: build(next).rows })
+                showToast(ok ? `已切换到 ${m.name}` : "模型切换失败", ok ? "success" : "error")
+              },
+            })
+          }
+        }
+        return { title: "模型（点击行切换）", rows }
+      }
+      const view = build(catalog)
+      setResultOverride(view)
+      return view
+    }
+    if (name === "rename") {
+      const title = line.trim().slice("/rename".length).trim()
+      if (!title) return { title: "重命名", rows: ["用法：/rename <标题>"] }
+      if (!session.hasSession()) {
+        const ok = await session.ensureSession()
+        if (!ok) return { title: "重命名", rows: ["无法创建会话，请检查 harness 连接"] }
+        void session.refreshCommands()
+        setScreen("session")
+      }
+      const ok = await session.renameSession(title)
+      const view = { title: "重命名", rows: [ok ? `已重命名为：${title}` : "重命名失败"] }
+      setResultOverride(view)
+      return view
+    }
+    if (name === "fork") {
+      if (!session.hasSession()) {
+        const ok = await session.ensureSession()
+        if (!ok) return { title: "分叉", rows: ["无法创建会话，请检查 harness 连接"] }
+        void session.refreshCommands()
+      }
+      const childId = await session.forkSession()
+      if (!childId) {
+        const view = { title: "分叉", rows: ["分叉失败"] }
+        setResultOverride(view)
+        return view
+      }
+      void session.refreshCommands()
+      setScreen("session")
+      const view = { title: "分叉", rows: [`已创建新会话 ${childId.replace(/^s-/, "").slice(0, 8)}`] }
+      setResultOverride(view)
+      return view
     }
     // Host commands need a live session: create one on demand so commands
     // still reach the harness when issued from the home screen.
@@ -144,6 +265,7 @@ export function App(props: { client?: HarnessClientLike } = {}) {
             onCommand={runCommand}
             onCommandPopupOpen={handleCommandOpen}
             commandsLoading={session.commandsLoading}
+            resultOverride={resultOverride}
             planMode={session.planMode}
             planPending={session.planPending}
             motion
@@ -176,6 +298,7 @@ export function App(props: { client?: HarnessClientLike } = {}) {
           onCommand={runCommand}
           onCommandPopupOpen={handleCommandOpen}
           commandsLoading={session.commandsLoading}
+          resultOverride={resultOverride}
           queue={session.queue}
           onQueueAction={(itemId, action) => void session.updateQueueItem(itemId, action)}
           active={() => screen() === "session"}

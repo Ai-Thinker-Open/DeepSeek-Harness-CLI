@@ -52,6 +52,22 @@ class FakeClient implements HarnessClientLike {
     return undefined
   }
 
+  async listModels() {
+    return { current: { provider: "p", model: "m" }, routable: true, groups: [], failures: [] }
+  }
+
+  async selectModel() {
+    return { selected: { provider: "p", model: "m" } }
+  }
+
+  async renameSession() {
+    return { title: "t" }
+  }
+
+  async forkSession() {
+    return { sessionId: "s-forked" }
+  }
+
   async updateQueue() {
     return { accepted: true }
   }

@@ -41,6 +41,7 @@ export function Prompt(props: {
   commandItems?: () => CommandItem[]
   onPopupOpenChange?: (open: boolean) => void
   commandsLoading?: () => boolean
+  resultOverride?: () => CommandResultView | null
   mode?: () => PermissionMode
   model?: () => string
   active?: () => boolean
@@ -59,6 +60,16 @@ export function Prompt(props: {
 
   createEffect(() => {
     if (active()) ref?.focus()
+  })
+
+  // An external refresh (e.g. the model picker re-rendering after a switch)
+  // replaces the result panel without touching the input draft.
+  createEffect(() => {
+    const next = props.resultOverride?.()
+    if (next) {
+      setResult(next)
+      setResultScroll(0)
+    }
   })
 
   const items = () => props.commandItems?.() ?? []
@@ -236,8 +247,16 @@ export function Prompt(props: {
           </text>
           <For each={visibleResultRows()}>
             {(row) => (
-              <text fg={theme.text} wrapMode="char">
-                {row}
+              <text
+                fg={theme.text}
+                wrapMode="char"
+                onMouse={(evt) => {
+                  if (typeof row !== "string" && row.onClick && evt.type === "down" && evt.button === 0) {
+                    row.onClick()
+                  }
+                }}
+              >
+                {typeof row === "string" ? row : row.text}
               </text>
             )}
           </For>
@@ -277,14 +296,12 @@ export function Prompt(props: {
               paddingRight={1}
               backgroundColor={slot + scroll() === selected() ? theme.primary : RGBA.fromInts(0, 0, 0, 0)}
               onMouse={(evt) => {
-                // Hover follows the pointer (MiMo style); click pins it.
+                // Hover follows the pointer (MiMo style); a click behaves
+                // exactly like Enter on the selected row.
                 if (evt.type === "over") selectAt(slot + scroll())
                 if (evt.type === "down" && evt.button === 0) {
                   selectAt(slot + scroll())
-                  // Clicking a run-type command executes it immediately; a
-                  // fill-type command stays selected for Enter/Tab.
-                  const pick = visibleMatches()[slot]
-                  if (pick?.behavior === "run") void runCommandLine(`/${pick.name}`)
+                  chooseSelected()
                   evt.preventDefault()
                 }
               }}
