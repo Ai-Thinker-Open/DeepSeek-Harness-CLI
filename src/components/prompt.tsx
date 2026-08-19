@@ -127,19 +127,37 @@ export function Prompt(props: {
     buildRowsFrom(start).filter((r) => r.type === "command").length
   const resultRows = () => result()?.rows ?? []
   const visibleResultRows = () => resultRows().slice(resultScroll(), resultScroll() + MAX_RESULT_ROWS)
-  /** Interactive rows (carrying onClick) with their real row index. */
-  const interactiveRows = () =>
+  /**
+   * Result-panel interactive rows (carrying onClick) with their real row
+   * index. Exposed in the same shape as the slash menu's `matches()` so the
+   * selection/movement/confirm logic below reuses the exact menu code path.
+   */
+  const resultMatches = () =>
     resultRows()
       .map((r, i) => ({ r, i }))
       .filter((x): x is { r: { text: string; onClick: () => void }; i: number } =>
         typeof x.r !== "string" && x.r.onClick !== undefined)
-  /** Select an interactive row and keep it inside the visible window. */
-  const selectResultRow = (sel: number) => {
-    setResultSelected(sel)
-    const real = interactiveRows()[sel]?.i
+  /**
+   * Move the result selection by `delta`, wrapping around like the slash
+   * menu's moveSelection, and keep the picked row inside the visible window.
+   */
+  const moveResultSelection = (delta: number) => {
+    const len = resultMatches().length
+    if (len === 0) return
+    let next = (resultSelected() + delta) % len
+    if (next < 0) next += len
+    setResultSelected(next)
+    const real = resultMatches()[next]?.i
     if (real === undefined) return
     if (real < resultScroll()) setResultScroll(real)
     else if (real >= resultScroll() + MAX_RESULT_ROWS) setResultScroll(real - MAX_RESULT_ROWS + 1)
+  }
+
+  /** Enter on the result panel confirms the picked row, then closes it. */
+  const confirmResultSelection = () => {
+    const pick = resultMatches()[resultSelected()] ?? resultMatches()[0]
+    if (pick) pick.r.onClick()
+    setResult(null)
   }
 
   /**
@@ -245,7 +263,7 @@ export function Prompt(props: {
   useKeyboard((key) => {
     if (!active()) return
     if (process.env.DSH_DEBUG) {
-      const debugLine = `[dsh-cli] key=${key.name} menuOpen=${menuOpen()} selected=${selected()} result=${result() !== null}\n`
+      const debugLine = `[dsh-cli] key=${key.name} menuOpen=${menuOpen()} selected=${selected()} result=${result() !== null} resultSelected=${resultSelected()}\n`
       console.error(debugLine.trim())
       try {
         appendFileSync("/tmp/dsh-cli-keys.log", debugLine)
@@ -255,37 +273,16 @@ export function Prompt(props: {
     }
     if (result()) {
       if (KEY_UP.has(key.name)) {
-        const interactive = interactiveRows()
-        if (interactive.length > 0) {
-          selectResultRow(Math.max(0, resultSelected() - 1))
-          key.preventDefault()
-        } else {
-          setResultScroll((s) => Math.max(0, s - 1))
-          key.preventDefault()
-        }
+        if (resultMatches().length > 0) moveResultSelection(-1)
+        else setResultScroll((s) => Math.max(0, s - 1))
+        key.preventDefault()
       } else if (KEY_DOWN.has(key.name)) {
-        const interactive = interactiveRows()
-        if (interactive.length > 0) {
-          selectResultRow(Math.min(interactive.length - 1, resultSelected() + 1))
-          key.preventDefault()
-        } else {
-          setResultScroll((s) => Math.min(Math.max(0, resultRows().length - MAX_RESULT_ROWS), s + 1))
-          key.preventDefault()
-        }
+        if (resultMatches().length > 0) moveResultSelection(1)
+        else setResultScroll((s) => Math.min(Math.max(0, resultRows().length - MAX_RESULT_ROWS), s + 1))
+        key.preventDefault()
       } else if (KEY_ENTER.has(key.name)) {
-        const interactive = interactiveRows()
-        const pick = interactive.length > 0
-          ? interactive[Math.max(0, Math.min(resultSelected(), interactive.length - 1))]
-          : undefined
-        if (pick) {
-          pick.r.onClick()
-          // Confirming an action (e.g. switching the model) closes the panel.
-          setResult(null)
-          key.preventDefault()
-        } else {
-          setResult(null)
-          key.preventDefault()
-        }
+        confirmResultSelection()
+        key.preventDefault()
       } else if (key.name === "escape") {
         setResult(null)
         key.preventDefault()
@@ -345,7 +342,7 @@ export function Prompt(props: {
             {(row) => {
               const interactive = typeof row !== "string" && row.onClick !== undefined
               const realIndex = resultRows().indexOf(row)
-              const selected = interactive && interactiveRows()[resultSelected()]?.i === realIndex
+              const selected = interactive && resultMatches()[resultSelected()]?.i === realIndex
               const label = typeof row === "string" ? row : row.text
               return interactive ? (
                 <box
@@ -355,8 +352,12 @@ export function Prompt(props: {
                   backgroundColor={selected ? theme.primary : RGBA.fromInts(0, 0, 0, 0)}
                   onMouse={(evt) => {
                     if (evt.type === "over" && typeof row !== "string") {
-                      const idx = interactiveRows().findIndex((x) => x.i === realIndex)
-                      if (idx >= 0) selectResultRow(idx)
+                      const idx = resultMatches().findIndex((x) => x.i === realIndex)
+                      if (idx >= 0) {
+                        setResultSelected(idx)
+                        const real = resultMatches()[idx]?.i
+                        if (real !== undefined && real < resultScroll()) setResultScroll(real)
+                      }
                     }
                     if (evt.type === "down" && evt.button === 0 && typeof row !== "string") {
                       row.onClick?.()

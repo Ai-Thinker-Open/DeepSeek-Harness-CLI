@@ -306,6 +306,7 @@ async function handleRpc(req) {
         }),
       )
     case "session.selectModel":
+      console.log(`[dsh-mock] selectModel provider=${payload.provider} model=${payload.model}`)
       return respond(ok({ selected: { provider: payload.provider, model: payload.model } }))
     case "skill.list":
       return respond(ok({ skills: [] }))
