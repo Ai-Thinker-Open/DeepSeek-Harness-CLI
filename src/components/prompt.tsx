@@ -190,12 +190,14 @@ export function Prompt(props: {
   }
 
   const runCommandLine = async (line: string) => {
-    if (!props.onCommand) {
-      setDraft("")
-      return
-    }
-    const view = await props.onCommand(line)
+    // Clear the draft and close the slash menu as soon as the command is
+    // dispatched. If we waited for the harness round-trip, the menu would
+    // stay open (single "/model" entry) and swallow arrow keys pressed while
+    // the command panel is loading — the "arrows do nothing on the model
+    // picker" symptom.
     setDraft("")
+    if (!props.onCommand) return
+    const view = await props.onCommand(line)
     if (view) {
       setResult(view)
       setResultScroll(0)
