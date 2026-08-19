@@ -213,8 +213,7 @@ export function App(props: { client?: HarnessClientLike } = {}) {
               text: label,
               onClick: async () => {
                 const ok = await session.selectModel(group.id, m.id)
-                const next = await session.listModels()
-                if (next) setResultOverride({ title: "模型（点击行切换）", rows: build(next).rows })
+                // The panel closes on confirm; the toast reports the outcome.
                 showToast(ok ? `已切换到 ${m.name}` : "模型切换失败", ok ? "success" : "error")
               },
             })

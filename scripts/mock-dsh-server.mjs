@@ -287,6 +287,28 @@ async function handleRpc(req) {
       return respond(ok({ accepted: true }))
     case "session.rename":
       return respond(ok({}))
+    case "session.models":
+      return respond(
+        ok({
+          current: { provider: "deepseek", model: "deepseek-v4" },
+          routable: true,
+          groups: [
+            {
+              id: "deepseek",
+              name: "DeepSeek",
+              models: [
+                { id: "deepseek-v4", name: "DeepSeek-V4" },
+                { id: "deepseek-v4-flash", name: "DeepSeek-V4-Flash" },
+              ],
+            },
+          ],
+          failures: [],
+        }),
+      )
+    case "session.selectModel":
+      return respond(ok({ selected: { provider: payload.provider, model: payload.model } }))
+    case "skill.list":
+      return respond(ok({ skills: [] }))
     default:
       return respond(fail(`unknown method ${method}`, "unknown"))
   }

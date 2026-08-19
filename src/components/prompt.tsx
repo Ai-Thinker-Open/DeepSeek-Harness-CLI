@@ -255,13 +255,15 @@ export function Prompt(props: {
           setResultScroll((s) => Math.min(Math.max(0, resultRows().length - MAX_RESULT_ROWS), s + 1))
           key.preventDefault()
         }
-      } else if (key.name === "return") {
+      } else if (key.name === "return" || key.name === "linefeed") {
         const interactive = interactiveRows()
         const pick = interactive.length > 0
           ? interactive[Math.max(0, Math.min(resultSelected(), interactive.length - 1))]
           : undefined
         if (pick) {
           pick.r.onClick()
+          // Confirming an action (e.g. switching the model) closes the panel.
+          setResult(null)
           key.preventDefault()
         } else {
           setResult(null)
@@ -341,6 +343,7 @@ export function Prompt(props: {
                     }
                     if (evt.type === "down" && evt.button === 0 && typeof row !== "string") {
                       row.onClick?.()
+                      setResult(null)
                       evt.preventDefault()
                     }
                   }}

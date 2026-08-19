@@ -510,6 +510,8 @@ test("/model panel navigates with arrow keys and Enter confirms", async () => {
   await app.renderOnce()
 
   expect(client.selectedModel?.model).toBe("deepseek-v4-flash")
+  // Confirming closes the picker panel.
+  expect(app.captureCharFrame()).not.toContain("当前模型")
 })
 
 test("/rename renames the session and /fork creates a child session", async () => {
