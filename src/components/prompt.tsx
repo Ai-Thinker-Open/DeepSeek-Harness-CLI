@@ -1,4 +1,5 @@
 import { createEffect, createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js"
+import { appendFileSync } from "node:fs"
 import { RGBA } from "@opentui/core"
 import type { TextareaRenderable } from "@opentui/core"
 import { useKeyboard, useTerminalDimensions } from "@opentui/solid"
@@ -243,7 +244,15 @@ export function Prompt(props: {
 
   useKeyboard((key) => {
     if (!active()) return
-    if (process.env.DSH_DEBUG) console.error(`[dsh-cli] key=${key.name} menuOpen=${menuOpen()} selected=${selected()}`)
+    if (process.env.DSH_DEBUG) {
+      const debugLine = `[dsh-cli] key=${key.name} menuOpen=${menuOpen()} selected=${selected()} result=${result() !== null}\n`
+      console.error(debugLine.trim())
+      try {
+        appendFileSync("/tmp/dsh-cli-keys.log", debugLine)
+      } catch {
+        // debug aid only; never fail on logging
+      }
+    }
     if (result()) {
       if (KEY_UP.has(key.name)) {
         const interactive = interactiveRows()
