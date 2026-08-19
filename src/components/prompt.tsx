@@ -257,14 +257,16 @@ export function Prompt(props: {
 
   useKeyboard((key) => {
     if (!active()) return
+    // Always record key events to /tmp/dsh-cli-keys.log (cheap, diagnostic
+    // only). DSH_DEBUG additionally echoes them to the console overlay.
+    const debugLine = `[dsh-cli] key=${key.name} raw=${JSON.stringify(key.raw ?? "")} source=${key.source ?? ""} menuOpen=${menuOpen()} selected=${selected()} result=${result() !== null} resultSelected=${resultSelected()} resultRows=${resultRows().length}\n`
     if (process.env.DSH_DEBUG) {
-      const debugLine = `[dsh-cli] key=${key.name} raw=${JSON.stringify(key.raw ?? "")} source=${key.source ?? ""} menuOpen=${menuOpen()} selected=${selected()} result=${result() !== null} resultSelected=${resultSelected()}\n`
       console.error(debugLine.trim())
-      try {
-        appendFileSync("/tmp/dsh-cli-keys.log", debugLine)
-      } catch {
-        // debug aid only; never fail on logging
-      }
+    }
+    try {
+      appendFileSync("/tmp/dsh-cli-keys.log", debugLine)
+    } catch {
+      // debug aid only; never fail on logging
     }
     if (result()) {
       if (isUp(key)) {
