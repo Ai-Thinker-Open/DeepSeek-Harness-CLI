@@ -111,11 +111,12 @@ test("dispatcher initializes the tui profile before booting it", async () => {
   expect(calls[0]?.args).toEqual(["--profile", "tui"])
 })
 
-test("dispatcher falls back to npx when dsh is not installed", async () => {
+test("dispatcher falls back to npx when dsh is not installed and no cache exists", async () => {
   const { calls, children } = installSpawn()
   installSpawnSync({ "--help": { status: null } })
   dispatcherInternals.probe = async () => false
   writeProfile(["deepseek-harness-cli"])
+  process.env.DSH_NPX_CACHE = join(tmpdir(), "dsh-cli-empty-npx")
 
   const pending = run([])
   await settle()
@@ -124,4 +125,23 @@ test("dispatcher falls back to npx when dsh is not installed", async () => {
 
   expect(calls[0]?.command).toBe("npx")
   expect(calls[0]?.args).toEqual(["--yes", "@deepseek-ai/dsh", "--profile", "tui"])
+})
+
+test("dispatcher reuses an installed npx cache entry instead of npx", async () => {
+  const { calls, children } = installSpawn()
+  installSpawnSync({ "--help": { status: null } })
+  dispatcherInternals.probe = async () => false
+  writeProfile(["deepseek-harness-cli"])
+  const cache = join(tmpdir(), "dsh-cli-npx-cache")
+  mkdirSync(join(cache, "1e7f6d9597241db0", "node_modules", ".bin"), { recursive: true })
+  writeFileSync(join(cache, "1e7f6d9597241db0", "node_modules", ".bin", "dsh"), "#!/bin/sh\n")
+  process.env.DSH_NPX_CACHE = cache
+
+  const pending = run([])
+  await settle()
+  children[0]?.emit("exit", 0)
+  await expect(pending).resolves.toBe(0)
+
+  expect(calls[0]?.command).toBe(join(cache, "1e7f6d9597241db0", "node_modules", ".bin", "dsh"))
+  expect(calls[0]?.args).toEqual(["--profile", "tui"])
 })

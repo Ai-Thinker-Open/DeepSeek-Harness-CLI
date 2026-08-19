@@ -8,6 +8,7 @@ import { nextMode, type PermissionMode } from "./permission"
 import { Home } from "./screens/home"
 import { SessionScreen } from "./screens/session"
 import { HARNESS_COMMANDS, LOCAL_COMMANDS, bareCommandName, hostCommandItems, mergeCommands, type CommandItem, type CommandResultView } from "./commands"
+import type { SkillEntry } from "./harness/client"
 
 /** Terminal display width: CJK glyphs occupy two cells in a monospace font. */
 function displayWidth(text: string): number {
@@ -53,6 +54,7 @@ export function App(props: { client?: HarnessClientLike } = {}) {
   const [screen, setScreen] = createSignal<"home" | "session">("home")
   const [commandOpen, setCommandOpen] = createSignal(false)
   const [resultOverride, setResultOverride] = createSignal<CommandResultView | null>(null)
+  const [skills, setSkills] = createSignal<SkillEntry[]>([])
   const session = createHarnessSession(props.client)
   let toastTimer: ReturnType<typeof setTimeout> | undefined
 
@@ -105,18 +107,51 @@ export function App(props: { client?: HarnessClientLike } = {}) {
 
   const commandItems = (): CommandItem[] => {
     const dynamic = hostCommandItems(session.commands())
+    const skillItems: CommandItem[] = skills().map((s) => ({
+      name: s.name,
+      description: `技能：${s.description}`,
+      kind: "skill" as const,
+      behavior: "run" as const,
+    }))
     // Hardcoded harness commands win over stale/partial dynamic discovery.
-    return mergeCommands(LOCAL_COMMANDS, dynamic, HARNESS_COMMANDS)
+    return mergeCommands(LOCAL_COMMANDS, dynamic, HARNESS_COMMANDS, skillItems)
   }
 
   const handleCommandOpen = (open: boolean) => {
     setCommandOpen(open)
-    if (open) void session.refreshCommands()
+    if (open) {
+      void session.refreshCommands()
+      void refreshSkills()
+    }
+  }
+
+  /** Load the session's user-invocable skills into the slash palette. */
+  const refreshSkills = async () => {
+    if (!session.hasSession()) return
+    setSkills(await session.listSkills())
   }
 
   const runCommand = async (line: string): Promise<CommandResultView | null> => {
     const bare = bareCommandName(line)
     const name = (bare ?? line.trim().slice(1).split(/\s+/)[0]?.toLowerCase() ?? "").toLowerCase()
+    // Skills are invoked as ordinary user messages: the harness's pre-step
+    // recognizes a leading `/<skill>` line and injects the skill's
+    // instructions (they are not commands in the harness command registry).
+    // MCP-style `/server:tool` lines fall back to the same message path so
+    // the model can act on them.
+    if (skills().some((s) => s.name === name) || line.trim().slice(1).includes(":")) {
+      if (!session.hasSession()) {
+        const ok = await session.start(line.trim())
+        if (!ok) return { title: "技能", rows: ["无法创建会话，请检查 harness 连接"] }
+        void session.refreshCommands()
+        void refreshSkills()
+        setScreen("session")
+        return null
+      }
+      await session.send(line.trim())
+      setScreen("session")
+      return null
+    }
     if (name === "sessions" || name === "resume") {
       const items = await session.listSessions()
       const rows = items.length

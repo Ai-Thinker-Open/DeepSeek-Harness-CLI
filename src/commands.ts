@@ -5,7 +5,7 @@ export interface CommandItem {
   name: string
   description: string
   input?: { hint: string }
-  kind: "local" | "host"
+  kind: "local" | "host" | "skill"
   /**
    * How the palette treats the command once picked, by its actual function:
    * `run` commands are display/action commands that execute immediately

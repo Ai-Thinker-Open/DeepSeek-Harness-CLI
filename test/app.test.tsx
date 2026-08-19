@@ -99,6 +99,10 @@ class FakeClient implements HarnessClientLike {
     return { sessionId: "s-forked" }
   }
 
+  async skillList() {
+    return { skills: [] }
+  }
+
   async updateQueue() {
     return { accepted: true }
   }
@@ -517,6 +521,40 @@ test("/rename renames the session and /fork creates a child session", async () =
   await tick()
   await app.renderOnce()
   expect(app.captureCharFrame()).toContain("已创建新会话")
+})
+
+test("skills appear as slash commands and submit as messages", async () => {
+  const client = new FakeClient()
+  client.skillList = (async () => ({
+    skills: [
+      { name: "opentui", description: "Build terminal UIs with OpenTUI", modelInvocable: true },
+      { name: "imagegen", description: "Generate raster images", modelInvocable: true },
+    ],
+  })) as typeof client.skillList
+  const app = await testRender(() => <App client={client} />, { width: 90, height: 32 })
+  await app.renderOnce()
+
+  // Start a session first so the skill catalog is reachable.
+  app.mockInput.typeText("hello")
+  await new Promise((r) => setTimeout(r, 50))
+  await app.renderOnce()
+  app.mockInput.pressEnter()
+  await tick()
+  await app.renderOnce()
+
+  app.mockInput.typeText("/")
+  await new Promise((r) => setTimeout(r, 120))
+  await app.renderOnce()
+  app.mockInput.typeText("opentui")
+  await new Promise((r) => setTimeout(r, 120))
+  await app.renderOnce()
+  expect(app.captureCharFrame()).toContain("/opentui")
+
+  app.mockInput.pressEnter() // run-type: submits the skill line as a message
+  await tick()
+  await app.renderOnce()
+
+  expect(client.prompts.some((p) => p.text === "/opentui")).toBe(true)
 })
 
 test("unknown slash command shows a toast instead of a result panel", async () => {

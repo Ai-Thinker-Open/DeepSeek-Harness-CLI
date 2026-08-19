@@ -17,6 +17,7 @@ import {
   type QueueItem,
   type ServerRequest,
   type SessionEvent,
+  type SkillEntry,
   type SessionSummary,
 } from "./client"
 import {
@@ -57,6 +58,7 @@ export interface HarnessSessionApi {
   selectModel: (provider: string, model: string, reasoningEffort?: string) => Promise<boolean>
   renameSession: (title: string) => Promise<boolean>
   forkSession: () => Promise<string | null>
+  listSkills: () => Promise<SkillEntry[]>
   question: () => HarnessQuestion | null
   error: () => string | null
   connected: () => boolean
@@ -1028,6 +1030,17 @@ export function createHarnessSession(
     }
   }
 
+  /** Read the session's user-invocable skill catalog. */
+  async function listSkills(): Promise<SkillEntry[]> {
+    if (!sessionId) return []
+    try {
+      const res = await client.skillList(sessionId)
+      return res.skills
+    } catch {
+      return []
+    }
+  }
+
   /** Edit/remove/steer one pending queue occurrence. */
   async function updateQueueItem(itemId: string, action: QueueAction): Promise<boolean> {
     if (!sessionId) return false
@@ -1112,6 +1125,7 @@ export function createHarnessSession(
     selectModel,
     renameSession,
     forkSession,
+    listSkills,
     clearError,
     dispose,
   }

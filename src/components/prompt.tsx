@@ -11,6 +11,13 @@ const PROMPT_PLACEHOLDER = "给智能体发消息"
 const MAX_MENU_ROWS = 10
 const MAX_RESULT_ROWS = 12
 
+/** Category label for a command item; group titles render muted above rows. */
+function categoryOf(item: { kind: string }): string {
+  if (item.kind === "skill") return "技能"
+  if (item.kind === "mcp") return "MCP"
+  return "快捷"
+}
+
 /** Terminal display width: CJK glyphs occupy two cells in a monospace font. */
 function displayWidth(text: string): number {
   let width = 0
@@ -78,7 +85,6 @@ export function Prompt(props: {
     () => value().startsWith("/") && !value().includes(" ") && result() === null,
   )
   const matches = createMemo(() => (menuOpen() ? filterCommands(items(), value().slice(1)) : []))
-  const visibleMatches = createMemo(() => matches().slice(scroll(), scroll() + MAX_MENU_ROWS))
   /** Fixed column width for `/name` (MiMo: longest display + 2 cells). */
   const nameColumn = createMemo(() => {
     let width = 0
@@ -87,6 +93,28 @@ export function Prompt(props: {
     }
     return width + 20
   })
+
+  type MenuRow = { type: "header"; text: string } | { type: "command"; index: number; item: CommandItem }
+  /** Build the visible rows starting at command `start`, interleaving group
+   *  headers (muted, not selectable) up to the panel height. */
+  const buildRowsFrom = (start: number): MenuRow[] => {
+    const rows: MenuRow[] = []
+    let lastCat: string | null = null
+    for (let i = start; i < matches().length && rows.length < MAX_MENU_ROWS; i++) {
+      const item = matches()[i] as CommandItem
+      const cat = categoryOf(item)
+      if (cat !== lastCat) {
+        rows.push({ type: "header", text: cat })
+        lastCat = cat
+      }
+      rows.push({ type: "command", index: i, item })
+    }
+    return rows
+  }
+  const visibleRows = createMemo(() => buildRowsFrom(scroll()))
+  /** How many commands fit in the panel when it starts at `start`. */
+  const visibleCommandCount = (start: number): number =>
+    buildRowsFrom(start).filter((r) => r.type === "command").length
   const resultRows = () => result()?.rows ?? []
   const visibleResultRows = () => resultRows().slice(resultScroll(), resultScroll() + MAX_RESULT_ROWS)
 
@@ -153,8 +181,18 @@ export function Prompt(props: {
   /** Select `index` and keep it inside the visible window. */
   const selectAt = (index: number) => {
     setSelected(index)
-    if (index < scroll()) setScroll(index)
-    else if (index >= scroll() + MAX_MENU_ROWS) setScroll(index - MAX_MENU_ROWS + 1)
+    let s = scroll()
+    for (;;) {
+      const count = visibleCommandCount(s)
+      if (index < s) {
+        s = index
+      } else if (index >= s + count) {
+        s = index - count + 1
+      } else {
+        break
+      }
+    }
+    if (s !== scroll()) setScroll(s)
   }
 
   /** Move the selection by `delta`, clamping to the match list. */
@@ -265,7 +303,7 @@ export function Prompt(props: {
           </Show>
         </box>
       </Show>
-      <Show when={menuOpen() && (visibleMatches().length > 0 || props.commandsLoading?.())}>
+      <Show when={menuOpen() && (visibleRows().length > 0 || props.commandsLoading?.())}>
         <box
           width="100%"
           backgroundColor={theme.backgroundElement}
@@ -285,42 +323,47 @@ export function Prompt(props: {
             }
           }}
         >
-          <Show when={visibleMatches().length === 0}>
+          <Show when={visibleRows().length === 0}>
             <text fg={theme.textMuted}>加载命令…</text>
           </Show>
-          {Array.from({ length: MAX_MENU_ROWS }, (_, slot) => (
-            <box
-              flexDirection="row"
-              width="100%"
-              paddingLeft={1}
-              paddingRight={1}
-              backgroundColor={slot + scroll() === selected() ? theme.primary : RGBA.fromInts(0, 0, 0, 0)}
-              onMouse={(evt) => {
-                // Hover follows the pointer (MiMo style); a click behaves
-                // exactly like Enter on the selected row.
-                if (evt.type === "over") selectAt(slot + scroll())
-                if (evt.type === "down" && evt.button === 0) {
-                  selectAt(slot + scroll())
-                  chooseSelected()
-                  evt.preventDefault()
-                }
-              }}
-            >
-              <Show when={visibleMatches()[slot]} fallback={<box height={0} />}>
-                <text fg={theme.text} wrapMode="none" truncate>
-                  <Show
-                    when={slot + scroll() === selected()}
-                    fallback={<span>{padTo(`/${visibleMatches()[slot]?.name ?? ""}`, nameColumn())}</span>}
-                  >
-                    <b>{padTo(`/${visibleMatches()[slot]?.name ?? ""}`, nameColumn())}</b>
-                  </Show>
-                  <span style={{ fg: slot + scroll() === selected() ? theme.text : theme.textMuted }}>
-                    {visibleMatches()[slot]?.description ?? ""}
-                  </span>
-                </text>
-              </Show>
-            </box>
-          ))}
+          <For each={visibleRows()}>
+            {(row) => {
+              if (row.type === "header") {
+                return <text fg={theme.textMuted}>{row.text}</text>
+              }
+              return (
+                <box
+                  flexDirection="row"
+                  width="100%"
+                  paddingLeft={1}
+                  paddingRight={1}
+                  backgroundColor={selected() === row.index ? theme.primary : RGBA.fromInts(0, 0, 0, 0)}
+                  onMouse={(evt) => {
+                    // Hover follows the pointer (MiMo style); a click behaves
+                    // exactly like Enter on the selected row.
+                    if (evt.type === "over") selectAt(row.index)
+                    if (evt.type === "down" && evt.button === 0) {
+                      selectAt(row.index)
+                      chooseSelected()
+                      evt.preventDefault()
+                    }
+                  }}
+                >
+                  <text fg={theme.text} wrapMode="none" truncate>
+                    <Show
+                      when={selected() === row.index}
+                      fallback={<span>{padTo(`/${row.item.name}`, nameColumn())}</span>}
+                    >
+                      <b>{padTo(`/${row.item.name}`, nameColumn())}</b>
+                    </Show>
+                    <span style={{ fg: selected() === row.index ? theme.text : theme.textMuted }}>
+                      {row.item.description}
+                    </span>
+                  </text>
+                </box>
+              )
+            }}
+          </For>
           <Show when={matches().length > MAX_MENU_ROWS}>
             <text fg={theme.textMuted}>
               … ↑/↓ 滚动 · Enter 填入 · 还有 {matches().length - MAX_MENU_ROWS} 项

@@ -6,7 +6,7 @@
  */
 
 import { spawn, spawnSync } from "node:child_process"
-import { existsSync, readFileSync } from "node:fs"
+import { existsSync, readFileSync, readdirSync } from "node:fs"
 import { homedir } from "node:os"
 import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
@@ -80,7 +80,28 @@ async function probe(url: string): Promise<boolean> {
 function resolveDsh(): { bin: string; prefix: string[] } {
   const probeResult = internals.spawnSync("dsh", ["--help"], { stdio: "ignore" })
   if (probeResult.status === 0) return { bin: "dsh", prefix: [] }
+  // Reuse an already-installed npx cache entry instead of asking npx to
+  // resolve the package every launch (the npm registry round-trip is what
+  // makes startup slow when the harness is not already running).
+  const cached = cachedNpxDsh()
+  if (cached) return { bin: cached, prefix: [] }
   return { bin: "npx", prefix: ["--yes", "@deepseek-ai/dsh"] }
+}
+
+/** Locate `node_modules/.bin/dsh` inside an existing npx cache entry. */
+function cachedNpxDsh(): string | undefined {
+  const npxRoot = process.env.DSH_NPX_CACHE ?? join(homedir(), ".npm", "_npx")
+  let entries: string[]
+  try {
+    entries = readdirSync(npxRoot)
+  } catch {
+    return undefined
+  }
+  for (const entry of entries) {
+    const bin = join(npxRoot, entry, "node_modules", ".bin", "dsh")
+    if (existsSync(bin)) return bin
+  }
+  return undefined
 }
 
 function exitCodeOf(child: ReturnType<typeof spawn>): Promise<number> {

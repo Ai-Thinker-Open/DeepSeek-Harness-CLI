@@ -68,6 +68,10 @@ class FakeClient implements HarnessClientLike {
     return { sessionId: "s-forked" }
   }
 
+  async skillList() {
+    return { skills: [] }
+  }
+
   async updateQueue() {
     return { accepted: true }
   }

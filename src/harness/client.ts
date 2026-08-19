@@ -75,6 +75,14 @@ export interface ModelCatalog {
   failures: Array<{ id: string; name: string; message: string }>
 }
 
+/** One user-invocable skill from the session's skill catalog. */
+export interface SkillEntry {
+  name: string
+  description: string
+  whenToUse?: string
+  modelInvocable: boolean
+}
+
 /** Immutable command view returned by `command.list` (no leading slash). */
 export interface CommandDescriptor {
   name: string
@@ -143,6 +151,7 @@ export interface HarnessClientLike {
   selectModel(sessionId: string, provider: string, model: string, reasoningEffort?: string): Promise<{ selected: ModelCatalog["current"] }>
   renameSession(sessionId: string, title: string): Promise<{ title: string }>
   forkSession(sessionId: string): Promise<{ sessionId: string }>
+  skillList(sessionId: string): Promise<{ skills: SkillEntry[] }>
   updateQueue(sessionId: string, itemId: string, action: QueueAction): Promise<{ accepted: boolean }>
   eventStream(signal?: AbortSignal): AsyncGenerator<ServerRequest>
 }
@@ -278,6 +287,10 @@ export class HarnessClient implements HarnessClientLike {
 
   forkSession(sessionId: string): Promise<{ sessionId: string }> {
     return this.call("session.fork", { sessionId })
+  }
+
+  skillList(sessionId: string): Promise<{ skills: SkillEntry[] }> {
+    return this.call("skill.list", { sessionId })
   }
 
   /** Discover the effective slash commands for a session's agent. */
