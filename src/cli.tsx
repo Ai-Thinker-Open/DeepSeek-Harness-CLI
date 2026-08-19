@@ -9,7 +9,12 @@ const renderer = await createCliRenderer({
   openConsoleOnError: false,
   autoFocus: true,
   useMouse: true,
-  useKittyKeyboard: null,
+  // Keep kitty keyboard parsing enabled (the default): terminals such as
+  // Windows Terminal emit CSI-u sequences (e.g. `ESC [ 57352u` for Up) once
+  // the kitty protocol is active, and OpenTUI maps those back to the same
+  // canonical names ("up"/"down"/"return") as legacy input. Legacy sequences
+  // (`ESC [ A`, `ESC O A`) keep working unchanged.
+  useKittyKeyboard: {},
   useThread: false,
   onDestroy: () => {
     // OpenTUI restores the terminal (raw mode, cursor, alternate screen,

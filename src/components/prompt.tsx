@@ -5,20 +5,13 @@ import type { TextareaRenderable } from "@opentui/core"
 import { useKeyboard, useTerminalDimensions } from "@opentui/solid"
 import type { CommandItem, CommandResultView } from "../commands"
 import { filterCommands } from "../commands"
+import { isDown, isEnter, isUp } from "./key-match"
 import { modeLabel, type PermissionMode } from "../permission"
 import { ACCENT_BORDER, theme } from "../theme"
 
 const PROMPT_PLACEHOLDER = "给智能体发消息"
 const MAX_MENU_ROWS = 10
 const MAX_RESULT_ROWS = 12
-
-/**
- * Accept the canonical OpenTUI names plus keypad/alternate spellings some
- * terminals emit (e.g. DECCKM `ESC O A` arrives as kpup in some parsers).
- */
-const KEY_UP = new Set(["up", "kpup", "arrowup"])
-const KEY_DOWN = new Set(["down", "kpdown", "arrowdown"])
-const KEY_ENTER = new Set(["return", "linefeed", "enter"])
 
 /** Category label for a command item; group titles render muted above rows. */
 function categoryOf(item: { kind: string }): string {
@@ -263,7 +256,7 @@ export function Prompt(props: {
   useKeyboard((key) => {
     if (!active()) return
     if (process.env.DSH_DEBUG) {
-      const debugLine = `[dsh-cli] key=${key.name} menuOpen=${menuOpen()} selected=${selected()} result=${result() !== null} resultSelected=${resultSelected()}\n`
+      const debugLine = `[dsh-cli] key=${key.name} raw=${JSON.stringify(key.raw ?? "")} source=${key.source ?? ""} menuOpen=${menuOpen()} selected=${selected()} result=${result() !== null} resultSelected=${resultSelected()}\n`
       console.error(debugLine.trim())
       try {
         appendFileSync("/tmp/dsh-cli-keys.log", debugLine)
@@ -272,15 +265,15 @@ export function Prompt(props: {
       }
     }
     if (result()) {
-      if (KEY_UP.has(key.name)) {
+      if (isUp(key)) {
         if (resultMatches().length > 0) moveResultSelection(-1)
         else setResultScroll((s) => Math.max(0, s - 1))
         key.preventDefault()
-      } else if (KEY_DOWN.has(key.name)) {
+      } else if (isDown(key)) {
         if (resultMatches().length > 0) moveResultSelection(1)
         else setResultScroll((s) => Math.min(Math.max(0, resultRows().length - MAX_RESULT_ROWS), s + 1))
         key.preventDefault()
-      } else if (KEY_ENTER.has(key.name)) {
+      } else if (isEnter(key)) {
         confirmResultSelection()
         key.preventDefault()
       } else if (key.name === "escape") {
@@ -290,10 +283,10 @@ export function Prompt(props: {
       return
     }
     if (!menuOpen()) return
-    if (KEY_UP.has(key.name)) {
+    if (isUp(key)) {
       moveSelection(-1)
       key.preventDefault()
-    } else if (KEY_DOWN.has(key.name)) {
+    } else if (isDown(key)) {
       moveSelection(1)
       key.preventDefault()
     } else if (key.name === "pageup") {
@@ -311,7 +304,7 @@ export function Prompt(props: {
     } else if (key.name === "tab") {
       completeSelected()
       key.preventDefault()
-    } else if (KEY_ENTER.has(key.name)) {
+    } else if (isEnter(key)) {
       chooseSelected()
       key.preventDefault()
     } else if (key.name === "escape") {

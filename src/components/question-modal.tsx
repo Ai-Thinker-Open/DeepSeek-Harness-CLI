@@ -1,5 +1,6 @@
 import { For, Show, createEffect, createSignal } from "solid-js"
 import { useKeyboard } from "@opentui/solid"
+import { isDown, isEnter, isUp } from "./key-match"
 import type { HarnessQuestion } from "../session"
 import { theme } from "../theme"
 
@@ -27,9 +28,9 @@ export function QuestionModal(props: {
   useKeyboard((key) => {
     const q = props.question()
     if (!q) return
-    if (key.name === "up") setSel((s) => Math.max(0, s - 1))
-    else if (key.name === "down") setSel((s) => Math.min(q.options.length - 1, s + 1))
-    else if (key.name === "return") props.onAnswer(q.options[sel()] as string)
+    if (isUp(key)) setSel((s) => Math.max(0, s - 1))
+    else if (isDown(key)) setSel((s) => Math.min(q.options.length - 1, s + 1))
+    else if (isEnter(key)) props.onAnswer(q.options[sel()] as string)
     else if (key.name === "escape") props.onAnswer(q.options[q.options.length - 1] as string)
   })
 
