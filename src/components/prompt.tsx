@@ -11,6 +11,14 @@ const PROMPT_PLACEHOLDER = "给智能体发消息"
 const MAX_MENU_ROWS = 10
 const MAX_RESULT_ROWS = 12
 
+/**
+ * Accept the canonical OpenTUI names plus keypad/alternate spellings some
+ * terminals emit (e.g. DECCKM `ESC O A` arrives as kpup in some parsers).
+ */
+const KEY_UP = new Set(["up", "kpup", "arrowup"])
+const KEY_DOWN = new Set(["down", "kpdown", "arrowdown"])
+const KEY_ENTER = new Set(["return", "linefeed", "enter"])
+
 /** Category label for a command item; group titles render muted above rows. */
 function categoryOf(item: { kind: string }): string {
   if (item.kind === "skill") return "技能"
@@ -237,7 +245,7 @@ export function Prompt(props: {
     if (!active()) return
     if (process.env.DSH_DEBUG) console.error(`[dsh-cli] key=${key.name} menuOpen=${menuOpen()} selected=${selected()}`)
     if (result()) {
-      if (key.name === "up") {
+      if (KEY_UP.has(key.name)) {
         const interactive = interactiveRows()
         if (interactive.length > 0) {
           selectResultRow(Math.max(0, resultSelected() - 1))
@@ -246,7 +254,7 @@ export function Prompt(props: {
           setResultScroll((s) => Math.max(0, s - 1))
           key.preventDefault()
         }
-      } else if (key.name === "down") {
+      } else if (KEY_DOWN.has(key.name)) {
         const interactive = interactiveRows()
         if (interactive.length > 0) {
           selectResultRow(Math.min(interactive.length - 1, resultSelected() + 1))
@@ -255,7 +263,7 @@ export function Prompt(props: {
           setResultScroll((s) => Math.min(Math.max(0, resultRows().length - MAX_RESULT_ROWS), s + 1))
           key.preventDefault()
         }
-      } else if (key.name === "return" || key.name === "linefeed") {
+      } else if (KEY_ENTER.has(key.name)) {
         const interactive = interactiveRows()
         const pick = interactive.length > 0
           ? interactive[Math.max(0, Math.min(resultSelected(), interactive.length - 1))]
@@ -276,10 +284,10 @@ export function Prompt(props: {
       return
     }
     if (!menuOpen()) return
-    if (key.name === "up") {
+    if (KEY_UP.has(key.name)) {
       moveSelection(-1)
       key.preventDefault()
-    } else if (key.name === "down") {
+    } else if (KEY_DOWN.has(key.name)) {
       moveSelection(1)
       key.preventDefault()
     } else if (key.name === "pageup") {
@@ -297,7 +305,7 @@ export function Prompt(props: {
     } else if (key.name === "tab") {
       completeSelected()
       key.preventDefault()
-    } else if (key.name === "return") {
+    } else if (KEY_ENTER.has(key.name)) {
       chooseSelected()
       key.preventDefault()
     } else if (key.name === "escape") {
