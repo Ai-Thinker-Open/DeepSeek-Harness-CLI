@@ -131,7 +131,7 @@ export function createHarnessSession(
   /** Transcripts fetched while listing sessions, keyed by session id, so a
    *  resume can render the conversation immediately instead of waiting for
    *  the attach/history round-trips. */
-  const seededHistory = new Map<string, HistoryEntry[]>()
+  const seededHistory = new Map<string, { events: HistoryEntry[]; projections?: Record<string, unknown> }>()
   /** Settle timers for tool results held back by `minToolRunningMs`. */
   const pendingSettles = new Map<string, { result: ToolResultRecord; at: number; timer: ReturnType<typeof setTimeout> }>()
   const usageByStep = new Map<string, { in: number; out: number; cr: number; cw: number; re: number }>()
@@ -759,6 +759,7 @@ export function createHarnessSession(
     try {
       const { events, projections } = await client.history(sessionId)
       applyPlanProjection(projections)
+      applyStatsProjections(projections)
       const fresh = foldHistory(events.map((e) => e.event))
       if (fresh.length === 0) return
       model = fresh
@@ -848,9 +849,11 @@ export function createHarnessSession(
       // Show the durable transcript right away from the listing's preview
       // fetch, before the attach round-trip completes.
       const seed = seededHistory.get(target)
-      if (seed && seed.length > 0) {
+      if (seed && seed.events.length > 0) {
         seededHistory.delete(target)
-        const fresh = foldHistory(seed.map((e) => e.event))
+        applyStatsProjections(seed.projections)
+        applyPlanProjection(seed.projections)
+        const fresh = foldHistory(seed.events.map((e) => e.event))
         if (fresh.length > 0) {
           model = fresh
           streamTurn = null
@@ -892,8 +895,8 @@ export function createHarnessSession(
       // Fetch only the chosen session's transcript so the records render as
       // soon as the attach completes (the seed is consumed by resumeSession).
       try {
-        const { events } = await client.history(last.sessionId, 50)
-        if (events.length > 0) seededHistory.set(last.sessionId, events)
+        const { events, projections } = await client.history(last.sessionId, 50)
+        if (events.length > 0) seededHistory.set(last.sessionId, { events, projections })
       } catch {
         // The seed is an optimization; resume re-syncs history anyway.
       }
@@ -983,13 +986,48 @@ export function createHarnessSession(
     }
   }
 
+  /** Projection values ride under `values` on the wire (`{asOfSeq, values}`). */
+  function projectionValues(projections: Record<string, unknown> | undefined): Record<string, unknown> {
+    if (!projections) return {}
+    const nested = (projections as { values?: Record<string, unknown> }).values
+    return nested ?? projections
+  }
+
   /** Fold the harness's `plan` projection (`{active, pending}`) into signals. */
   function applyPlanProjection(projections: Record<string, unknown> | undefined): void {
-    if (!projections) return
-    const plan = projections.plan as { active?: boolean; pending?: boolean } | undefined
+    const plan = projectionValues(projections).plan as { active?: boolean; pending?: boolean } | undefined
     if (plan === undefined || typeof plan !== "object") return
     if (typeof plan.active === "boolean") setPlanMode(plan.active)
     if (typeof plan.pending === "boolean") setPlanPending(plan.pending)
+  }
+
+  /** Restore the durable `sessionStats`/`tokenUsage` projections on resume. */
+  function applyStatsProjections(projections: Record<string, unknown> | undefined): void {
+    const values = projectionValues(projections)
+    const s = values.sessionStats as Record<string, number> | undefined
+    const usage = values.tokenUsage as Record<string, unknown> | undefined
+    const totals =
+      usage && typeof usage.totals === "object" && usage.totals !== null
+        ? (usage.totals as Record<string, number>)
+        : (usage as Record<string, number> | undefined)
+    if (!s && !totals) return
+    const ttftSteps = typeof s?.ttftSteps === "number" ? s.ttftSteps : 0
+    const ttftMs = typeof s?.ttftMs === "number" ? s.ttftMs : 0
+    statsModel = {
+      turns: typeof s?.turns === "number" ? s.turns : statsModel.turns,
+      steps: typeof s?.steps === "number" ? s.steps : statsModel.steps,
+      llmMs: typeof s?.llmMs === "number" ? s.llmMs : statsModel.llmMs,
+      toolMs: typeof s?.toolMs === "number" ? s.toolMs : statsModel.toolMs,
+      inTokens: typeof totals?.uncachedInputTokens === "number" ? totals.uncachedInputTokens : statsModel.inTokens,
+      outTokens: typeof totals?.outputTokens === "number" ? totals.outputTokens : statsModel.outTokens,
+      cacheReadTokens: typeof totals?.cacheReadTokens === "number" ? totals.cacheReadTokens : statsModel.cacheReadTokens,
+      cacheWriteTokens: typeof totals?.cacheWriteTokens === "number" ? totals.cacheWriteTokens : statsModel.cacheWriteTokens,
+      reasoningTokens: statsModel.reasoningTokens,
+      firstTokenMs: ttftSteps > 0 ? ttftMs / ttftSteps : null,
+      firstTokenSumMs: ttftMs || statsModel.firstTokenSumMs,
+      firstTokenCount: ttftSteps || statsModel.firstTokenCount,
+    }
+    syncStats()
   }
 
   /** Re-read the durable `plan` projection for the current session. */
@@ -1055,8 +1093,8 @@ export function createHarnessSession(
       await Promise.all(
         items.map(async (s) => {
           try {
-            const { events } = await client.history(s.sessionId, 50)
-            if (events.length > 0) seededHistory.set(s.sessionId, events)
+            const { events, projections } = await client.history(s.sessionId, 50)
+            if (events.length > 0) seededHistory.set(s.sessionId, { events, projections })
             const firstUser = foldHistory(events.map((e) => e.event)).find((m) => m.role === "user" && !m.inject)
             if (firstUser) s.preview = firstUser.content.trim().slice(0, 80)
           } catch {

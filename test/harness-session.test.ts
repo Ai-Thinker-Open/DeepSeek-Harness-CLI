@@ -415,7 +415,7 @@ test("resumeLastSession fast-paths to the newest workspace session", async () =>
       },
     ],
     hasMore: false,
-  })) as typeof client.history
+  })) as unknown as typeof client.history
   const session = createHarnessSession(client, "/tmp")
 
   expect(await session.resumeLastSession()).toBe("ok")
@@ -433,6 +433,57 @@ test("resumeLastSession reports none when the workspace has no sessions", async 
   })) as typeof client.listSessions
   const session = createHarnessSession(client, "/tmp")
   expect(await session.resumeLastSession()).toBe("none")
+  session.dispose()
+})
+
+test("resume restores the session's accumulated stats from history projections", async () => {
+  const client = new FakeClient()
+  client.listSessions = (async () => ({
+    items: [{ sessionId: "s-1", updatedAt: 1, running: false, blank: false, cwd: "/tmp" }],
+  })) as typeof client.listSessions
+  client.history = (async () => ({
+    events: [
+      {
+        event: {
+          type: "user/message",
+          seq: 1,
+          time: 1,
+          data: { id: "m1", content: [{ type: "text", text: "hi" }], source: { kind: "user" } },
+        },
+      },
+    ],
+    hasMore: false,
+    projections: {
+      asOfSeq: 99,
+      values: {
+        sessionStats: {
+          turns: 12,
+          steps: 34,
+          llmMs: 56_000,
+          toolMs: 9_000,
+          ttftMs: 2_400,
+          ttftSteps: 6,
+          decodeMs: 100,
+          decodeTokens: 50,
+        },
+        tokenUsage: { uncachedInputTokens: 120_000, outputTokens: 3_000, cacheReadTokens: 40_000, cacheWriteTokens: 1_000 },
+      },
+    },
+  })) as unknown as typeof client.history
+  const session = createHarnessSession(client, "/tmp")
+
+  expect(await session.resumeLastSession()).toBe("ok")
+  const st = session.stats()
+  expect(st.turns).toBe(12)
+  expect(st.steps).toBe(34)
+  expect(st.llmMs).toBe(56_000)
+  expect(st.toolMs).toBe(9_000)
+  expect(st.inTokens).toBe(120_000)
+  expect(st.outTokens).toBe(3_000)
+  expect(st.cacheReadTokens).toBe(40_000)
+  expect(st.cacheWriteTokens).toBe(1_000)
+  expect(st.firstTokenMs).toBe(400)
+  expect(st.firstTokenCount).toBe(6)
   session.dispose()
 })
 
