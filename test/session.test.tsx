@@ -287,19 +287,24 @@ test("tool card expand hint only appears while hovering the row", async () => {
   const idle = app.captureCharFrame()
   expect(idle).toContain("Bash · ls")
   expect(idle).not.toContain("▸")
+  expect(idle).toContain("❯ Bash")
 
-  // Hovering the row reveals the collapse icon.
+  // Hovering the row swaps the action icon for the collapse icon.
   const lines = idle.split("\n")
   const y = lines.findIndex((line) => line.includes("Bash ·"))
   const x = lines[y]?.indexOf("Bash") ?? 0
   await app.mockMouse.moveTo(x + 1, y)
   await app.renderOnce()
-  expect(app.captureCharFrame()).toContain("▸")
+  const hovered = app.captureCharFrame()
+  expect(hovered).toContain("▸ Bash")
+  expect(hovered).not.toContain("❯ Bash")
 
   // Moving away hides it again.
   await app.mockMouse.moveTo(1, 31)
   await app.renderOnce()
-  expect(app.captureCharFrame()).not.toContain("▸")
+  const left = app.captureCharFrame()
+  expect(left).toContain("❯ Bash")
+  expect(left).not.toContain("▸ Bash")
 })
 
 test("tool cards render per-variant bodies (bash exit code, edit diff, todo checklist)", async () => {

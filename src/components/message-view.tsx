@@ -291,12 +291,11 @@ export function ToolCard({ call, result }: { call: ToolCallRecord; result?: Tool
         }}
       >
         <text fg={theme.textMuted}>
-          {/* The expand hint only appears while hovering the row, so the
-              leading icon stays clean until the row is interactive. */}
-          <Show when={expandable() && hovered()}>
-            <span>{expanded() ? "▾" : "▸"} </span>
+          {/* While hovering, the action icon is replaced by the expand hint
+              so the row reads as interactive without a permanent marker. */}
+          <Show when={expandable() && hovered()} fallback={<span>{model().icon}</span>}>
+            <span>{expanded() ? "▾" : "▸"}</span>
           </Show>
-          <span>{model().icon}</span>
           <Show when={call.status !== "running"}>
             <b> {model().title}</b>
           </Show>
