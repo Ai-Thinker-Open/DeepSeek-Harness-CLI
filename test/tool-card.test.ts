@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test"
 import {
+  buildDiffText,
   bashMarkers,
   classifyTool,
   editPair,
@@ -83,6 +84,38 @@ test("editPair reads both the fs and str_replace_editor arg spellings", () => {
   expect(editPair({ old_string: "a", new_string: "b" })).toEqual({ oldText: "a", newText: "b" })
   expect(editPair({ old_str: "x", new_str: "y" })).toEqual({ oldText: "x", newText: "y" })
   expect(editPair({})).toEqual({})
+})
+
+test("buildDiffText renders replacement hunks as a unified diff", () => {
+  const built = buildDiffText([{ path: "src/main.ts", oldText: "OLD", newText: "NEW" }])
+  expect(built).not.toBeNull()
+  expect(built!.diff).toContain("--- a/src/main.ts")
+  expect(built!.diff).toContain("+++ b/src/main.ts")
+  expect(built!.diff).toContain("@@ -1,1 +1,1 @@")
+  expect(built!.diff).toContain("-OLD")
+  expect(built!.diff).toContain("+NEW")
+  expect(built!.totalLines).toBe(2)
+})
+
+test("buildDiffText renders write calls as a new-file diff", () => {
+  const built = buildDiffText([{ path: "src/new.ts", newText: "a\nb" }], { newFile: true })
+  expect(built!.diff).toContain("--- /dev/null")
+  expect(built!.diff).toContain("@@ -0,0 +1,2 @@")
+  expect(built!.diff).toContain("+a")
+  expect(built!.diff).toContain("+b")
+})
+
+test("buildDiffText caps content lines and reports the real count", () => {
+  const built = buildDiffText([{ path: "a.ts", oldText: "1\n2\n3\n4", newText: "5\n6\n7\n8" }], { maxLines: 3 })
+  expect(built!.diff).toContain("-1")
+  expect(built!.diff).not.toContain("-4")
+  expect(built!.totalLines).toBe(8)
+})
+
+test("buildDiffText returns null when hunks carry no content", () => {
+  expect(buildDiffText([])).toBeNull()
+  expect(buildDiffText([{ path: "a.ts" }])).toBeNull()
+  expect(buildDiffText([{ path: "a.ts", oldText: "", newText: "" }])).toBeNull()
 })
 
 test("questionItems extracts questions and options", () => {

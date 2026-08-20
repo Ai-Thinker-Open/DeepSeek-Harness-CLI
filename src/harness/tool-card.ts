@@ -615,6 +615,64 @@ export function writeText(args: Record<string, unknown>): string | undefined {
   return content === "" ? undefined : content
 }
 
+/** One replacement hunk fed into the diff viewer (old/new text pair). */
+export interface DiffHunkLike {
+  path?: string
+  oldText?: string
+  newText?: string
+}
+
+/** A unified-diff text plus the real content-line count (before truncation). */
+export interface DiffTextResult {
+  diff: string
+  totalLines: number
+}
+
+/**
+ * Build a unified-diff string for the OpenTUI Diff viewer from replacement
+ * hunks. `newFile` renders the hunk as a file creation (`--- /dev/null`).
+ * Content lines are capped at `maxLines`; `totalLines` keeps the real count
+ * so the caller can show a truncation note.
+ */
+export function buildDiffText(
+  hunks: DiffHunkLike[],
+  options: { newFile?: boolean; maxLines?: number } = {},
+): DiffTextResult | null {
+  const maxLines = options.maxLines ?? 1000
+  const parts: string[] = []
+  let totalLines = 0
+  let remaining = maxLines
+  for (const hunk of hunks) {
+    const oldLines = options.newFile ? [] : hunk.oldText ? hunk.oldText.split("\n") : []
+    const newLines = hunk.newText ? hunk.newText.split("\n") : []
+    const oldCount = oldLines.length
+    const newCount = newLines.length
+    if (oldCount === 0 && newCount === 0) continue
+    if (remaining <= 0) break
+    const path = hunk.path || "file"
+    const header = options.newFile
+      ? `--- /dev/null\n+++ b/${path}\n@@ -0,0 +1,${newCount} @@`
+      : `--- a/${path}\n+++ b/${path}\n@@ -${oldCount > 0 ? 1 : 0},${oldCount} +${newCount > 0 ? 1 : 0},${newCount} @@`
+    parts.push(header)
+    for (const line of oldLines) {
+      totalLines++
+      if (remaining > 0) {
+        parts.push(`-${line}`)
+        remaining--
+      }
+    }
+    for (const line of newLines) {
+      totalLines++
+      if (remaining > 0) {
+        parts.push(`+${line}`)
+        remaining--
+      }
+    }
+  }
+  if (parts.length === 0) return null
+  return { diff: parts.join("\n") + "\n", totalLines }
+}
+
 /** Result text for a settled call; null while running or when empty. */
 export function resultOutput(call: ToolCallRecord, result: ToolResultRecord | undefined): string | null {
   if (!result) return null
