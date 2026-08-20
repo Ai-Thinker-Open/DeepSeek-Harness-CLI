@@ -12,7 +12,8 @@
  *   - POST /api/respond
  *
  * Prompt "ask ..." triggers a permission question; anything else runs a
- * scripted turn with a bash tool call so the tool card path is visible.
+ * scripted turn with a tool call (bash / read / grep / edit, picked from the
+ * prompt) so the tool card shine animation is visible across tool kinds.
  */
 
 const PORT = Number(process.env.PORT || 3080)
@@ -65,6 +66,59 @@ function askQuestion(sessionId, rpcId, question, options) {
       ],
     })
   })
+}
+
+/** Pick a scripted tool call from the prompt so different tool cards render. */
+function pickToolCall(text) {
+  if (/read|读取|查看|cat /i.test(text)) {
+    return {
+      name: "read",
+      args: { file_path: "src/app.tsx" },
+      output: "12 | const [screen, setScreen] = createSignal(\"home\")\n13 | const [toast, setToast] = createSignal(null)",
+      meta: {
+        card: "read",
+        lines: [
+          { number: 12, text: 'const [screen, setScreen] = createSignal("home")' },
+          { number: 13, text: "const [toast, setToast] = createSignal(null)" },
+        ],
+        totalLines: 13,
+      },
+    }
+  }
+  if (/grep|搜索|查找|search/i.test(text)) {
+    return {
+      name: "grep",
+      args: { pattern: "createSignal", path: "src" },
+      output: "src/app.tsx:12: const [screen, setScreen] = createSignal(\"home\")",
+      meta: {
+        card: "search",
+        shape: "matches",
+        files: [
+          {
+            path: "src/app.tsx",
+            matches: [{ lineNumber: 12, line: 'const [screen, setScreen] = createSignal("home")' }],
+          },
+        ],
+        total: 1,
+      },
+    }
+  }
+  if (/edit|修改|写入|write/i.test(text)) {
+    return {
+      name: "edit",
+      args: { file_path: "src/app.tsx", old_string: "home", new_string: "session" },
+      output: "已修改 src/app.tsx",
+      meta: {
+        card: "diff",
+        diffs: [{ path: "src/app.tsx", oldText: 'createSignal("home")', newText: 'createSignal("session")' }],
+      },
+    }
+  }
+  return {
+    name: "bash",
+    args: { command: "echo hello-from-mock-bash" },
+    output: "hello-from-mock-bash\n第二行输出\n第三行输出\n第四行输出\n第五行输出",
+  }
 }
 
 async function runTurn(sessionId, text, firstTurn) {
@@ -136,7 +190,8 @@ async function runTurn(sessionId, text, firstTurn) {
       data: { turn, step: 1, chunk: { type: "text-delta", text: `你选择了「${answer}」。` } },
     })
   } else {
-    const command = "echo hello-from-mock-bash"
+    const tool = pickToolCall(text)
+    const argsJson = JSON.stringify(tool.args)
     emitEvent(sessionId, {
       type: "assistant/chunk",
       seq: nextSeq(),
@@ -155,8 +210,8 @@ async function runTurn(sessionId, text, firstTurn) {
           type: "tool-call-delta",
           index: 0,
           id: `call_${turn}`,
-          name: "bash",
-          argumentsDelta: JSON.stringify({ command }),
+          name: tool.name,
+          argumentsDelta: argsJson,
         },
       },
     })
@@ -164,10 +219,9 @@ async function runTurn(sessionId, text, firstTurn) {
       type: "tool/call",
       seq: nextSeq(),
       time: now(),
-      data: { callId: `call_${turn}`, name: "bash", arguments: JSON.stringify({ command }) },
+      data: { callId: `call_${turn}`, name: tool.name, arguments: argsJson },
     })
     await sleep(250)
-    const output = "hello-from-mock-bash\n第二行输出\n第三行输出\n第四行输出\n第五行输出"
     emitEvent(sessionId, {
       type: "tool/result",
       seq: nextSeq(),
@@ -179,10 +233,11 @@ async function runTurn(sessionId, text, firstTurn) {
               type: "tool-result",
               toolCallId: `call_${turn}`,
               isError: false,
-              content: [{ type: "text", text: output }],
+              content: [{ type: "text", text: tool.output }],
             },
           ],
         },
+        meta: tool.meta,
       },
     })
     await sleep(100)
@@ -248,8 +303,13 @@ async function handleRpc(req) {
     case "host.describe":
       return respond(ok({ version: "mock", cwd: process.cwd(), provider: "deepseek", model: MODEL, attachedSessions: sessions.size, canOpenPath: true }))
     case "session.create": {
-      const sessionId = `mock-${++sessionSeq}`
-      sessions.set(sessionId, { events: [], cwd: payload.cwd ?? process.cwd() })
+      // Resume when a sessionId is supplied (the TUI's `-c`/continue flow),
+      // matching the real harness's attach semantics.
+      const requested = String(payload.sessionId ?? "")
+      const sessionId = requested || `mock-${++sessionSeq}`
+      if (!sessions.has(sessionId)) {
+        sessions.set(sessionId, { events: [], cwd: payload.cwd ?? process.cwd() })
+      }
       return respond(ok({ sessionId, agentPreset: "build" }))
     }
     case "session.list":
@@ -266,7 +326,7 @@ async function handleRpc(req) {
       )
     case "session.history": {
       const s = sessions.get(String(payload.sessionId ?? ""))
-      return respond(ok({ events: s?.events ?? [], hasMore: false }))
+      return respond(ok({ events: (s?.events ?? []).map((event) => ({ event })), hasMore: false }))
     }
     case "session.prompt": {
       const sessionId = String(payload.sessionId ?? "")

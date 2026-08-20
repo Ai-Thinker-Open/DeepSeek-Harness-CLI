@@ -47,7 +47,7 @@ function planTaskMessage(line: string, name: string): string | undefined {
   return args
 }
 
-export function App(props: { client?: HarnessClientLike; continueLast?: boolean } = {}) {
+export function App(props: { client?: HarnessClientLike; continueLast?: boolean; minToolRunningMs?: number } = {}) {
   const renderer = useRenderer()
   const [mode, setMode] = createSignal<PermissionMode>("workspace-write")
   const [toast, setToast] = createSignal<ToastMessage | null>(null)
@@ -55,7 +55,7 @@ export function App(props: { client?: HarnessClientLike; continueLast?: boolean 
   const [commandOpen, setCommandOpen] = createSignal(false)
   const [resultOverride, setResultOverride] = createSignal<CommandResultView | null>(null)
   const [skills, setSkills] = createSignal<SkillEntry[]>([])
-  const session = createHarnessSession(props.client)
+  const session = createHarnessSession(props.client, undefined, { minToolRunningMs: props.minToolRunningMs })
   let toastTimer: ReturnType<typeof setTimeout> | undefined
 
   const showToast = (text: string, kind: ToastMessage["kind"] = "success") => {

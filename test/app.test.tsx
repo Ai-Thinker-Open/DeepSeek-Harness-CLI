@@ -222,7 +222,7 @@ test("later sends reuse the same session and append messages", async () => {
 
 test("session streams assistant replies and tool calls from the harness", async () => {
   const client = new FakeClient()
-  const app = await testRender(() => <App client={client} />, { width: 80, height: 32 })
+  const app = await testRender(() => <App client={client} minToolRunningMs={0} />, { width: 80, height: 32 })
   await app.renderOnce()
 
   app.mockInput.typeText("hello")
@@ -372,7 +372,7 @@ test("/sessions lists first message, time and short id", async () => {
         updatedAt: 1_787_060_000_000,
         running: false,
         blank: false,
-        cwd: "/tmp",
+        cwd: process.cwd(),
       },
     ],
   })) as unknown as typeof client.listSessions
@@ -417,7 +417,7 @@ test("clicking a session row resumes it into the session screen", async () => {
         updatedAt: 1_787_060_000_000,
         running: false,
         blank: false,
-        cwd: "/tmp",
+        cwd: process.cwd(),
       },
     ],
   })) as unknown as typeof client.listSessions

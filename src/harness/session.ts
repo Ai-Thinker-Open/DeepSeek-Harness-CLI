@@ -84,7 +84,7 @@ export function describeHarnessError(e: unknown): string {
 export function createHarnessSession(
   client: HarnessClientLike = new HarnessClient(process.env.DSH_URL ?? "http://127.0.0.1:3080"),
   cwd = process.env.DSH_CWD ?? process.cwd(),
-  options: { stallResyncMs?: number } = {},
+  options: { stallResyncMs?: number; minToolRunningMs?: number } = {},
 ): HarnessSessionApi {
   const [messages, setMessages] = createSignal<ChatMessage[]>([])
   const [stats, setStats] = createSignal<SessionStats>(EMPTY_STATS)
@@ -117,10 +117,15 @@ export function createHarnessSession(
    *  re-sync from durable history so a stuck ▍ cursor can never persist. */
   const stallResyncMs = options.stallResyncMs ?? 20_000
   const stallCheckMs = Math.min(5_000, Math.max(50, Math.floor(stallResyncMs / 3)))
+  /** Quick tools (read/grep/edit…) settle in a single frame; hold their
+   *  running state at least this long so the shine sweep is visible. */
+  const minToolRunningMs = options.minToolRunningMs ?? 600
   let lastFrameAt = 0
   let lastResyncAt = 0
   let streamAbort: AbortController | null = null
   let stallTimer: ReturnType<typeof setInterval> | undefined
+  /** Settle timers for tool results held back by `minToolRunningMs`. */
+  const pendingSettles = new Map<string, { result: ToolResultRecord; at: number; timer: ReturnType<typeof setTimeout> }>()
   const usageByStep = new Map<string, { in: number; out: number; cr: number; cw: number; re: number }>()
 
   // Solid's <For> memoizes items by object identity. To make only the touched
@@ -573,31 +578,66 @@ export function createHarnessSession(
     const block = (ev.data as { message?: { content?: Block[] } }).message?.content?.[0]
     if (process.env.DSH_DEBUG) console.error("[dsh] tool/result", JSON.stringify(ev.data))
     if (!block || block.type !== "tool-result" || !block.toolCallId) return
+    const callId = block.toolCallId
+    if (pendingSettles.has(callId)) return
     const { text, truncated } = truncateText(blockText(block.content), MAX_TOOL_OUTPUT_CHARS)
     const result: ToolResultRecord = {
-      toolCallId: block.toolCallId,
+      toolCallId: callId,
       ok: !block.isError,
       output: text,
       truncated,
       meta: (ev.data as { meta?: unknown }).meta,
     }
-    const target = [...model].reverse().find((m) => m.toolCalls?.some((c) => c.id === block.toolCallId))
-    if (target) {
+    const target = [...model].reverse().find((m) => m.toolCalls?.some((c) => c.id === callId))
+    if (!target) return
+    const call = target.toolCalls?.find((c) => c.id === callId)
+    if (!call) {
+      // A result without a live call (replay edge) still attaches to history.
       target.toolResults = target.toolResults ?? []
-      const existing = target.toolResults.find((r) => r.toolCallId === block.toolCallId)
+      const existing = target.toolResults.find((r) => r.toolCallId === callId)
       if (existing) Object.assign(existing, result)
       else target.toolResults.push(result)
-      const call = target.toolCalls?.find((c) => c.id === block.toolCallId)
-      if (call) {
-        call.status = result.ok ? "ok" : "error"
-        call.finishedAt = ev.time
-        if (call.startedAt != null) {
-          statsModel.toolMs += Math.max(0, ev.time - call.startedAt)
-          syncStats()
-        }
+      touch(target)
+      return
+    }
+    const elapsed = call.startedAt != null ? Math.max(0, ev.time - call.startedAt) : minToolRunningMs
+    const remaining = minToolRunningMs - elapsed
+    if (remaining > 0) {
+      pendingSettles.set(callId, {
+        result,
+        at: ev.time,
+        timer: setTimeout(() => settleToolResult(callId, ev.time), remaining),
+      })
+    } else {
+      settleToolResult(callId, ev.time, result)
+    }
+  }
+
+  /** Flip a settled call to ok/error once its minimum shine window has passed. */
+  function settleToolResult(callId: string, at: number, directResult?: ToolResultRecord): void {
+    const pending = pendingSettles.get(callId)
+    const result = directResult ?? pending?.result
+    if (pending) {
+      clearTimeout(pending.timer)
+      pendingSettles.delete(callId)
+    }
+    if (!result) return
+    const target = [...model].reverse().find((m) => m.toolCalls?.some((c) => c.id === callId))
+    if (!target) return
+    const call = target.toolCalls?.find((c) => c.id === callId)
+    if (call) {
+      call.status = result.ok ? "ok" : "error"
+      call.finishedAt = at
+      if (call.startedAt != null) {
+        statsModel.toolMs += Math.max(0, at - call.startedAt)
+        syncStats()
       }
     }
-    if (target) touch(target)
+    target.toolResults = target.toolResults ?? []
+    const existing = target.toolResults.find((r) => r.toolCallId === callId)
+    if (existing) Object.assign(existing, result)
+    else target.toolResults.push(result)
+    touch(target)
   }
 
   // ── mux frames ──────────────────────────────────────────────────────
@@ -960,7 +1000,11 @@ export function createHarnessSession(
     try {
       const res = await client.listSessions()
       // Blank sessions have no conversation to show; skip them entirely.
-      const items = res.items.filter((s) => !s.blank)
+      // Sessions are workspace-scoped: the harness refuses to attach to a
+      // session whose stored cwd differs from the one passed to session.create
+      // (session-conflict), so only surface rows for this workspace (legacy
+      // rows without a cwd field stay visible).
+      const items = res.items.filter((s) => !s.blank && (s.cwd === undefined || s.cwd === cwd))
       // Each row carries the first user message so the list reads as a
       // conversation directory: `<首轮对话内容>  时间  会话ID前8位`.
       await Promise.all(
@@ -1091,6 +1135,8 @@ export function createHarnessSession(
       clearInterval(stallTimer)
       stallTimer = undefined
     }
+    for (const pending of pendingSettles.values()) clearTimeout(pending.timer)
+    pendingSettles.clear()
     abortController.abort()
   }
 

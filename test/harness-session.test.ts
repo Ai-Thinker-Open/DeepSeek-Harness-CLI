@@ -267,7 +267,7 @@ test("tool-call-delta indices that reset per step fold into distinct cards", asy
 
 test("Deep diving status survives tool execution without being overwritten", async () => {
   const client = new FakeClient()
-  const session = createHarnessSession(client, "/tmp")
+  const session = createHarnessSession(client, "/tmp", { minToolRunningMs: 0 })
   await session.start("hello")
   expect(session.statusText()).toBe("Deep diving")
 
@@ -293,6 +293,67 @@ test("Deep diving status survives tool execution without being overwritten", asy
   )
   await tick()
   expect(session.statusText()).toBe("Deep diving")
+})
+
+test("fast tool results hold the running shine window before settling", async () => {
+  const client = new FakeClient()
+  const session = createHarnessSession(client, "/tmp", { minToolRunningMs: 60 })
+  await session.start("hello")
+
+  client.push(frame("session/event", { sessionId: "s-1", event: ev("turn/start", { turn: 1 }, 5) }))
+  await tick()
+  client.push(
+    frame("session/event", {
+      sessionId: "s-1",
+      event: ev("tool/call", { turn: 1, step: 1, callId: "c1", name: "read", arguments: "{}" }, 6, 6000),
+    }),
+  )
+  await tick()
+  client.push(
+    frame("session/event", {
+      sessionId: "s-1",
+      event: ev(
+        "tool/result",
+        { turn: 1, step: 1, message: { content: [{ type: "tool-result", toolCallId: "c1", isError: false, content: [{ type: "text", text: "ok" }] }] } },
+        7,
+        6010,
+      ),
+    }),
+  )
+  // The result arrived 10ms after the call — inside the shine window, so the
+  // card must still read "running" (the sweep is still visible).
+  await new Promise((resolve) => setTimeout(resolve, 20))
+  const stillRunning = session.messages().flatMap((m) => m.toolCalls ?? []).find((c) => c.id === "c1")
+  expect(stillRunning?.status).toBe("running")
+  expect(stillRunning?.finishedAt).toBeUndefined()
+
+  // Once the window elapses, the call settles with the real result time.
+  await new Promise((resolve) => setTimeout(resolve, 80))
+  const settled = session.messages().flatMap((m) => m.toolCalls ?? []).find((c) => c.id === "c1")
+  expect(settled?.status).toBe("ok")
+  expect(settled?.finishedAt).toBe(6010)
+  expect(
+    session
+      .messages()
+      .flatMap((m) => m.toolResults ?? [])
+      .some((r) => r.toolCallId === "c1" && r.output === "ok"),
+  ).toBe(true)
+  session.dispose()
+})
+
+test("listSessions only surfaces sessions in the current workspace", async () => {
+  const client = new FakeClient()
+  client.listSessions = (async () => ({
+    items: [
+      { sessionId: "s-here", updatedAt: 30, running: false, blank: false, cwd: "/tmp" },
+      { sessionId: "s-elsewhere", updatedAt: 50, running: false, blank: false, cwd: "/other/workspace" },
+      { sessionId: "s-legacy", updatedAt: 10, running: false, blank: false },
+      { sessionId: "s-blank", updatedAt: 60, running: false, blank: true, cwd: "/tmp" },
+    ],
+  })) as typeof client.listSessions
+  const session = createHarnessSession(client, "/tmp")
+  const items = await session.listSessions()
+  expect(items.map((s) => s.sessionId).sort()).toEqual(["s-here", "s-legacy"])
 })
 
 test("late tool events attach to their turn's message instead of spawning a stray bottom card", async () => {
@@ -492,7 +553,7 @@ test("queue actions dispatch edit/remove/steer to the harness", async () => {
 
 test("session streams assistant text, reasoning and tool call results", async () => {
   const client = new FakeClient()
-  const session = createHarnessSession(client, "/tmp")
+  const session = createHarnessSession(client, "/tmp", { minToolRunningMs: 0 })
   await session.start("hello")
 
   client.push(frame("session/event", { sessionId: "s-1", event: ev("turn/start", { turn: 1 }, 5) }))
