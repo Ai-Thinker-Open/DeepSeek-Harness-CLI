@@ -76,15 +76,13 @@ export function App(props: { client?: HarnessClientLike; continueLast?: boolean;
   onMount(() => {
     if (!props.continueLast) return
     void (async () => {
-      const items = await session.listSessions()
-      const last = [...items].sort((a, b) => b.updatedAt - a.updatedAt)[0]
-      if (!last) {
+      const result = await session.resumeLastSession()
+      if (result === "none") {
         showToast("没有可继续的会话（或 harness 未连接）", "error")
         setScreen("home")
         return
       }
-      const ok = await session.resumeSession(last.sessionId)
-      if (!ok) {
+      if (result === "failed") {
         showToast("继续上次会话失败，请检查 harness 连接", "error")
         setScreen("home")
         return

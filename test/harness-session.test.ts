@@ -356,6 +356,86 @@ test("listSessions only surfaces sessions in the current workspace", async () =>
   expect(items.map((s) => s.sessionId).sort()).toEqual(["s-here", "s-legacy"])
 })
 
+test("resumeSession renders the listing-preview transcript immediately", async () => {
+  const client = new FakeClient()
+  let historyCalls = 0
+  client.listSessions = (async () => ({
+    items: [{ sessionId: "s-1", updatedAt: 1, running: false, blank: false, cwd: "/tmp" }],
+  })) as typeof client.listSessions
+  client.history = (async () => {
+    historyCalls += 1
+    if (historyCalls === 1) {
+      return {
+        events: [
+          {
+            event: {
+              type: "user/message",
+              seq: 1,
+              time: 1,
+              data: { id: "m1", content: [{ type: "text", text: "历史消息" }], source: { kind: "user" } },
+            },
+          },
+        ],
+        hasMore: false,
+      }
+    }
+    return { events: [], hasMore: false }
+  }) as typeof client.history
+  const session = createHarnessSession(client, "/tmp")
+  const items = await session.listSessions()
+  expect(items).toHaveLength(1)
+
+  // The second history call (during resume re-sync) is empty, so the only way
+  // the transcript shows is the listing preview seed.
+  expect(await session.resumeSession(items[0]!.sessionId)).toBe(true)
+  expect(session.messages().map((m) => m.content)).toContain("历史消息")
+  expect(historyCalls).toBeGreaterThanOrEqual(2)
+  session.dispose()
+})
+
+test("resumeLastSession fast-paths to the newest workspace session", async () => {
+  const client = new FakeClient()
+  client.listSessions = (async () => ({
+    items: [
+      { sessionId: "s-old", updatedAt: 10, running: false, blank: false, cwd: "/tmp" },
+      { sessionId: "s-new", updatedAt: 20, running: false, blank: false, cwd: "/tmp" },
+      { sessionId: "s-elsewhere", updatedAt: 30, running: false, blank: false, cwd: "/other" },
+      { sessionId: "s-blank", updatedAt: 40, running: false, blank: true, cwd: "/tmp" },
+    ],
+  })) as typeof client.listSessions
+  client.history = (async () => ({
+    events: [
+      {
+        event: {
+          type: "user/message",
+          seq: 1,
+          time: 1,
+          data: { id: "m1", content: [{ type: "text", text: "上次的对话" }], source: { kind: "user" } },
+        },
+      },
+    ],
+    hasMore: false,
+  })) as typeof client.history
+  const session = createHarnessSession(client, "/tmp")
+
+  expect(await session.resumeLastSession()).toBe("ok")
+  expect(session.messages().map((m) => m.content)).toContain("上次的对话")
+  session.dispose()
+})
+
+test("resumeLastSession reports none when the workspace has no sessions", async () => {
+  const client = new FakeClient()
+  client.listSessions = (async () => ({
+    items: [
+      { sessionId: "s-blank", updatedAt: 40, running: false, blank: true, cwd: "/tmp" },
+      { sessionId: "s-elsewhere", updatedAt: 30, running: false, blank: false, cwd: "/other" },
+    ],
+  })) as typeof client.listSessions
+  const session = createHarnessSession(client, "/tmp")
+  expect(await session.resumeLastSession()).toBe("none")
+  session.dispose()
+})
+
 test("late tool events attach to their turn's message instead of spawning a stray bottom card", async () => {
   const client = new FakeClient()
   const session = createHarnessSession(client, "/tmp")

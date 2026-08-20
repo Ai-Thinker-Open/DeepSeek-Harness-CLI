@@ -12,6 +12,7 @@ import {
   HarnessClient,
   type CommandDescriptor,
   type HarnessClientLike,
+  type HistoryEntry,
   type ModelCatalog,
   type QueueAction,
   type QueueItem,
@@ -47,6 +48,9 @@ export interface HarnessSessionApi {
   hasSession: () => boolean
   ensureSession: () => Promise<boolean>
   resumeSession: (sessionId: string) => Promise<boolean>
+  /** Fast `-c` path: attach to the newest workspace session and show its
+   *  transcript without hydrating previews for every other session. */
+  resumeLastSession: () => Promise<"ok" | "none" | "failed">
   queue: () => QueueItem[]
   updateQueueItem: (itemId: string, action: QueueAction) => Promise<boolean>
   refreshCommands: () => Promise<void>
@@ -124,6 +128,10 @@ export function createHarnessSession(
   let lastResyncAt = 0
   let streamAbort: AbortController | null = null
   let stallTimer: ReturnType<typeof setInterval> | undefined
+  /** Transcripts fetched while listing sessions, keyed by session id, so a
+   *  resume can render the conversation immediately instead of waiting for
+   *  the attach/history round-trips. */
+  const seededHistory = new Map<string, HistoryEntry[]>()
   /** Settle timers for tool results held back by `minToolRunningMs`. */
   const pendingSettles = new Map<string, { result: ToolResultRecord; at: number; timer: ReturnType<typeof setTimeout> }>()
   const usageByStep = new Map<string, { in: number; out: number; cr: number; cw: number; re: number }>()
@@ -837,6 +845,21 @@ export function createHarnessSession(
   async function resumeSession(target: string): Promise<boolean> {
     if (!target) return false
     try {
+      // Show the durable transcript right away from the listing's preview
+      // fetch, before the attach round-trip completes.
+      const seed = seededHistory.get(target)
+      if (seed && seed.length > 0) {
+        seededHistory.delete(target)
+        const fresh = foldHistory(seed.map((e) => e.event))
+        if (fresh.length > 0) {
+          model = fresh
+          streamTurn = null
+          firstTokenDone = true
+          setBusy(false)
+          setStatusText("")
+          syncAll()
+        }
+      }
       if (!sessionId) {
         const info = await client.describe()
         setConnected(true)
@@ -855,6 +878,28 @@ export function createHarnessSession(
       setConnected(false)
       setError(describeHarnessError(e))
       return false
+    }
+  }
+
+  /** Resume the most recently used session in the current workspace. */
+  async function resumeLastSession(): Promise<"ok" | "none" | "failed"> {
+    try {
+      const res = await client.listSessions()
+      const last = [...res.items]
+        .filter((s) => !s.blank && (s.cwd === undefined || s.cwd === cwd))
+        .sort((a, b) => b.updatedAt - a.updatedAt)[0]
+      if (!last) return "none"
+      // Fetch only the chosen session's transcript so the records render as
+      // soon as the attach completes (the seed is consumed by resumeSession).
+      try {
+        const { events } = await client.history(last.sessionId, 50)
+        if (events.length > 0) seededHistory.set(last.sessionId, events)
+      } catch {
+        // The seed is an optimization; resume re-syncs history anyway.
+      }
+      return (await resumeSession(last.sessionId)) ? "ok" : "failed"
+    } catch {
+      return "failed"
     }
   }
 
@@ -1011,6 +1056,7 @@ export function createHarnessSession(
         items.map(async (s) => {
           try {
             const { events } = await client.history(s.sessionId, 50)
+            if (events.length > 0) seededHistory.set(s.sessionId, events)
             const firstUser = foldHistory(events.map((e) => e.event)).find((m) => m.role === "user" && !m.inject)
             if (firstUser) s.preview = firstUser.content.trim().slice(0, 80)
           } catch {
@@ -1161,6 +1207,7 @@ export function createHarnessSession(
     hasSession: () => sessionId !== null,
     ensureSession,
     resumeSession,
+    resumeLastSession,
     queue,
     updateQueueItem,
     refreshCommands,
