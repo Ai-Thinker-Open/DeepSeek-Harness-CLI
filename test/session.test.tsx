@@ -231,7 +231,7 @@ test("assistant messages collapse thinking and render tool cards", async () => {
   await app.renderOnce()
 
   const frame = app.captureCharFrame()
-  expect(frame).toContain("✦")
+  expect(frame).toContain("✺")
   expect(frame).toContain("Think")
   expect(frame).not.toContain("点击展开")
   expect(frame).not.toContain("行 ·")
@@ -469,7 +469,7 @@ test("injected context renders collapsed and expands on click", async () => {
   await app.renderOnce()
 
   const frame = app.captureCharFrame()
-  expect(frame).toContain("❐")
+  expect(frame).toContain("▤")
   expect(frame).toContain("上下文注入")
   expect(frame).toContain("@deepseek-ai/dsh-system-prompt")
   expect(frame).toContain("skill-catalog")

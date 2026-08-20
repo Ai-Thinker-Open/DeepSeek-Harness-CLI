@@ -166,7 +166,7 @@ test("web_search keeps its own globe-ish icon while local search stays a magnifi
   expect(toolIcon("grep")).toBe("⌕")
   expect(toolIcon("glob")).toBe("⌕")
   expect(toolIcon("bash")).toBe("❯")
-  expect(toolIcon("read")).toBe("❐")
+  expect(toolIcon("read")).toBe("▤")
   expect(toolIcon("edit")).toBe("✎")
   expect(toolIcon("todo_write")).toBe("☑")
   expect(toolIcon("unknown_tool")).toBe("✦")

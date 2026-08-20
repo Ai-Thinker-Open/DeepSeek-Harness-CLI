@@ -389,7 +389,7 @@ function ThinkingBlock({ text, streaming }: { text: string; streaming?: boolean 
         }}
       >
         <text fg={theme.textMuted}>
-          <span>{expanded() ? "▾" : "▸"} ✦</span>
+          <span>{expanded() ? "▾" : "▸"} ✺</span>
           <b> Think</b>
           <Show when={streaming}>
             <span> …</span>
@@ -436,7 +436,7 @@ function ContextInjectionBlock({ message }: { message: ChatMessage }) {
         }}
       >
         <text fg={theme.textMuted}>
-          <span>{expanded() ? "▾" : "▸"} ❐</span>
+          <span>{expanded() ? "▾" : "▸"} ▤</span>
           <b> 上下文注入</b>
           <span> · {inject.source}</span>
           <Show when={formLabel}>

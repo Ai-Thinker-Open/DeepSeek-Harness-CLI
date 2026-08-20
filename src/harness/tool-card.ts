@@ -4,6 +4,12 @@
  * visual variant (Bash / Read / Edit / Write / Search / Code / Todo /
  * Question / Terminal / Job / others) with a title, leading glyph, one-line
  * summary and expanded-body text derived from the call args and result.
+ *
+ * The leading glyphs are single-cell Unicode stand-ins for the official DSH
+ * web-client SVG icons (packages/client/ui-primitives/src/icons in
+ * deepseek-ai/DeepSeek-Harness): each variant below names the icon it
+ * approximates. Choices stay in blocks that common terminal monospace fonts
+ * cover (Geometric Shapes / Dingbats / Misc Symbols).
  */
 import type { ToolCallRecord, ToolResultRecord } from "../session"
 
@@ -116,22 +122,22 @@ export function toolTitle(name: string): string {
 
 /** Leading glyph per variant (Unicode stand-ins for the DSH SVG icons). */
 const VARIANT_ICONS: Record<ToolVariant, string> = {
-  bash: "❯",
-  read: "❐",
-  write: "✎",
-  edit: "✎",
-  search: "⌕",
-  code: "⟨",
-  todo: "☑",
-  question: "?",
-  terminal: "◉",
-  job: "⚙",
-  others: "✦",
+  bash: "❯", // IconApiOutline14 (window+plug) → shell-prompt chevron
+  read: "▤", // IconBrowseOutline16 (document with text lines)
+  write: "✎", // IconEditOutline16 (pencil)
+  edit: "✎", // IconEditOutline16 (pencil)
+  search: "⌕", // IconSearchOutline16 (magnifier)
+  code: "⟨", // IconCodeOutline16 (< > brackets)
+  todo: "☑", // IconChecklistOutline14 (checklist)
+  question: "?", // IconQuestionOutline14 (ring + question mark)
+  terminal: "◉", // no official DSH counterpart (TUI extension)
+  job: "⚙", // no official DSH counterpart (TUI extension)
+  others: "✦", // IconSparkle16 (three sparkles)
 }
 
 /** Tool-owned leading glyphs that refine a variant without replacing it. */
 const TOOL_ICONS: Record<string, string> = {
-  web_search: "❍",
+  web_search: "❍", // IconGlobeOutline14 (globe) — no reliable plain-Unicode globe, keep the web-ring stand-in
 }
 
 export function toolIcon(name: string): string {
