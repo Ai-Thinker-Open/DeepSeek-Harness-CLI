@@ -636,42 +636,55 @@ export interface DiffTextResult {
 
 /**
  * Build a unified-diff string for the OpenTUI Diff viewer from replacement
- * hunks. `newFile` renders the hunk as a file creation (`--- /dev/null`).
- * Content lines are capped at `maxLines`; `totalLines` keeps the real count
- * so the caller can show a truncation note.
+ * hunks. The OpenTUI viewer only renders the first patch of a diff, so hunks
+ * are grouped per file and each file emits exactly one patch (one `---/+++`
+ * header plus all of its `@@` hunks). `newFile` renders the file as a
+ * creation (`--- /dev/null`). Content lines are capped at `maxLines`;
+ * `totalLines` keeps the real count so the caller can show a truncation note.
  */
 export function buildDiffText(
   hunks: DiffHunkLike[],
   options: { newFile?: boolean; maxLines?: number } = {},
 ): DiffTextResult | null {
   const maxLines = options.maxLines ?? 1000
+  const byPath = new Map<string, DiffHunkLike[]>()
+  for (const hunk of hunks) {
+    const path = hunk.path || "file"
+    const group = byPath.get(path) ?? []
+    group.push(hunk)
+    byPath.set(path, group)
+  }
   const parts: string[] = []
   let totalLines = 0
   let remaining = maxLines
-  for (const hunk of hunks) {
-    const oldLines = options.newFile ? [] : hunk.oldText ? hunk.oldText.split("\n") : []
-    const newLines = hunk.newText ? hunk.newText.split("\n") : []
-    const oldCount = oldLines.length
-    const newCount = newLines.length
-    if (oldCount === 0 && newCount === 0) continue
+  for (const [path, group] of byPath) {
     if (remaining <= 0) break
-    const path = hunk.path || "file"
-    const header = options.newFile
-      ? `--- /dev/null\n+++ b/${path}\n@@ -0,0 +1,${newCount} @@`
-      : `--- a/${path}\n+++ b/${path}\n@@ -${oldCount > 0 ? 1 : 0},${oldCount} +${newCount > 0 ? 1 : 0},${newCount} @@`
-    parts.push(header)
-    for (const line of oldLines) {
-      totalLines++
-      if (remaining > 0) {
-        parts.push(`-${line}`)
-        remaining--
+    let emittedHeader = false
+    for (const hunk of group) {
+      const oldLines = options.newFile ? [] : hunk.oldText ? hunk.oldText.split("\n") : []
+      const newLines = hunk.newText ? hunk.newText.split("\n") : []
+      const oldCount = oldLines.length
+      const newCount = newLines.length
+      if (oldCount === 0 && newCount === 0) continue
+      if (remaining <= 0) break
+      if (!emittedHeader) {
+        parts.push(options.newFile ? `--- /dev/null\n+++ b/${path}` : `--- a/${path}\n+++ b/${path}`)
+        emittedHeader = true
       }
-    }
-    for (const line of newLines) {
-      totalLines++
-      if (remaining > 0) {
-        parts.push(`+${line}`)
-        remaining--
+      parts.push(`@@ -${oldCount > 0 ? 1 : 0},${oldCount} +${newCount > 0 ? 1 : 0},${newCount} @@`)
+      for (const line of oldLines) {
+        totalLines++
+        if (remaining > 0) {
+          parts.push(`-${line}`)
+          remaining--
+        }
+      }
+      for (const line of newLines) {
+        totalLines++
+        if (remaining > 0) {
+          parts.push(`+${line}`)
+          remaining--
+        }
       }
     }
   }
@@ -717,59 +730,60 @@ function num(v: unknown): number | undefined {
   return typeof v === "number" ? v : undefined
 }
 
-/** Parse the harness's `tool/result` `meta` into renderable card material. */
+/**
+ * Parse the harness's `tool/result` `meta` into renderable card material.
+ *
+ * The wire metas carry no `card` discriminator (diff = `{diffs}`, read =
+ * `{lines,path,…}`, search = `{shape,…}`); the `card` wrapper is a web-client
+ * presentation concern. Detection is shape-first so real metas parse, with the
+ * `{card:…}` forms kept for legacy fixtures.
+ */
 export function parseCardMeta(meta: unknown): ToolCardMeta | null {
   if (typeof meta !== "object" || meta === null) return null
   const m = meta as Record<string, unknown>
-  switch (m.card) {
-    case "terminal":
-      return { kind: "terminal", terminal: { output: str(m.output), exitCode: num(m.exitCode) } }
-    case "diff": {
-      if (!Array.isArray(m.diffs)) return null
-      const diffs = m.diffs
-        .filter((d): d is Record<string, unknown> => typeof d === "object" && d !== null)
-        .map((d) => ({
-          path: str(d.path) ?? "",
-          oldText: str(d.oldText),
-          newText: str(d.newText) ?? "",
-        }))
-        .filter((d) => d.path !== "")
-      return diffs.length > 0 ? { kind: "diff", diffs } : null
-    }
-    case "read": {
-      if (!Array.isArray(m.lines)) return null
-      const lines = m.lines
-        .filter((l): l is Record<string, unknown> => typeof l === "object" && l !== null)
-        .map((l) => ({ number: num(l.number) ?? 0, text: str(l.text) ?? "" }))
-      return { kind: "read", lines, totalLines: num(m.totalLines) }
-    }
-    case "search": {
-      if (m.shape === "paths" && Array.isArray(m.paths)) {
-        return {
-          kind: "search",
-          paths: m.paths.filter((p): p is string => typeof p === "string"),
-          total: num(m.total),
-        }
-      }
-      if (m.shape === "matches" && Array.isArray(m.files)) {
-        const files = m.files
-          .filter((f): f is Record<string, unknown> => typeof f === "object" && f !== null)
-          .map((f) => ({
-            path: str(f.path) ?? "",
-            matches: Array.isArray(f.matches)
-              ? f.matches
-                  .filter((mt): mt is Record<string, unknown> => typeof mt === "object" && mt !== null)
-                  .map((mt) => ({ lineNumber: num(mt.lineNumber) ?? 0, line: str(mt.line) ?? "" }))
-              : [],
-          }))
-          .filter((f) => f.path !== "")
-        return files.length > 0 ? { kind: "search", files, total: num(m.total) } : null
-      }
-      return null
-    }
-    default:
-      return null
+  if (Array.isArray(m.diffs)) {
+    const diffs = m.diffs
+      .filter((d): d is Record<string, unknown> => typeof d === "object" && d !== null)
+      .map((d) => ({
+        path: str(d.path) ?? "",
+        // `oldText` may be null on the wire (pure insertion) → undefined.
+        oldText: str(d.oldText),
+        newText: str(d.newText) ?? "",
+      }))
+      .filter((d) => d.path !== "")
+    return diffs.length > 0 ? { kind: "diff", diffs } : null
   }
+  if (Array.isArray(m.lines)) {
+    const lines = m.lines
+      .filter((l): l is Record<string, unknown> => typeof l === "object" && l !== null)
+      .map((l) => ({ number: num(l.number) ?? 0, text: str(l.text) ?? "" }))
+    return { kind: "read", lines, totalLines: num(m.totalLines) }
+  }
+  if (m.shape === "paths" && Array.isArray(m.paths)) {
+    return {
+      kind: "search",
+      paths: m.paths.filter((p): p is string => typeof p === "string"),
+      total: num(m.total),
+    }
+  }
+  if (m.shape === "matches" && Array.isArray(m.files)) {
+    const files = m.files
+      .filter((f): f is Record<string, unknown> => typeof f === "object" && f !== null)
+      .map((f) => ({
+        path: str(f.path) ?? "",
+        matches: Array.isArray(f.matches)
+          ? f.matches
+              .filter((mt): mt is Record<string, unknown> => typeof mt === "object" && mt !== null)
+              .map((mt) => ({ lineNumber: num(mt.lineNumber) ?? 0, line: str(mt.line) ?? "" }))
+          : [],
+      }))
+      .filter((f) => f.path !== "")
+    return files.length > 0 ? { kind: "search", files, total: num(m.total) } : null
+  }
+  if (m.card === "terminal") {
+    return { kind: "terminal", terminal: { output: str(m.output), exitCode: num(m.exitCode) } }
+  }
+  return null
 }
 
 /** Everything the TUI needs to draw one tool row, derived once. */

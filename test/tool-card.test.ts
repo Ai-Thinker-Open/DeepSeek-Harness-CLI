@@ -105,6 +105,23 @@ test("buildDiffText renders write calls as a new-file diff", () => {
   expect(built!.diff).toContain("+b")
 })
 
+test("buildDiffText groups hunks into one patch per file", () => {
+  const built = buildDiffText([
+    { path: "a.ts", oldText: "OLD", newText: "NEW" },
+    { path: "a.ts", newText: "INSERTED" },
+  ])
+  expect(built).not.toBeNull()
+  // The OpenTUI viewer only renders the first patch, so a single file must
+  // emit one `---/+++` header followed by both hunks.
+  expect(built!.diff.match(/--- a\/a\.ts/g)).toHaveLength(1)
+  expect(built!.diff).toContain("@@ -1,1 +1,1 @@")
+  expect(built!.diff).toContain("@@ -0,0 +1,1 @@")
+  expect(built!.diff).toContain("-OLD")
+  expect(built!.diff).toContain("+NEW")
+  expect(built!.diff).toContain("+INSERTED")
+  expect(built!.totalLines).toBe(3)
+})
+
 test("buildDiffText caps content lines and reports the real count", () => {
   const built = buildDiffText([{ path: "a.ts", oldText: "1\n2\n3\n4", newText: "5\n6\n7\n8" }], { maxLines: 3 })
   expect(built!.diff).toContain("-1")
@@ -159,6 +176,31 @@ test("parseCardMeta reads the web card shapes from tool/result meta", () => {
   })
   expect(parseCardMeta({ card: "nope" })).toBeNull()
   expect(parseCardMeta(undefined)).toBeNull()
+})
+
+test("parseCardMeta reads the real wire metas without a card discriminator", () => {
+  expect(parseCardMeta({ diffs: [{ path: "a.ts", oldText: "old", newText: "new" }] })).toEqual({
+    kind: "diff",
+    diffs: [{ path: "a.ts", oldText: "old", newText: "new" }],
+  })
+  // `oldText: null` on the wire means a pure insertion → folded to undefined.
+  expect(parseCardMeta({ diffs: [{ path: "a.ts", oldText: null, newText: "new" }] })).toEqual({
+    kind: "diff",
+    diffs: [{ path: "a.ts", oldText: undefined, newText: "new" }],
+  })
+  expect(parseCardMeta({ path: "/x/a.ts", offset: 1, lines: [{ number: 1, text: "x" }], totalLines: 10 })).toEqual({
+    kind: "read",
+    lines: [{ number: 1, text: "x" }],
+    totalLines: 10,
+  })
+  expect(
+    parseCardMeta({ shape: "matches", files: [{ path: "a.ts", matches: [{ lineNumber: 3, line: "x" }] }], total: 1 }),
+  ).toEqual({ kind: "search", files: [{ path: "a.ts", matches: [{ lineNumber: 3, line: "x" }] }], total: 1 })
+  expect(parseCardMeta({ shape: "paths", paths: ["a.ts"], total: 1 })).toEqual({
+    kind: "search",
+    paths: ["a.ts"],
+    total: 1,
+  })
 })
 
 test("web_search keeps its own globe-ish icon while local search stays a magnifier", () => {

@@ -76,7 +76,8 @@ function pickToolCall(text) {
       args: { file_path: "src/app.tsx" },
       output: "12 | const [screen, setScreen] = createSignal(\"home\")\n13 | const [toast, setToast] = createSignal(null)",
       meta: {
-        card: "read",
+        path: "src/app.tsx",
+        offset: 1,
         lines: [
           { number: 12, text: 'const [screen, setScreen] = createSignal("home")' },
           { number: 13, text: "const [toast, setToast] = createSignal(null)" },
@@ -91,7 +92,6 @@ function pickToolCall(text) {
       args: { pattern: "createSignal", path: "src" },
       output: "src/app.tsx:12: const [screen, setScreen] = createSignal(\"home\")",
       meta: {
-        card: "search",
         shape: "matches",
         files: [
           {
@@ -109,7 +109,6 @@ function pickToolCall(text) {
       args: { file_path: "src/app.tsx", old_string: "home", new_string: "session" },
       output: "已修改 src/app.tsx",
       meta: {
-        card: "diff",
         diffs: [{ path: "src/app.tsx", oldText: 'createSignal("home")', newText: 'createSignal("session")' }],
       },
     }

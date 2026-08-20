@@ -366,6 +366,11 @@ test("tool cards render per-variant bodies (bash exit code, edit diff, todo chec
   expect(frame).toContain("Todo · 1/3 done · 1 running")
   // Exit marker is not shown raw in the collapsed row.
   expect(frame).not.toContain("[exit code: 1]")
+  // Edit diff cards auto-expand: the structured change is visible up front
+  // and wins over the args-derived old/new text.
+  expect(frame).toContain("- OLD")
+  expect(frame).toContain("+ NEW")
+  expect(frame).not.toContain("- 旧代码")
 
   const lines = frame.split("\n")
   const bashY = lines.findIndex((line) => line.includes("Bash ·"))
@@ -382,11 +387,8 @@ test("tool cards render per-variant bodies (bash exit code, edit diff, todo chec
   await app.mockMouse.click(lines2[editY]!.indexOf("Edit") + 1, editY)
   await app.renderOnce()
   const afterEdit = app.captureCharFrame()
-  // Structured meta diffs win over args-derived old/new text.
-  expect(afterEdit).toContain("- OLD")
-  expect(afterEdit).toContain("+ NEW")
-  expect(afterEdit).not.toContain("- 旧代码")
-  expect(afterEdit).toContain("src/main.ts")
+  // A click on the auto-expanded card collapses it (no re-expand).
+  expect(afterEdit).not.toContain("- OLD")
 
   const lines3 = afterEdit.split("\n")
   const todoY = lines3.findIndex((line) => line.includes("Todo ·"))
@@ -396,6 +398,58 @@ test("tool cards render per-variant bodies (bash exit code, edit diff, todo chec
   expect(afterTodo).toContain("☑ 调研")
   expect(afterTodo).toContain("◐ 实现")
   expect(afterTodo).toContain("○ 测试")
+})
+
+test("edit tool cards auto-expand to show the file change diff", async () => {
+  const messages: ChatMessage[] = [
+    userMsg("改一下"),
+    assistantMsg("完成", {
+      toolCalls: [
+        {
+          id: "e1",
+          name: "edit",
+          args: { file_path: "src/main.ts", old_string: "OLD", new_string: "NEW" },
+          summary: "src/main.ts",
+          status: "ok",
+          startedAt: 3,
+          finishedAt: 3400,
+        },
+      ],
+      toolResults: [
+        {
+          toolCallId: "e1",
+          ok: true,
+          output: "The file src/main.ts has been updated successfully.",
+          meta: {
+            diffs: [
+              { path: "src/main.ts", oldText: "OLD", newText: "NEW" },
+              { path: "src/main.ts", oldText: null, newText: "INSERTED" },
+            ],
+          },
+        },
+      ],
+    }),
+  ]
+  const app = await renderSession({ messages, height: 40 })
+  await app.renderOnce()
+  await app.renderOnce()
+
+  // The wire meta has no `card` field and the card is expanded by default,
+  // so the added/removed lines are visible without clicking.
+  const frame = app.captureCharFrame()
+  expect(frame).toContain("Edit · src/main.ts")
+  expect(frame).toContain("- OLD")
+  expect(frame).toContain("+ NEW")
+  expect(frame).toContain("+ INSERTED")
+
+  // A manual collapse sticks: the diff does not auto-expand again.
+  const lines = frame.split("\n")
+  const y = lines.findIndex((line) => line.includes("Edit ·"))
+  await app.mockMouse.click(lines[y]!.indexOf("Edit") + 1, y)
+  await app.renderOnce()
+  expect(app.captureCharFrame()).not.toContain("- OLD")
+  await app.renderOnce()
+  expect(app.captureCharFrame()).not.toContain("- OLD")
 })
 
 test("assistant markdown renders blocks and inline styles without raw markers", async () => {

@@ -1,4 +1,4 @@
-import { createMemo, createSignal, For, Show } from "solid-js"
+import { createEffect, createMemo, createSignal, For, Show } from "solid-js"
 import type { ChatMessage } from "../session"
 import type { ToolCallRecord, ToolResultRecord, ToolCallStatus } from "../session"
 import { ACCENT_BORDER, theme } from "../theme"
@@ -109,29 +109,38 @@ function EditCard({ model, args, newOnly }: { model: ToolRowModel; args: Record<
     const path = typeof args.file_path === "string" ? args.file_path : typeof args.path === "string" ? args.path : undefined
     return [{ path, oldText: newOnly ? undefined : pair.oldText, newText: newOnly ? writeText(args) : pair.newText }]
   })
-  const built = createMemo(() => buildDiffText(hunks(), { newFile: newOnly, maxLines: MAX_OUTPUT_LINES }))
-  const paths = createMemo(() => {
-    const out: string[] = []
+  // The OpenTUI viewer renders only the first patch, so build one diff per
+  // file and render them as separate rows.
+  const groups = createMemo(() => {
+    const out: Array<{ path: string; diff: string; totalLines: number }> = []
+    const byPath = new Map<string, ReturnType<typeof hunks>[number][]>()
     for (const hunk of hunks()) {
-      if (hunk.path && !out.includes(hunk.path)) out.push(hunk.path)
+      const path = hunk.path || "file"
+      const group = byPath.get(path) ?? []
+      group.push(hunk)
+      byPath.set(path, group)
+    }
+    for (const [path, group] of byPath) {
+      const built = buildDiffText(group, { newFile: newOnly, maxLines: MAX_OUTPUT_LINES })
+      if (built) out.push({ path, diff: built.diff, totalLines: built.totalLines })
     }
     return out
   })
   return (
     <box flexDirection="column" border={["left"]} borderColor={theme.borderSubtle} paddingLeft={1}>
-      <For each={paths()}>
-        {(path) => (
-          <text fg={theme.textMuted}>
-            <b> {path}</b>
-          </text>
+      <For each={groups()}>
+        {(group) => (
+          <box flexDirection="column">
+            <text fg={theme.textMuted}>
+              <b> {group.path}</b>
+            </text>
+            <diff diff={group.diff} view="unified" showLineNumbers wrapMode="char" />
+            <Show when={group.totalLines > MAX_OUTPUT_LINES}>
+              <text fg={theme.textMuted}>… ({group.totalLines - MAX_OUTPUT_LINES} more lines)</text>
+            </Show>
+          </box>
         )}
       </For>
-      <Show when={built()}>
-        <diff diff={built()!.diff} view="unified" showLineNumbers wrapMode="char" />
-        <Show when={built()!.totalLines > MAX_OUTPUT_LINES}>
-          <text fg={theme.textMuted}>… ({built()!.totalLines - MAX_OUTPUT_LINES} more lines)</text>
-        </Show>
-      </Show>
     </box>
   )
 }
@@ -262,6 +271,7 @@ export function ToolCard({ call, result }: { call: ToolCallRecord; result?: Tool
   const model = createMemo(() => toolRowModel(call, result))
   const [expanded, setExpanded] = createSignal(false)
   const [hovered, setHovered] = createSignal(false)
+  let autoExpanded = false
   const dur =
     call.startedAt && call.finishedAt ? ` (${formatDuration(call.finishedAt - call.startedAt)})` : ""
   const errorLine = createMemo(() => {
@@ -279,6 +289,18 @@ export function ToolCard({ call, result }: { call: ToolCallRecord; result?: Tool
       model().variant === "question",
   )
   const toggle = () => setExpanded((v) => !v)
+  // Show file-change records as soon as the call settles: edit/write cards
+  // (or any result carrying a diff card) expand once by default, so the
+  // added/removed content is visible in the conversation. A manual collapse
+  // stays collapsed.
+  createEffect(() => {
+    if (call.status === "running" || autoExpanded) return
+    const variant = model().variant
+    if (variant === "edit" || variant === "write" || model().card?.kind === "diff") {
+      autoExpanded = true
+      setExpanded(true)
+    }
+  })
   return (
     <box flexDirection="column" paddingLeft={2} marginTop={1}>
       <box
