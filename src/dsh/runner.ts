@@ -64,7 +64,9 @@ export function apply(ctx: DshContext, config: TuiRunnerConfig = {}): void {
     process.stderr.write(`[dsh-cli] runner loaded from ${import.meta.url}, client at ${cliPath}\n`)
   }
 
-  const child = internals.spawn("bun", [cliPath], {
+  // Forward the continue flag so the client attaches to the last session.
+  const cliArgs = startup?.continueLast ? ["--continue"] : []
+  const child = internals.spawn("bun", [cliPath, ...cliArgs], {
     stdio: "inherit",
     env: { ...process.env, DSH_URL: url, DSH_CWD: cwd },
   })

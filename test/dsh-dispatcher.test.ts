@@ -71,6 +71,19 @@ test("dispatcher reuses a reachable harness and runs the client directly", async
   expect(calls[0]?.options.env?.DSH_CWD).toBe(process.cwd())
 })
 
+test("dispatcher forwards -c to the client when the harness is reachable", async () => {
+  const { calls, children } = installSpawn()
+  dispatcherInternals.probe = async () => true
+
+  const pending = run(["-c"])
+  await settle()
+  children[0]?.emit("exit", 0)
+  await expect(pending).resolves.toBe(0)
+
+  expect(calls).toHaveLength(1)
+  expect(calls[0]?.args).toContain("-c")
+})
+
 test("dispatcher boots dsh --profile tui when the profile already has the bundle", async () => {
   const { calls, children } = installSpawn()
   const { calls: syncCalls } = installSpawnSync({ "--help": { status: 0 }, plugin: { status: 0 } })

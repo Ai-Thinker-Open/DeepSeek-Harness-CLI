@@ -24,6 +24,8 @@ export interface TuiStartupValues {
   port: number
   /** Workspace directory for new sessions, absent when not named. */
   cwd: string | undefined
+  /** Resume the most recently used session on startup (`-c`/`--continue`). */
+  continueLast: boolean
 }
 
 /** Process streams the parser writes to; tests substitute captures. */
@@ -43,6 +45,7 @@ Options:
   --host <host>   bind host (loopback only; default 127.0.0.1)
   --port <port>   listen port; pass 0 to let the OS pick a free one (default 3080)
   --cwd <dir>     workspace directory for new sessions (default: invoking directory)
+  -c, --continue  resume the last session instead of starting a new one
   -h, --help      show this help
 `
 
@@ -67,6 +70,7 @@ export function apply(ctx: DshContext): void {
   let host: string | undefined
   let port: number | undefined
   let cwd: string | undefined
+  let continueLast = false
 
   const valueOf = (
     argv: readonly string[],
@@ -124,6 +128,8 @@ export function apply(ctx: DshContext): void {
       }
       cwd = value.value
       i = value.next
+    } else if (arg === "-c" || arg === "--continue") {
+      continueLast = true
     } else {
       fail(ctx, `error: unknown option '${arg}'`)
       return
@@ -140,5 +146,6 @@ export function apply(ctx: DshContext): void {
     host: resolvedHost,
     port: port ?? 3080,
     cwd,
+    continueLast,
   } satisfies TuiStartupValues)
 }

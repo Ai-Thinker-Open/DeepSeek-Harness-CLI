@@ -2,7 +2,7 @@
 import { expect, test } from "bun:test"
 import { testRender } from "@opentui/solid"
 import { App } from "../src/app"
-import type { HarnessClientLike, HostDescribe, ServerRequest, SessionEvent } from "../src/harness/client"
+import type { HarnessClientLike, HostDescribe, ServerRequest, SessionEvent, SessionSummary } from "../src/harness/client"
 
 type SpanLike = { text: string; fg: { r: number; g: number; b: number } }
 type FrameLike = { captureSpans: () => { lines: Array<{ spans: SpanLike[] }> } }
@@ -23,9 +23,11 @@ class FakeClient implements HarnessClientLike {
   describeResult: HostDescribe = { version: "mock", cwd: "/tmp", attachedSessions: 0, canOpenPath: true }
   failDescribe = false
   created = 0
+  resumedId: string | null = null
   prompts: Array<{ sessionId: string; text: string }> = []
   commandCalls: string[] = []
   selectedModel: { provider: string; model: string } | null = null
+  sessionsResult: SessionSummary[] = []
   private frames: ServerRequest[] = []
   private waiters: Array<(r: IteratorResult<ServerRequest>) => void> = []
   private closed = false
@@ -35,7 +37,11 @@ class FakeClient implements HarnessClientLike {
     return this.describeResult
   }
 
-  async createSession() {
+  async createSession(_cwd?: string, _agentPreset?: string, sessionId?: string) {
+    if (sessionId) {
+      this.resumedId = sessionId
+      return { sessionId }
+    }
     this.created += 1
     return { sessionId: `s-${this.created}` }
   }
@@ -56,7 +62,7 @@ class FakeClient implements HarnessClientLike {
   }
 
   async listSessions() {
-    return { items: [] }
+    return { items: this.sessionsResult }
   }
 
   async commandList() {
@@ -629,4 +635,35 @@ test("connection failure shows an error toast and stays on home", async () => {
   expect(frame).toContain("无法连接 DeepSeek Harness")
   expect(frame).toContain("DeepSeek Harness CLI")
   expect(frame).not.toContain("发送消息开始对话")
+})
+
+test("continueLast resumes the newest session and jumps into it", async () => {
+  const client = new FakeClient()
+  client.sessionsResult = [
+    { sessionId: "s-older", updatedAt: 10, running: false, blank: false },
+    { sessionId: "s-newer", updatedAt: 20, running: false, blank: false },
+    { sessionId: "s-blank", updatedAt: 30, running: false, blank: true },
+  ]
+  const app = await testRender(() => <App client={client} continueLast />, { width: 80, height: 32 })
+  await app.renderOnce()
+  await tick(80)
+  await app.renderOnce()
+
+  const frame = app.captureCharFrame()
+  // The session screen shows the (empty) resumed conversation.
+  expect(frame).toContain("发送消息开始对话")
+  expect(client.resumedId).toBe("s-newer")
+})
+
+test("continueLast without sessions stays on home with a toast", async () => {
+  const client = new FakeClient()
+  const app = await testRender(() => <App client={client} continueLast />, { width: 80, height: 32 })
+  await app.renderOnce()
+  await tick(80)
+  await app.renderOnce()
+
+  const frame = app.captureCharFrame()
+  expect(frame).toContain("DeepSeek Harness CLI")
+  expect(frame).not.toContain("发送消息开始对话")
+  expect(frame).toContain("没有可继续的会话")
 })

@@ -1,4 +1,4 @@
-import { Show, createEffect, createSignal, onCleanup } from "solid-js"
+import { Show, createEffect, createSignal, onCleanup, onMount } from "solid-js"
 import { useKeyboard, useRenderer, useSelectionHandler } from "@opentui/solid"
 import { copySelection } from "./clipboard"
 import { Toast, type ToastMessage } from "./components/toast"
@@ -47,7 +47,7 @@ function planTaskMessage(line: string, name: string): string | undefined {
   return args
 }
 
-export function App(props: { client?: HarnessClientLike } = {}) {
+export function App(props: { client?: HarnessClientLike; continueLast?: boolean } = {}) {
   const renderer = useRenderer()
   const [mode, setMode] = createSignal<PermissionMode>("workspace-write")
   const [toast, setToast] = createSignal<ToastMessage | null>(null)
@@ -67,6 +67,28 @@ export function App(props: { client?: HarnessClientLike } = {}) {
   onCleanup(() => {
     if (toastTimer) clearTimeout(toastTimer)
     session.dispose()
+  })
+
+  // `-c`/`--continue`: attach to the most recently used session and jump
+  // straight into it, with its history loaded by the resume flow.
+  onMount(() => {
+    if (!props.continueLast) return
+    void (async () => {
+      const items = await session.listSessions()
+      const last = [...items].sort((a, b) => b.updatedAt - a.updatedAt)[0]
+      if (!last) {
+        showToast("没有可继续的会话（或 harness 未连接）", "error")
+        return
+      }
+      const ok = await session.resumeSession(last.sessionId)
+      if (!ok) {
+        showToast("继续上次会话失败，请检查 harness 连接", "error")
+        return
+      }
+      void session.refreshCommands()
+      void refreshSkills()
+      setScreen("session")
+    })()
   })
 
   useKeyboard((key) => {

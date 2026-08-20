@@ -127,7 +127,7 @@ export async function run(args: readonly string[]): Promise<number> {
 
   if (await internals.probe(url)) {
     // An instance is already serving: run the terminal client directly.
-    const child = internals.spawn("bun", [TUI_CLI], {
+    const child = internals.spawn("bun", [TUI_CLI, ...args], {
       stdio: "inherit",
       env: { ...process.env, DSH_URL: url, DSH_CWD: process.cwd() },
     })

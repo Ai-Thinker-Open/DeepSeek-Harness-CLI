@@ -53,4 +53,9 @@ const fatal = (err: unknown) => {
 process.on("uncaughtException", fatal)
 process.on("unhandledRejection", fatal)
 
-await render(() => <App />, renderer)
+// `-c` / `--continue` resume the last session on startup; the flag reaches
+// this client either directly (`dsh-cli -c`) or forwarded by the tui runner
+// (`dsh --profile tui -c`), so scan the whole argv for it.
+const continueLast = process.argv.includes("-c") || process.argv.includes("--continue")
+
+await render(() => <App continueLast={continueLast} />, renderer)

@@ -33,7 +33,7 @@ function installSpawn() {
 test("tui-runner spawns the client with the bound URL and workspace", () => {
   const { calls, child } = installSpawn()
   const { ctx, exitCalls } = fakeCtx({ webServer: { host: "127.0.0.1", port: 4123 } })
-  apply(ctx, { startup: { host: "127.0.0.1", port: 4123, cwd: "/ws" } })
+  apply(ctx, { startup: { host: "127.0.0.1", port: 4123, cwd: "/ws", continueLast: false } })
 
   expect(calls).toHaveLength(1)
   expect(calls[0]?.command).toBe("bun")
@@ -43,6 +43,16 @@ test("tui-runner spawns the client with the bound URL and workspace", () => {
 
   child()?.emit("exit", 3)
   expect(exitCalls).toEqual([3])
+})
+
+test("tui-runner forwards --continue to the client", () => {
+  const { calls, child } = installSpawn()
+  const { ctx } = fakeCtx({ webServer: { host: "127.0.0.1", port: 4123 } })
+  apply(ctx, { startup: { host: "127.0.0.1", port: 4123, cwd: "/ws", continueLast: true } })
+
+  expect(calls[0]?.args).toContain("--continue")
+  expect(calls[0]?.args[calls[0]!.args.length - 1]).toBe("--continue")
+  child()?.emit("exit", 0)
 })
 
 test("tui-runner defaults the workspace to the process cwd", () => {
