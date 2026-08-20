@@ -51,7 +51,9 @@ export function App(props: { client?: HarnessClientLike; continueLast?: boolean;
   const renderer = useRenderer()
   const [mode, setMode] = createSignal<PermissionMode>("workspace-write")
   const [toast, setToast] = createSignal<ToastMessage | null>(null)
-  const [screen, setScreen] = createSignal<"home" | "session">("home")
+  // With `-c`/`--continue` the app should land directly in the resumed
+  // session; keep the home screen only for a normal (or failed) startup.
+  const [screen, setScreen] = createSignal<"home" | "session">(props.continueLast ? "session" : "home")
   const [commandOpen, setCommandOpen] = createSignal(false)
   const [resultOverride, setResultOverride] = createSignal<CommandResultView | null>(null)
   const [skills, setSkills] = createSignal<SkillEntry[]>([])
@@ -78,11 +80,13 @@ export function App(props: { client?: HarnessClientLike; continueLast?: boolean;
       const last = [...items].sort((a, b) => b.updatedAt - a.updatedAt)[0]
       if (!last) {
         showToast("没有可继续的会话（或 harness 未连接）", "error")
+        setScreen("home")
         return
       }
       const ok = await session.resumeSession(last.sessionId)
       if (!ok) {
         showToast("继续上次会话失败，请检查 harness 连接", "error")
+        setScreen("home")
         return
       }
       void session.refreshCommands()

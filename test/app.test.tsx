@@ -655,6 +655,22 @@ test("continueLast resumes the newest session and jumps into it", async () => {
   expect(client.resumedId).toBe("s-newer")
 })
 
+test("continueLast opens the session screen immediately without a home flash", async () => {
+  const client = new FakeClient()
+  client.sessionsResult = [
+    { sessionId: "s-newer", updatedAt: 20, running: false, blank: false, cwd: process.cwd() },
+  ]
+  const app = await testRender(() => <App client={client} continueLast />, { width: 80, height: 32 })
+  await app.renderOnce()
+
+  // The very first frame is already the session screen, not the home page.
+  expect(app.captureCharFrame()).toContain("发送消息开始对话")
+  expect(app.captureCharFrame()).not.toContain("DeepSeek Harness CLI")
+  await tick(80)
+  await app.renderOnce()
+  expect(client.resumedId).toBe("s-newer")
+})
+
 test("continueLast without sessions stays on home with a toast", async () => {
   const client = new FakeClient()
   const app = await testRender(() => <App client={client} continueLast />, { width: 80, height: 32 })
