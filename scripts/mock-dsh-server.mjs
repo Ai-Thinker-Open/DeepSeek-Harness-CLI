@@ -288,6 +288,7 @@ async function handleRpc(req) {
     case "session.rename":
       return respond(ok({}))
     case "session.models":
+      console.log(`[dsh-mock] session.models`)
       return respond(
         ok({
           current: { provider: "deepseek", model: "deepseek-v4" },

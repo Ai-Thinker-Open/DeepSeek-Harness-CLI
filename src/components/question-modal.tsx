@@ -87,17 +87,16 @@ export function QuestionModal(props: {
         </Show>
         <box flexDirection="column" marginTop={1}>
           <For each={q.options}>
-            {(option, i) => {
-              const active = i() === sel()
-              return (
-                <box backgroundColor={active ? kindColor : undefined}>
-                  <text fg={active ? theme.background : theme.text} wrapMode="char">
-                    {active ? "› " : "  "}
-                    {option}
-                  </text>
-                </box>
-              )
-            }}
+            {(option, i) => (
+              // Same untrack caveat as the result panel: keep i()/sel() inline
+              // in the props so the highlight follows arrow-key selection.
+              <box backgroundColor={i() === sel() ? kindColor : undefined}>
+                <text fg={i() === sel() ? theme.background : theme.text} wrapMode="char">
+                  {i() === sel() ? "› " : "  "}
+                  {option}
+                </text>
+              </box>
+            )}
           </For>
         </box>
         <text fg={theme.textMuted}>↑↓ 选择 · Enter 确认 · Esc 拒绝</text>

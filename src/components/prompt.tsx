@@ -339,14 +339,21 @@ export function Prompt(props: {
             {(row) => {
               const interactive = typeof row !== "string" && row.onClick !== undefined
               const realIndex = resultRows().indexOf(row)
-              const selected = interactive && resultMatches()[resultSelected()]?.i === realIndex
               const label = typeof row === "string" ? row : row.text
               return interactive ? (
                 <box
                   width="100%"
                   paddingLeft={1}
                   paddingRight={1}
-                  backgroundColor={selected ? theme.primary : RGBA.fromInts(0, 0, 0, 0)}
+                  // Keep the signal access inline in the prop: Solid's <For>
+                  // evaluates row renderers inside untrack(), so a const
+                  // computed here would never re-run when resultSelected
+                  // changes and the highlight would freeze.
+                  backgroundColor={
+                    interactive && resultMatches()[resultSelected()]?.i === realIndex
+                      ? theme.primary
+                      : RGBA.fromInts(0, 0, 0, 0)
+                  }
                   onMouse={(evt) => {
                     if (evt.type === "over" && typeof row !== "string") {
                       const idx = resultMatches().findIndex((x) => x.i === realIndex)
@@ -363,7 +370,7 @@ export function Prompt(props: {
                     }
                   }}
                 >
-                  <text fg={selected ? theme.text : theme.text} wrapMode="char">
+                  <text fg={theme.text} wrapMode="char">
                     {label}
                   </text>
                 </box>
