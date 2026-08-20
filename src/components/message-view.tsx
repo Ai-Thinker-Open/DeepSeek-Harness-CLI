@@ -261,6 +261,7 @@ function ToolBody({ model, args }: { model: ToolRowModel; args: Record<string, u
 export function ToolCard({ call, result }: { call: ToolCallRecord; result?: ToolResultRecord }) {
   const model = createMemo(() => toolRowModel(call, result))
   const [expanded, setExpanded] = createSignal(false)
+  const [hovered, setHovered] = createSignal(false)
   const dur =
     call.startedAt && call.finishedAt ? ` (${formatDuration(call.finishedAt - call.startedAt)})` : ""
   const errorLine = createMemo(() => {
@@ -284,11 +285,15 @@ export function ToolCard({ call, result }: { call: ToolCallRecord; result?: Tool
         flexDirection="row"
         width="100%"
         onMouse={(evt) => {
-          if (evt.type === "down" && evt.button === 0 && expandable()) toggle()
+          if (evt.type === "over") setHovered(true)
+          else if (evt.type === "out") setHovered(false)
+          else if (evt.type === "down" && evt.button === 0 && expandable()) toggle()
         }}
       >
         <text fg={theme.textMuted}>
-          <Show when={expandable()}>
+          {/* The expand hint only appears while hovering the row, so the
+              leading icon stays clean until the row is interactive. */}
+          <Show when={expandable() && hovered()}>
             <span>{expanded() ? "▾" : "▸"} </span>
           </Show>
           <span>{model().icon}</span>

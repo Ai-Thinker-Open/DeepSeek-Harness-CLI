@@ -263,6 +263,45 @@ test("assistant messages collapse thinking and render tool cards", async () => {
   expect(frame3).toContain("test")
 })
 
+test("tool card expand hint only appears while hovering the row", async () => {
+  const messages: ChatMessage[] = [
+    assistantMsg("", {
+      toolCalls: [
+        {
+          id: "c1",
+          name: "bash",
+          args: { command: "ls" },
+          summary: "ls",
+          status: "ok",
+          startedAt: 2,
+          finishedAt: 3_400,
+        },
+      ],
+      toolResults: [{ toolCallId: "c1", ok: true, output: "src\ntest" }],
+    }),
+  ]
+  const app = await renderSession({ messages })
+  await app.renderOnce()
+
+  // No leading collapse icon while the pointer is away.
+  const idle = app.captureCharFrame()
+  expect(idle).toContain("Bash · ls")
+  expect(idle).not.toContain("▸")
+
+  // Hovering the row reveals the collapse icon.
+  const lines = idle.split("\n")
+  const y = lines.findIndex((line) => line.includes("Bash ·"))
+  const x = lines[y]?.indexOf("Bash") ?? 0
+  await app.mockMouse.moveTo(x + 1, y)
+  await app.renderOnce()
+  expect(app.captureCharFrame()).toContain("▸")
+
+  // Moving away hides it again.
+  await app.mockMouse.moveTo(1, 31)
+  await app.renderOnce()
+  expect(app.captureCharFrame()).not.toContain("▸")
+})
+
 test("tool cards render per-variant bodies (bash exit code, edit diff, todo checklist)", async () => {
   const messages: ChatMessage[] = [
     assistantMsg("", {
