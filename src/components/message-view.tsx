@@ -4,6 +4,7 @@ import type { ToolCallRecord, ToolResultRecord, ToolCallStatus } from "../sessio
 import { ACCENT_BORDER, theme } from "../theme"
 import { CONTEXT_FORM_LABELS } from "../harness/fold"
 import {
+  buildDiffText,
   editPair,
   questionItems,
   todoItems,
@@ -12,6 +13,7 @@ import {
   type ToolRowModel,
 } from "../harness/tool-card"
 import { MarkdownText } from "./markdown"
+import { ShineText } from "./shine-text"
 
 /** While a message is streaming, only render its tail so layout stays cheap. */
 const STREAMING_CONTENT_TAIL = 4000
@@ -100,27 +102,21 @@ function ReadCard({ model }: { model: ToolRowModel }) {
 }
 
 function EditCard({ model, args, newOnly }: { model: ToolRowModel; args: Record<string, unknown>; newOnly?: boolean }) {
-  const lines = createMemo(() => {
-    const out: Array<{ sign: "+" | "-"; text: string }> = []
+  const hunks = createMemo(() => {
     const hunks = model.card?.kind === "diff" ? model.card.diffs ?? null : null
-    if (hunks) {
-      for (const hunk of hunks) {
-        if (hunk.oldText) for (const line of hunk.oldText.split("\n")) out.push({ sign: "-", text: line })
-        if (hunk.newText) for (const line of hunk.newText.split("\n")) out.push({ sign: "+", text: line })
-      }
-      return out
-    }
+    if (hunks) return hunks.map((h) => ({ path: h.path, oldText: h.oldText, newText: h.newText }))
     const pair = editPair(args)
-    if (!newOnly && pair.oldText) {
-      for (const line of pair.oldText.split("\n")) out.push({ sign: "-", text: line })
-    }
-    const newText = newOnly ? writeText(args) : pair.newText
-    if (newText) {
-      for (const line of newText.split("\n")) out.push({ sign: "+", text: line })
+    const path = typeof args.file_path === "string" ? args.file_path : typeof args.path === "string" ? args.path : undefined
+    return [{ path, oldText: newOnly ? undefined : pair.oldText, newText: newOnly ? writeText(args) : pair.newText }]
+  })
+  const built = createMemo(() => buildDiffText(hunks(), { newFile: newOnly, maxLines: MAX_OUTPUT_LINES }))
+  const paths = createMemo(() => {
+    const out: string[] = []
+    for (const hunk of hunks()) {
+      if (hunk.path && !out.includes(hunk.path)) out.push(hunk.path)
     }
     return out
   })
-  const paths = createMemo(() => (model.card?.kind === "diff" ? (model.card.diffs ?? []).map((d) => d.path) : []))
   return (
     <box flexDirection="column" border={["left"]} borderColor={theme.borderSubtle} paddingLeft={1}>
       <For each={paths()}>
@@ -130,15 +126,11 @@ function EditCard({ model, args, newOnly }: { model: ToolRowModel; args: Record<
           </text>
         )}
       </For>
-      <For each={lines().slice(0, MAX_OUTPUT_LINES)}>
-        {(item) => (
-          <text fg={item.sign === "+" ? theme.success : theme.error} wrapMode="char">
-            {item.sign} {item.text || " "}
-          </text>
-        )}
-      </For>
-      <Show when={lines().length > MAX_OUTPUT_LINES}>
-        <text fg={theme.textMuted}>… ({lines().length - MAX_OUTPUT_LINES} more lines)</text>
+      <Show when={built()}>
+        <diff diff={built()!.diff} view="unified" showLineNumbers wrapMode="char" />
+        <Show when={built()!.totalLines > MAX_OUTPUT_LINES}>
+          <text fg={theme.textMuted}>… ({built()!.totalLines - MAX_OUTPUT_LINES} more lines)</text>
+        </Show>
       </Show>
     </box>
   )
@@ -300,7 +292,15 @@ export function ToolCard({ call, result }: { call: ToolCallRecord; result?: Tool
             <span>{expanded() ? "▾" : "▸"} </span>
           </Show>
           <span>{model().icon}</span>
-          <b> {model().title}</b>
+          <Show when={call.status !== "running"}>
+            <b> {model().title}</b>
+          </Show>
+        </text>
+        <Show when={call.status === "running"}>
+          <text fg={theme.textMuted}> </text>
+          <ShineText text={model().title} />
+        </Show>
+        <text fg={theme.textMuted}>
           <Show when={model().summary || errorLine()}>
             <span style={{ fg: call.status === "error" && errorLine() ? theme.error : theme.textMuted }}>
               {" · "}
@@ -315,11 +315,6 @@ export function ToolCard({ call, result }: { call: ToolCallRecord; result?: Tool
           </Show>
         </text>
       </box>
-      <Show when={call.status === "running"}>
-        <box paddingLeft={2}>
-          <text fg={theme.textMuted}>运行中…</text>
-        </box>
-      </Show>
       <Show when={expanded() && call.status !== "running"}>
         <ToolBody model={model()} args={(call.args ?? {}) as Record<string, unknown>} />
         <Show when={result?.truncated}>

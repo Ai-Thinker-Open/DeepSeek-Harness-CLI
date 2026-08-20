@@ -1,14 +1,9 @@
 import { For, Show, createEffect, createSignal, onCleanup } from "solid-js"
-import { theme, tint } from "../theme"
+import { theme } from "../theme"
+import { SHINE_STOPS, SWEEP_STEP_MS, shineSpans } from "./shine-text"
 
 const LIGHT_COUNT = 4
 const LIGHTS = Array.from({ length: LIGHT_COUNT }, (_, i) => i)
-/** Shine sweep cadence; the light dots advance every other tick. */
-const SWEEP_STEP_MS = 110
-/** Width of the moving highlight band sweeping left → right over the text. */
-const SHINE_WIDTH = 4
-/** Per-position brightness of the band: head brightest, tail fades out. */
-const SHINE_STOPS = [0.55, 0.34, 0.18, 0.08]
 
 /**
  * Busy status row. While `animated` is true, the text is followed by a
@@ -37,17 +32,7 @@ export function StatusMarquee(props: { text: string; animated?: boolean }) {
 
   const lightPos = () => Math.floor(tick() / 2) % LIGHT_COUNT
   /** Text chars with the moving shine band; base is brand blue. */
-  const spans = () => {
-    const t = props.text
-    if (!t) return []
-    const total = t.length + SHINE_WIDTH
-    const start = tick() % total
-    return t.split("").map((ch, i) => {
-      const dist = (i - start + total) % total
-      if (dist >= SHINE_WIDTH) return { ch, fg: theme.primary }
-      return { ch, fg: tint(theme.primary, theme.text, SHINE_STOPS[dist] ?? 0) }
-    })
-  }
+  const spans = () => shineSpans(props.text, tick())
 
   return (
     <Show when={props.animated} fallback={<text fg={theme.textMuted}>{props.text}</text>}>

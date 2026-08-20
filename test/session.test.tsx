@@ -235,7 +235,8 @@ test("assistant messages collapse thinking and render tool cards", async () => {
   expect(frame).toContain("Think")
   expect(frame).not.toContain("点击展开")
   expect(frame).not.toContain("行 ·")
-  expect(frame).toContain("运行中…")
+  expect(frame).not.toContain("运行中…")
+  expect(frame).toContain("Bash · echo hi")
   expect(frame).toContain("echo hi")
   expect(frame).toContain("Bash · ls")
   // Tool cards are collapsed by default; output stays hidden until expanded.
