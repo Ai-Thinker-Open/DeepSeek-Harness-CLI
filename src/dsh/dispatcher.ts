@@ -9,7 +9,7 @@ import { spawn, spawnSync } from "node:child_process"
 import { existsSync, readFileSync, readdirSync } from "node:fs"
 import { homedir } from "node:os"
 import { dirname, join } from "node:path"
-import { fileURLToPath } from "node:url"
+import { fileURLToPath, pathToFileURL } from "node:url"
 export { bootstrapAll } from "./bootstrap"
 
 export const DEFAULT_HARNESS_URL = "http://127.0.0.1:3080"
@@ -139,7 +139,7 @@ export async function run(args: readonly string[]): Promise<number> {
   if (!profileHasBundle()) {
     const setup = internals.spawnSync(
       dsh.bin,
-      [...dsh.prefix, "plugin", "--profile", PROFILE_NAME, "add", `file:${PKG_ROOT}`],
+      [...dsh.prefix, "plugin", "--profile", PROFILE_NAME, "add", pathToFileURL(PKG_ROOT).href],
       { stdio: "inherit" },
     )
     if (setup.status !== 0) return setup.status ?? 1
