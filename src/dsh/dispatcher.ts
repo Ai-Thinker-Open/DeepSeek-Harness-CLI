@@ -10,6 +10,7 @@ import { existsSync, readFileSync, readdirSync } from "node:fs"
 import { homedir } from "node:os"
 import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
+export { bootstrapAll } from "./bootstrap"
 
 export const DEFAULT_HARNESS_URL = "http://127.0.0.1:3080"
 export const PROFILE_NAME = "tui"

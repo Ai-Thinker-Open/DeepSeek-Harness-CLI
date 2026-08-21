@@ -22,6 +22,7 @@
 - **队列停靠**：待发 / 引导中的消息可直接编辑、移除或发送
 - **统计栏**：轮次、步骤、LLM/工具耗时、首 token 平均、缓存命中率、token 用量
 - **健壮连接**：断线自动重连、流式卡死看门狗、从持久历史恢复会话
+- **首次启动自动安装**：自动安装 Ai-Thinker skills 技能集与 FlashKey MCP 服务器（SSE）
 
 ## 环境要求
 
@@ -118,6 +119,12 @@ dsh --profile tui -c                     # 恢复最近会话
 | `DSH_TOOLS_MODE` | 进程级 Code Mode 开关（透传给 tools 行） |
 | `OPENTUI_IMAGE_PROTOCOL` | 图标渲染协议覆盖：`auto` / `kitty` / `sixel` / `blocks` |
 | `OPENTUI_GRAPHICS` | 置为 `false` 关闭 Kitty/Sixel 检测（图标回退为字形） |
+| `DSH_SKIP_BOOTSTRAP` | 置 `1` 完全跳过首次启动的资源安装 |
+| `DSH_NO_SKILLS` | 置 `1` 跳过 Ai-Thinker skills 安装 |
+| `DSH_NO_FLASHKEY` | 置 `1` 跳过 FlashKey MCP 安装 |
+| `AT_SKILLS_URL` | skills 仓库 git 地址（默认 `https://github.com/Ai-Thinker-Open/skills.git`） |
+| `FLASHKEY_INSTALL_URL` | flashkey-mcp 的 pip/uv 安装源（支持镜像覆盖） |
+| `FLASHKEY_SSE_PORT` | FlashKey SSE 常驻端口（默认 `8100`） |
 
 ## 常用操作
 

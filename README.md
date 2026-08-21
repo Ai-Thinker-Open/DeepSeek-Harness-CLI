@@ -22,6 +22,7 @@ It drives a locally running DeepSeek Harness instance: sessions, tool calls, per
 - **Queue dock**: pending / steering messages can be edited, removed or sent inline
 - **Stats bar**: turns, steps, LLM/tool time, average first-token latency, cache-hit ratio and token usage
 - **Resilient connection**: auto-reconnect, a streaming stall watchdog and recovery from durable history
+- **First-run bootstrap**: automatically installs the Ai-Thinker skills collection and the FlashKey MCP server (SSE) on first launch
 
 ## Requirements
 
@@ -118,6 +119,12 @@ Once started, the `tui-runner` plugin reads the bound web-server address, spawns
 | `DSH_TOOLS_MODE` | Process-wide Code Mode opt-in (forwarded to the tools row) |
 | `OPENTUI_IMAGE_PROTOCOL` | Icon rendering protocol override: `auto` / `kitty` / `sixel` / `blocks` |
 | `OPENTUI_GRAPHICS` | Set to `false` to disable Kitty/Sixel detection (icons fall back to glyphs) |
+| `DSH_SKIP_BOOTSTRAP` | Set to `1` to skip first-run resource installation entirely |
+| `DSH_NO_SKILLS` | Set to `1` to skip installing the Ai-Thinker skills collection |
+| `DSH_NO_FLASHKEY` | Set to `1` to skip installing the FlashKey MCP server |
+| `AT_SKILLS_URL` | Git URL of the skills repository (default: `https://github.com/Ai-Thinker-Open/skills.git`) |
+| `FLASHKEY_INSTALL_URL` | pip/uv install spec for flashkey-mcp (mirror override supported) |
+| `FLASHKEY_SSE_PORT` | FlashKey SSE daemon port (default `8100`) |
 
 ## Usage
 

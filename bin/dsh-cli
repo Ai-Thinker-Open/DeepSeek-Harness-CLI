@@ -13,5 +13,8 @@ if (!existsSync(dispatcher)) {
   if (build.status !== 0) process.exit(build.status ?? 1)
 }
 
-const { run } = await import(dispatcher)
+const { run, bootstrapAll } = await import(dispatcher)
+// First-run resources (Ai-Thinker skills + FlashKey MCP) install best-effort
+// before the harness boots so the profile rows exist before dsh starts.
+await bootstrapAll()
 process.exit(await run(process.argv.slice(2)))
