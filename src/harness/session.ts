@@ -759,7 +759,7 @@ export function createHarnessSession(
     try {
       const { events, projections } = await client.history(sessionId)
       applyPlanProjection(projections)
-      applyStatsProjections(projections)
+      applyHistoryStats(projections, events)
       const fresh = foldHistory(events.map((e) => e.event))
       if (fresh.length === 0) return
       model = fresh
@@ -851,7 +851,7 @@ export function createHarnessSession(
       const seed = seededHistory.get(target)
       if (seed && seed.events.length > 0) {
         seededHistory.delete(target)
-        applyStatsProjections(seed.projections)
+        applyHistoryStats(seed.projections, seed.events)
         applyPlanProjection(seed.projections)
         const fresh = foldHistory(seed.events.map((e) => e.event))
         if (fresh.length > 0) {
@@ -1026,6 +1026,121 @@ export function createHarnessSession(
       firstTokenMs: ttftSteps > 0 ? ttftMs / ttftSteps : null,
       firstTokenSumMs: ttftMs || statsModel.firstTokenSumMs,
       firstTokenCount: ttftSteps || statsModel.firstTokenCount,
+    }
+    syncStats()
+  }
+
+  /** Derive session stats from a history event list (no projection needed). */
+  function statsFromEvents(entries: HistoryEntry[]): SessionStats {
+    const usageByStep = new Map<string, { in: number; out: number; cr: number; cw: number }>()
+    const stepStart = new Map<string, number>()
+    const stepFirstToken = new Map<string, number>()
+    let turns = 0
+    let steps = 0
+    let llmMs = 0
+    let firstTokenSumMs = 0
+    let firstTokenCount = 0
+    for (const entry of entries) {
+      const ev = entry.event
+      const turn = ev.data?.turn
+      const step = ev.data?.step
+      const key = step !== undefined ? `${turn}:${step}` : undefined
+      switch (ev.type) {
+        case "turn/start":
+          turns++
+          break
+        case "step/start":
+          steps++
+          if (key) stepStart.set(key, ev.time)
+          break
+        case "step/end":
+          if (key && stepStart.has(key)) {
+            llmMs += Math.max(0, ev.time - (stepStart.get(key) as number))
+            stepStart.delete(key)
+          }
+          break
+        case "assistant/chunk": {
+          const chunk = ev.data?.chunk as { type?: string } | undefined
+          if (key && stepStart.has(key) && !stepFirstToken.has(key) && chunk?.type) {
+            stepFirstToken.set(key, ev.time)
+            firstTokenSumMs += Math.max(0, ev.time - (stepStart.get(key) as number))
+            firstTokenCount++
+          }
+          const usage = (chunk as { usage?: Record<string, number> } | undefined)?.usage
+          if (usage && key) {
+            usageByStep.set(key, {
+              in: usage.inputTokens ?? 0,
+              out: usage.outputTokens ?? 0,
+              cr: usage.cacheReadTokens ?? 0,
+              cw: usage.cacheWriteTokens ?? 0,
+            })
+          }
+          break
+        }
+        case "assistant/message": {
+          const usage = (ev.data as { usage?: Record<string, number> }).usage
+          if (usage && key) {
+            // The final message sample replaces the step's earlier sample.
+            usageByStep.set(key, {
+              in: usage.inputTokens ?? 0,
+              out: usage.outputTokens ?? 0,
+              cr: usage.cacheReadTokens ?? 0,
+              cw: usage.cacheWriteTokens ?? 0,
+            })
+          }
+          break
+        }
+      }
+    }
+    let inTokens = 0
+    let outTokens = 0
+    let cacheReadTokens = 0
+    let cacheWriteTokens = 0
+    for (const u of usageByStep.values()) {
+      inTokens += u.in
+      outTokens += u.out
+      cacheReadTokens += u.cr
+      cacheWriteTokens += u.cw
+    }
+    return {
+      turns,
+      steps,
+      llmMs,
+      toolMs: 0,
+      inTokens,
+      outTokens,
+      cacheReadTokens,
+      cacheWriteTokens,
+      reasoningTokens: 0,
+      firstTokenMs: firstTokenCount > 0 ? firstTokenSumMs / firstTokenCount : null,
+      firstTokenSumMs,
+      firstTokenCount,
+    }
+  }
+
+  /** Restore stats from projections, filling any gaps from the event list. */
+  function applyHistoryStats(projections: Record<string, unknown> | undefined, entries: HistoryEntry[]): void {
+    applyStatsProjections(projections)
+    const derived = statsFromEvents(entries)
+    if (process.env.DSH_DEBUG) console.error("[dsh] stats restore", JSON.stringify({ projected: statsModel, derived }))
+    statsModel = {
+      turns: statsModel.turns > 0 ? statsModel.turns : derived.turns,
+      steps: statsModel.steps > 0 ? statsModel.steps : derived.steps,
+      llmMs: statsModel.llmMs > 0 ? statsModel.llmMs : derived.llmMs,
+      toolMs: statsModel.toolMs > 0 ? statsModel.toolMs : derived.toolMs,
+      inTokens: statsModel.inTokens > 0 ? statsModel.inTokens : derived.inTokens,
+      outTokens: statsModel.outTokens > 0 ? statsModel.outTokens : derived.outTokens,
+      cacheReadTokens: statsModel.cacheReadTokens > 0 ? statsModel.cacheReadTokens : derived.cacheReadTokens,
+      cacheWriteTokens: statsModel.cacheWriteTokens > 0 ? statsModel.cacheWriteTokens : derived.cacheWriteTokens,
+      reasoningTokens: statsModel.reasoningTokens > 0 ? statsModel.reasoningTokens : derived.reasoningTokens,
+      firstTokenMs:
+        statsModel.firstTokenCount > 0
+          ? statsModel.firstTokenMs
+          : derived.firstTokenCount > 0
+            ? derived.firstTokenMs
+            : null,
+      firstTokenSumMs: statsModel.firstTokenSumMs > 0 ? statsModel.firstTokenSumMs : derived.firstTokenSumMs,
+      firstTokenCount: statsModel.firstTokenCount > 0 ? statsModel.firstTokenCount : derived.firstTokenCount,
     }
     syncStats()
   }

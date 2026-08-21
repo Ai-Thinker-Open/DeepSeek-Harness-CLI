@@ -487,6 +487,56 @@ test("resume restores the session's accumulated stats from history projections",
   session.dispose()
 })
 
+test("resume derives stats from history events when projections are absent", async () => {
+  const client = new FakeClient()
+  client.listSessions = (async () => ({
+    items: [{ sessionId: "s-1", updatedAt: 1, running: false, blank: false, cwd: "/tmp" }],
+  })) as typeof client.listSessions
+  client.history = (async () => ({
+    events: [
+      { event: ev("turn/start", { turn: 1 }, 1, 1000) },
+      { event: ev("step/start", { turn: 1, step: 1 }, 2, 1000) },
+      {
+        event: ev(
+          "assistant/chunk",
+          { turn: 1, step: 1, chunk: { type: "text-delta", text: "hi", usage: { inputTokens: 100, outputTokens: 50, cacheReadTokens: 900, cacheWriteTokens: 0 } } },
+          3,
+          1200,
+        ),
+      },
+      { event: ev("step/end", { turn: 1, step: 1 }, 4, 2000) },
+      { event: ev("turn/end", { turn: 1, reason: { kind: "stop" } }, 5, 2000) },
+      { event: ev("turn/start", { turn: 2 }, 6, 2000) },
+      { event: ev("step/start", { turn: 2, step: 1 }, 7, 2000) },
+      {
+        event: ev(
+          "assistant/message",
+          { turn: 2, step: 1, message: { id: "a2" }, usage: { inputTokens: 50, outputTokens: 30, cacheReadTokens: 450, cacheWriteTokens: 10 } },
+          8,
+          3000,
+        ),
+      },
+      { event: ev("step/end", { turn: 2, step: 1 }, 9, 3500) },
+      { event: ev("turn/end", { turn: 2, reason: { kind: "stop" } }, 10, 3500) },
+    ],
+    hasMore: false,
+  })) as unknown as typeof client.history
+  const session = createHarnessSession(client, "/tmp")
+
+  expect(await session.resumeLastSession()).toBe("ok")
+  const st = session.stats()
+  expect(st.turns).toBe(2)
+  expect(st.steps).toBe(2)
+  expect(st.llmMs).toBe(2_500)
+  expect(st.inTokens).toBe(150)
+  expect(st.outTokens).toBe(80)
+  expect(st.cacheReadTokens).toBe(1_350)
+  expect(st.cacheWriteTokens).toBe(10)
+  expect(st.firstTokenCount).toBe(1)
+  expect(st.firstTokenMs).toBe(200)
+  session.dispose()
+})
+
 test("late tool events attach to their turn's message instead of spawning a stray bottom card", async () => {
   const client = new FakeClient()
   const session = createHarnessSession(client, "/tmp")
