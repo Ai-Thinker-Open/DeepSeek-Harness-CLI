@@ -263,6 +263,32 @@ test("assistant messages collapse thinking and render tool cards", async () => {
   expect(frame3).toContain("test")
 })
 
+test("thinking row matches tool-row interaction: glyph by default, collapse hint on hover", async () => {
+  const messages: ChatMessage[] = [
+    assistantMsg("", {
+      thinking: "推理内容",
+      streaming: true,
+    }),
+  ]
+  const app = await renderSession({ messages })
+  await app.renderOnce()
+
+  const frame = app.captureCharFrame()
+  expect(frame).toContain("✺")
+  expect(frame).toContain("Think")
+  expect(frame).toContain("…")
+
+  const lines = frame.split("\n")
+  const y = lines.findIndex((line) => line.includes("Think"))
+  const x = lines[y]?.indexOf("Think") ?? 0
+  await app.mockMouse.moveTo(x + 1, y)
+  await app.renderOnce()
+
+  const hoverFrame = app.captureCharFrame()
+  expect(hoverFrame).toContain("▸")
+  expect(hoverFrame).not.toContain("✺")
+})
+
 test("tool card expand hint only appears while hovering the row", async () => {
   const messages: ChatMessage[] = [
     assistantMsg("", {

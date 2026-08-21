@@ -14,6 +14,7 @@ import {
 } from "../harness/tool-card"
 import { MarkdownText } from "./markdown"
 import { ShineText } from "./shine-text"
+import { ToolIcon } from "./tool-icon"
 
 /** While a message is streaming, only render its tail so layout stays cheap. */
 const STREAMING_CONTENT_TAIL = 4000
@@ -312,12 +313,14 @@ export function ToolCard({ call, result }: { call: ToolCallRecord; result?: Tool
           else if (evt.type === "down" && evt.button === 0 && expandable()) toggle()
         }}
       >
+        <ToolIcon
+          glyph={model().icon}
+          pngKey={call.name === "web_search" ? "web" : model().variant}
+          expanded={expanded()}
+          hovered={hovered()}
+          expandable={expandable()}
+        />
         <text fg={theme.textMuted}>
-          {/* While hovering, the action icon is replaced by the expand hint
-              so the row reads as interactive without a permanent marker. */}
-          <Show when={expandable() && hovered()} fallback={<span>{model().icon}</span>}>
-            <span>{expanded() ? "▾" : "▸"}</span>
-          </Show>
           <Show when={call.status !== "running"}>
             <b> {model().title}</b>
           </Show>
@@ -395,8 +398,11 @@ function CommandCard({ message }: { message: ChatMessage }) {
 
 function ThinkingBlock({ text, streaming }: { text: string; streaming?: boolean }) {
   const [expanded, setExpanded] = createSignal(false)
+  const [hovered, setHovered] = createSignal(false)
   // Bounded slice first so huge reasoning dumps never split in full.
   const lines = createMemo(() => text.slice(0, 12_000).split("\n"))
+  const expandable = () => text.length > 0
+  const toggle = () => setExpanded((v) => !v)
   const preview = () => {
     const all = lines()
     return all.length > 12 ? [...all.slice(0, 12), `… (${all.length - 12} more lines)`] : all
@@ -407,16 +413,28 @@ function ThinkingBlock({ text, streaming }: { text: string; streaming?: boolean 
         flexDirection="row"
         width="100%"
         onMouse={(evt) => {
-          if (evt.type === "down" && evt.button === 0) setExpanded((v) => !v)
+          if (evt.type === "over") setHovered(true)
+          else if (evt.type === "out") setHovered(false)
+          else if (evt.type === "down" && evt.button === 0 && expandable()) toggle()
         }}
       >
+        <ToolIcon
+          glyph="✺"
+          pngKey="think"
+          expanded={expanded()}
+          hovered={hovered()}
+          expandable={expandable()}
+        />
         <text fg={theme.textMuted}>
-          <span>{expanded() ? "▾" : "▸"} ✺</span>
-          <b> Think</b>
-          <Show when={streaming}>
-            <span> …</span>
+          <Show when={!streaming}>
+            <b> Think</b>
           </Show>
         </text>
+        <Show when={streaming}>
+          <text fg={theme.textMuted}> </text>
+          <ShineText text="Think" />
+          <text fg={theme.textMuted}> …</text>
+        </Show>
       </box>
       <Show when={expanded()}>
         <For each={preview()}>

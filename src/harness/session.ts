@@ -50,7 +50,7 @@ export interface HarnessSessionApi {
   resumeSession: (sessionId: string) => Promise<boolean>
   /** Fast `-c` path: attach to the newest workspace session and show its
    *  transcript without hydrating previews for every other session. */
-  resumeLastSession: () => Promise<"ok" | "none" | "failed">
+  resumeLastSession: () => Promise<ResumeResult>
   queue: () => QueueItem[]
   updateQueueItem: (itemId: string, action: QueueAction) => Promise<boolean>
   refreshCommands: () => Promise<void>
@@ -77,6 +77,12 @@ export interface HarnessSessionApi {
   clearError: () => void
   dispose: () => void
 }
+
+/** Outcome of resuming the most recently used session on startup. */
+export type ResumeResult =
+  | { status: "ok" }
+  | { status: "none" }
+  | { status: "failed"; reason: string }
 
 const RECONNECT_DELAY_MS = 1500
 
@@ -885,13 +891,13 @@ export function createHarnessSession(
   }
 
   /** Resume the most recently used session in the current workspace. */
-  async function resumeLastSession(): Promise<"ok" | "none" | "failed"> {
+  async function resumeLastSession(): Promise<ResumeResult> {
     try {
       const res = await client.listSessions()
       const last = [...res.items]
         .filter((s) => !s.blank && (s.cwd === undefined || s.cwd === cwd))
         .sort((a, b) => b.updatedAt - a.updatedAt)[0]
-      if (!last) return "none"
+      if (!last) return { status: "none" }
       // Fetch only the chosen session's transcript so the records render as
       // soon as the attach completes (the seed is consumed by resumeSession).
       try {
@@ -900,9 +906,10 @@ export function createHarnessSession(
       } catch {
         // The seed is an optimization; resume re-syncs history anyway.
       }
-      return (await resumeSession(last.sessionId)) ? "ok" : "failed"
-    } catch {
-      return "failed"
+      const ok = await resumeSession(last.sessionId)
+      return ok ? { status: "ok" } : { status: "failed", reason: error() ?? "请检查 harness 连接" }
+    } catch (e) {
+      return { status: "failed", reason: describeHarnessError(e) }
     }
   }
 

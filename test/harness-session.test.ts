@@ -418,7 +418,7 @@ test("resumeLastSession fast-paths to the newest workspace session", async () =>
   })) as unknown as typeof client.history
   const session = createHarnessSession(client, "/tmp")
 
-  expect(await session.resumeLastSession()).toBe("ok")
+  expect(await session.resumeLastSession()).toMatchObject({ status: "ok" })
   expect(session.messages().map((m) => m.content)).toContain("上次的对话")
   session.dispose()
 })
@@ -432,7 +432,7 @@ test("resumeLastSession reports none when the workspace has no sessions", async 
     ],
   })) as typeof client.listSessions
   const session = createHarnessSession(client, "/tmp")
-  expect(await session.resumeLastSession()).toBe("none")
+  expect(await session.resumeLastSession()).toMatchObject({ status: "none" })
   session.dispose()
 })
 
@@ -472,7 +472,7 @@ test("resume restores the session's accumulated stats from history projections",
   })) as unknown as typeof client.history
   const session = createHarnessSession(client, "/tmp")
 
-  expect(await session.resumeLastSession()).toBe("ok")
+  expect(await session.resumeLastSession()).toMatchObject({ status: "ok" })
   const st = session.stats()
   expect(st.turns).toBe(12)
   expect(st.steps).toBe(34)
@@ -523,7 +523,7 @@ test("resume derives stats from history events when projections are absent", asy
   })) as unknown as typeof client.history
   const session = createHarnessSession(client, "/tmp")
 
-  expect(await session.resumeLastSession()).toBe("ok")
+  expect(await session.resumeLastSession()).toMatchObject({ status: "ok" })
   const st = session.stats()
   expect(st.turns).toBe(2)
   expect(st.steps).toBe(2)

@@ -77,13 +77,13 @@ export function App(props: { client?: HarnessClientLike; continueLast?: boolean;
     if (!props.continueLast) return
     void (async () => {
       const result = await session.resumeLastSession()
-      if (result === "none") {
+      if (result.status === "none") {
         showToast("没有可继续的会话（或 harness 未连接）", "error")
         setScreen("home")
         return
       }
-      if (result === "failed") {
-        showToast("继续上次会话失败，请检查 harness 连接", "error")
+      if (result.status === "failed") {
+        showToast(`继续上次会话失败：${result.reason}`, "error")
         setScreen("home")
         return
       }

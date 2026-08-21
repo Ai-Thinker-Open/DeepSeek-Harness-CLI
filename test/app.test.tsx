@@ -683,3 +683,19 @@ test("continueLast without sessions stays on home with a toast", async () => {
   expect(frame).not.toContain("发送消息开始对话")
   expect(frame).toContain("没有可继续的会话")
 })
+
+test("continueLast failure toast includes the underlying reason", async () => {
+  const client = new FakeClient()
+  client.listSessions = (async () => {
+    throw new Error("harness unreachable: fetch failed")
+  }) as typeof client.listSessions
+  const app = await testRender(() => <App client={client} continueLast />, { width: 80, height: 32 })
+  await app.renderOnce()
+  await tick(80)
+  await app.renderOnce()
+
+  const frame = app.captureCharFrame()
+  expect(frame).toContain("继续上次会话失败")
+  expect(frame).toContain("harness unreachable")
+  expect(frame).toContain("DeepSeek Harness CLI")
+})
