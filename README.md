@@ -1,8 +1,8 @@
 # DeepSeek Harness CLI (`dsh-cli`)
 
-A terminal client for [DeepSeek Harness (DSH)](https://github.com/deepseek-ai/DeepSeek-Harness), built with [OpenTUI](https://github.com/opentui/opentui) + SolidJS.
+A terminal client for [DeepSeek Harness (DSH)](https://github.com/deepseek-ai/DeepSeek-Harness), built with [OpenTUI](https://github.com/opentui/opentui) 0.5.x + SolidJS.
 
-It drives a locally running DeepSeek Harness instance: sessions, tool calls, permission approvals, plan mode and history all live in the harness, while this client renders them as a fluid terminal interface (with a MiMo-style launch screen and animated tool cards). **No local API key required.**
+It drives a locally running DeepSeek Harness instance: sessions, tool calls, permission approvals, plan mode and history all live in the harness, while this client renders them as a fluid terminal interface — MiMo-style launch screen, animated tool cards, and real SVG icons where the terminal supports Kitty/Sixel graphics. **No local API key required.**
 
 ```
    dsh-cli                    # probe and connect to a local harness
@@ -14,9 +14,10 @@ It drives a locally running DeepSeek Harness instance: sessions, tool calls, per
 
 - **Session management**: create / resume / rename / fork sessions, fast `-c` resume of the last session
 - **Streaming render**: body, reasoning (Think blocks) and tool calls stream in at 30fps without jank
-- **Tool cards**: Bash / Read / Edit / Write / Search / Code / Todo / Question row variants with summaries, expandable bodies, a diff viewer and a running shine animation; glyphs align with the DSH web client icons
+- **Tool cards**: Bash / Read / Edit / Write / Search / Code / Todo / Question / Terminal / Job row variants with summaries, expandable bodies, a diff viewer and a running shine animation; leading icons are the official DSH web-client SVGs baked to PNG and rendered via Kitty / Sixel graphics, with a Unicode glyph fallback
+- **Think blocks**: reasoning streams in a collapsible block that shares the tool rows' shine animation and hover collapse hint
 - **Permission approvals**: permission / ask-user / plan-review questions render as a modal — ↑↓ to select, Enter to confirm, Esc to reject
-- **Plan mode**: `/plan` toggles plan mode; the badge reflects `active/pending` state live
+- **Plan mode**: `/plan` enters / exits plan mode; the badge reflects `active/pending` state live
 - **Slash commands**: local commands, harness host commands and skills all live in the `/` menu
 - **Queue dock**: pending / steering messages can be edited, removed or sent inline
 - **Stats bar**: turns, steps, LLM/tool time, average first-token latency, cache-hit ratio and token usage
@@ -80,6 +81,8 @@ Once started, the `tui-runner` plugin reads the bound web-server address, spawns
 | `DSH_HOME` | Harness data directory (default `~/.dsh`) |
 | `DSH_NPX_CACHE` | npx cache directory used to speed up `dsh` resolution (default `~/.npm/_npx`) |
 | `DSH_TOOLS_MODE` | Process-wide Code Mode opt-in (forwarded to the tools row) |
+| `OPENTUI_IMAGE_PROTOCOL` | Icon rendering protocol override: `auto` / `kitty` / `sixel` / `blocks` |
+| `OPENTUI_GRAPHICS` | Set to `false` to disable Kitty/Sixel detection (icons fall back to glyphs) |
 
 ## Usage
 
@@ -90,7 +93,7 @@ Once started, the `tui-runner` plugin reads the bound web-server address, spawns
 | `Esc` | Close the menu / go back to home / reject the current question |
 | `Enter` | Send message / confirm selection |
 | `↑↓` | Move through menus and options |
-| Mouse | Click to expand tool cards and queue rows; drag to select text (OSC52 copy) |
+| Mouse | Click to expand tool cards and queue rows; hover tool rows to reveal the collapse hint; drag to select text (OSC52 copy) |
 | `Ctrl+C` | Quit |
 
 ### Slash commands
@@ -105,9 +108,15 @@ Once started, the `tui-runner` plugin reads the bound web-server address, spawns
 ```sh
 bun run dev           # run src/cli.tsx directly (needs a harness or the mock)
 bun run dev:debug     # same with DSH_DEBUG=1
+bun run icons         # re-render SVG icons to PNGs + regenerate src/assets-icons.ts
+bun run build         # bundle dist/ (pins solid-js to the client runtime)
 bun run typecheck     # tsc --noEmit
 bun test              # full suite (protocol / event folding / rendered frames / interactions)
 ```
+
+### Icons
+
+Tool and Think icons start as SVGs in `assets/icons-src/` — extracted from the official DSH web-client icon set (`packages/client/ui-primitives/src/icons` in deepseek-ai/DeepSeek-Harness), plus TUI-only `terminal` / `job` variants. `bun run icons` renders each one to a 64×64 PNG in `assets/icons/` and regenerates `src/assets-icons.ts` as base64 data URLs, so the bundle needs no runtime asset paths. On screen, `ToolIcon` renders the PNG (2 cells wide) when the terminal supports Kitty or Sixel graphics and falls back to the Unicode glyph otherwise; tmux and plain SSH sessions get glyphs automatically.
 
 No real harness handy? Use the built-in mock server to develop the TUI:
 
@@ -139,13 +148,16 @@ TUI process
   └─ src/harness/client.ts    DSH /api HTTP + events.mux WebSocket transport
   └─ src/harness/fold.ts      event → ChatMessage pure helpers
   └─ src/harness/tool-card.ts tool-row classification / summaries / card models / diffs
-  └─ src/components/*         16 UI components (prompt / message-view / markdown / logo …)
+  └─ src/components/*         16 UI components (prompt / message-view / markdown / logo / tool-icon …)
+  └─ src/assets-icons.ts      generated PNG data-URL module (see scripts/icons.mjs)
 ```
 
 ### Key design decisions
 
 - **Dual identity**: the same package works as a standalone CLI and as a Cordis plugin running inside the official `dsh` process
 - **Render only what changed**: Solid `<For>` memoizes by object identity, and a dirty-flag pass flushes mutations in 32ms batches, so streaming chunk bursts never stall the loop
+- **SVG icons with graceful fallback**: official DSH icons are pre-rendered to PNGs (`bun run icons`) and shown through Kitty/Sixel graphics when available, with Unicode glyphs as the universal fallback
+- **Single Solid runtime**: the build rewrites bare `solid-js` imports to the client entry (`solid-js/dist/solid.js`) so the bundle and `@opentui/solid` share one runtime — two runtimes break the renderer context
 - **Delayed tool settlement**: millisecond tools (reads, greps) hold their running state for ~600ms so the shine animation stays visible
 - **Self-healing connection**: a 20s no-frame watchdog forces a reconnect and rebuilds the conversation from durable history
 - **Keyboard compatibility**: legacy escape sequences, DECCKM and kitty CSI-u codes are all handled
@@ -154,8 +166,9 @@ TUI process
 
 ```
 bin/              CLI entry shell
+assets/           icons-src/ (SVG sources) + icons/ (generated PNGs)
 cordis.patch.yml  dsh plugin patch (profile row config)
-scripts/          build.ts build script, mock-dsh-server.mjs dev mock
+scripts/          build.ts build script, icons.mjs icon pipeline, mock-dsh-server.mjs dev mock
 src/
   cli.tsx         OpenTUI entry
   app.tsx         app shell
@@ -163,6 +176,7 @@ src/
   harness/        session driver, transport, event folding, tool-row models
   components/     UI components
   dsh/            Cordis plugins (startup / runner / dispatcher / types)
+  assets-icons.ts generated icon data-URL module
 test/             Bun tests (protocol, folding, rendered frames, interactions)
 ```
 

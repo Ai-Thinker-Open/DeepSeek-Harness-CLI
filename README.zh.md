@@ -1,8 +1,8 @@
 # DeepSeek Harness CLI（`dsh-cli`）
 
-基于 [OpenTUI](https://github.com/opentui/opentui) + SolidJS 构建的 [DeepSeek Harness (DSH)](https://github.com/deepseek-ai/DeepSeek-Harness) 终端客户端。
+基于 [OpenTUI](https://github.com/opentui/opentui) 0.5.x + SolidJS 构建的 [DeepSeek Harness (DSH)](https://github.com/deepseek-ai/DeepSeek-Harness) 终端客户端。
 
-它直接驱动本地运行的 DeepSeek Harness 实例：会话、工具调用、权限审批、计划模式、历史记录全部由 harness 持有，本客户端负责把它们渲染成一个流畅的终端界面（含 MiMo 风格启动屏与工具卡片动画），**不需要本地 API Key**。
+它直接驱动本地运行的 DeepSeek Harness 实例：会话、工具调用、权限审批、计划模式、历史记录全部由 harness 持有，本客户端负责把它们渲染成一个流畅的终端界面——MiMo 风格启动屏、工具卡片动画，并在终端支持 Kitty/Sixel 图形协议时显示真正的 SVG 图标。**不需要本地 API Key。**
 
 ```
    dsh-cli                    # 探测并连接本地 harness
@@ -14,9 +14,10 @@
 
 - **会话管理**：新建 / 恢复 / 重命名 / 分叉会话，`-c` 快速续接最近会话
 - **流式渲染**：正文、推理（Think 块）、工具调用增量实时渲染，30fps 下保持流畅
-- **工具卡片**：Bash / Read / Edit / Write / Search / Code / Todo / Question 等工具行分类，含摘要、展开正文、diff 查看器与运行闪光动画，图标对齐 DSH web 客户端
+- **工具卡片**：Bash / Read / Edit / Write / Search / Code / Todo / Question / Terminal / Job 等工具行分类，含摘要、展开正文、diff 查看器与运行闪光动画；行首图标使用 DSH web 客户端官方 SVG（预渲染为 PNG），通过 Kitty / Sixel 图形协议显示，不支持时自动回退 Unicode 字形
+- **Think 块**：推理内容以可折叠块呈现，与工具行共用闪光动画和 hover 折叠箭头交互
 - **权限审批**：harness 抛出的权限 / 提问 / 计划审批以弹窗呈现，↑↓ 选择、Enter 确认、Esc 拒绝
-- **计划模式**：`/plan` 进入计划模式，徽标实时反映 `active/pending` 状态
+- **计划模式**：`/plan` 进入 / 退出计划模式，徽标实时反映 `active/pending` 状态
 - **Slash 命令**：本地命令 + harness 宿主命令 + 技能统一收录在 `/` 菜单
 - **队列停靠**：待发 / 引导中的消息可直接编辑、移除或发送
 - **统计栏**：轮次、步骤、LLM/工具耗时、首 token 平均、缓存命中率、token 用量
@@ -80,6 +81,8 @@ dsh --profile tui -c                     # 恢复最近会话
 | `DSH_HOME` | harness 数据目录（默认 `~/.dsh`） |
 | `DSH_NPX_CACHE` | npx 缓存目录，加速 `dsh` 解析（默认 `~/.npm/_npx`） |
 | `DSH_TOOLS_MODE` | 进程级 Code Mode 开关（透传给 tools 行） |
+| `OPENTUI_IMAGE_PROTOCOL` | 图标渲染协议覆盖：`auto` / `kitty` / `sixel` / `blocks` |
+| `OPENTUI_GRAPHICS` | 置为 `false` 关闭 Kitty/Sixel 检测（图标回退为字形） |
 
 ## 常用操作
 
@@ -90,7 +93,7 @@ dsh --profile tui -c                     # 恢复最近会话
 | `Esc` | 关闭菜单 / 返回主页 / 拒绝当前问题 |
 | `Enter` | 发送消息 / 确认选择 |
 | `↑↓` | 菜单与选项移动 |
-| 鼠标 | 点击展开工具卡片、队列行；拖动选择文本（OSC52 复制） |
+| 鼠标 | 点击展开工具卡片、队列行；hover 工具行显示折叠箭头；拖动选择文本（OSC52 复制） |
 | `Ctrl+C` | 退出 |
 
 ### Slash 命令
@@ -98,16 +101,22 @@ dsh --profile tui -c                     # 恢复最近会话
 - **本地**：`/sessions`、`/resume`、`/model`、`/rename`、`/fork`、`/help`
 - **host**（由 harness 执行）：`/compact`、`/feedback`、`/goal`、`/plan`、`/permission`、`/export`
 - **技能**：会话的技能目录会并入 `/` 菜单，作为普通消息交给模型
-- **MCP 风格**：`/server:tool` 形式的行走消息通道
+- **MCP 风格**：`/server:tool` 形式的输入走消息通道
 
 ## 开发
 
 ```sh
 bun run dev           # 直跑 src/cli.tsx（需先有一个 harness 或 mock）
 bun run dev:debug     # DSH_DEBUG=1 的调试模式
+bun run icons         # 重新渲染 SVG 图标为 PNG，并重新生成 src/assets-icons.ts
+bun run build         # 打包 dist/（把 solid-js 固定到客户端运行时）
 bun run typecheck     # tsc --noEmit
 bun test              # 全量测试（协议 / 事件折叠 / 渲染帧 / 交互）
 ```
+
+### 图标
+
+工具与 Think 图标以 SVG 形式存放在 `assets/icons-src/`：来源是 DSH web 客户端官方图标集（deepseek-ai/DeepSeek-Harness 的 `packages/client/ui-primitives/src/icons`），另有 TUI 专属的 `terminal` / `job` 两个自绘图标。`bun run icons` 会把每个图标渲染成 `assets/icons/` 下的 64×64 PNG，并重新生成 `src/assets-icons.ts`（base64 data URL 模块），因此 bundle 不依赖运行时资源路径。界面上的 `ToolIcon` 在终端支持 Kitty / Sixel 图形协议时渲染 PNG（2 格宽），否则回退 Unicode 字形；tmux、普通 SSH 会话会自动使用字形。
 
 没有真实 harness 时，用内置 mock 服务器联调 TUI：
 
@@ -137,13 +146,16 @@ TUI 进程
   └─ src/harness/client.ts    DSH /api HTTP + events.mux WebSocket 传输
   └─ src/harness/fold.ts      事件 → ChatMessage 纯函数
   └─ src/harness/tool-card.ts 工具行分类 / 摘要 / 卡片模型 / diff
-  └─ src/components/*         16 个 UI 组件（prompt / message-view / markdown / logo …）
+  └─ src/components/*         16 个 UI 组件（prompt / message-view / markdown / logo / tool-icon …）
+  └─ src/assets-icons.ts      生成的图标 data-URL 模块（见 scripts/icons.mjs）
 ```
 
 ### 关键设计
 
 - **双重身份**：同一个包既可作为独立 CLI，也可作为 Cordis 插件在官方 `dsh` 进程内运行
 - **只渲染变化**：Solid `<For>` 按对象身份 memoize，配合脏标记 32ms 批量刷新，流式 chunk 洪峰下不卡顿
+- **SVG 图标 + 优雅回退**：官方 DSH 图标预渲染为 PNG（`bun run icons`），终端支持 Kitty/Sixel 时用图形协议显示，否则统一回退 Unicode 字形
+- **单一 Solid 运行时**：构建时把裸 `solid-js` 导入改写为客户端入口（`solid-js/dist/solid.js`），保证 bundle 与 `@opentui/solid` 共享同一运行时——双运行时会破坏渲染器上下文
 - **快速工具延迟结算**：读文件等毫秒级工具的结果延迟 600ms 呈现，让运行闪光动画可见
 - **自愈连接**：downlink 卡死 20s 触发看门狗 → 重连 + 从持久历史重建会话
 - **键盘兼容**：同时处理传统转义序列、DECCKM 与 kitty CSI-u 协议
@@ -151,17 +163,19 @@ TUI 进程
 ## 目录结构
 
 ```
-bin/           CLI 入口壳
+bin/              CLI 入口壳
+assets/           icons-src/（SVG 源）+ icons/（生成的 PNG）
 cordis.patch.yml  dsh 插件补丁（profile 行配置）
-scripts/       build.ts 构建脚本、mock-dsh-server.mjs 开发用 mock
+scripts/          build.ts 构建脚本、icons.mjs 图标管线、mock-dsh-server.mjs 开发用 mock
 src/
-  cli.tsx      OpenTUI 入口
-  app.tsx      应用外壳
-  screens/     home / session 屏幕
-  harness/     会话驱动、传输、事件折叠、工具行模型
-  components/  UI 组件
-  dsh/         Cordis 插件（startup / runner / dispatcher / types）
-test/          Bun 测试（协议、折叠、渲染帧、交互）
+  cli.tsx         OpenTUI 入口
+  app.tsx         应用外壳
+  screens/        home / session 屏幕
+  harness/        会话驱动、传输、事件折叠、工具行模型
+  components/     UI 组件
+  dsh/            Cordis 插件（startup / runner / dispatcher / types）
+  assets-icons.ts 生成的图标 data-URL 模块
+test/             Bun 测试（协议、折叠、渲染帧、交互）
 ```
 
 ## License
