@@ -2,6 +2,7 @@
 import { expect, test } from "bun:test"
 import { testRender } from "@opentui/solid"
 import { Home } from "../src/screens/home"
+import pkg from "../package.json"
 
 test("home screen renders brand and version", async () => {
   const app = await testRender(() => <Home motion={false} loading={false} />, { width: 80, height: 32 })
@@ -9,7 +10,7 @@ test("home screen renders brand and version", async () => {
 
   const frame = app.captureCharFrame()
   expect(frame).toContain("DeepSeek Harness")
-  expect(frame).toContain("v0.1.0")
+  expect(frame).toContain(`v${pkg.version}`)
   expect(frame).toContain("tab 切换权限")
   expect(frame).toContain("/status")
   expect(frame).toContain("MCP")
