@@ -1,4 +1,4 @@
-![DeepSeek Harness CLI](assets/deepseek-harness-cli.png)
+![DeepSeek Harness CLI](https://raw.githubusercontent.com/Ai-Thinker-Open/DeepSeek-Harness-CLI/master/assets/deepseek-harness-cli.png)
 
 A terminal client for [DeepSeek Harness (DSH)](https://github.com/deepseek-ai/DeepSeek-Harness), built with [OpenTUI](https://github.com/opentui/opentui) 0.5.x + SolidJS.
 
