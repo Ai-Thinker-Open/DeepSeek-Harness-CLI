@@ -6,7 +6,7 @@
  */
 
 import { spawn, spawnSync } from "node:child_process"
-import { existsSync, readFileSync, readdirSync } from "node:fs"
+import { existsSync, readFileSync, readdirSync, writeFileSync } from "node:fs"
 import { homedir } from "node:os"
 import { dirname, join } from "node:path"
 import { fileURLToPath, pathToFileURL } from "node:url"
@@ -35,20 +35,70 @@ function readManifest(): { name?: string } {
 
 const PKG_NAME = readManifest().name ?? "@ai-thinker/deepseek-harness-cli"
 
+/**
+ * Bundle names that pointed at this package before renames. Profiles created
+ * under the old name keep both entries after `dsh plugin add` runs with the
+ * new name; applying this package's cordis patch twice then fails the loader
+ * with `duplicate loader entry id`. Startup migrates those entries to the
+ * current name.
+ */
+const LEGACY_BUNDLE_NAMES = new Set(["deepseek-harness-cli"])
+
 function profileDir(): string {
   const home = process.env.DSH_HOME ?? join(homedir(), ".dsh")
   return join(home, "profiles", PROFILE_NAME)
 }
 
-function profileHasBundle(): boolean {
+/** True when a profile bundle refers to this package under any (old or new) name. */
+function isThisPackage(bundle: string): boolean {
+  return bundle === PKG_NAME || LEGACY_BUNDLE_NAMES.has(bundle)
+}
+
+/**
+ * Read the tui profile manifest, migrate legacy bundle entries for this
+ * package to the current name (deduplicating), and persist the result.
+ * Returns whether the profile registers this package after migration.
+ */
+function normalizeProfileBundles(): boolean {
+  const manifestPath = join(profileDir(), "package.json")
+  let manifest: {
+    dependencies?: Record<string, string>
+    dsh?: { profile?: { bundles?: string[] } }
+  }
   try {
-    const manifest = JSON.parse(readFileSync(join(profileDir(), "package.json"), "utf8")) as {
-      dsh?: { profile?: { bundles?: string[] } }
-    }
-    return (manifest.dsh?.profile?.bundles ?? []).includes(PKG_NAME)
+    manifest = JSON.parse(readFileSync(manifestPath, "utf8")) as typeof manifest
   } catch {
     return false
   }
+  const bundles = manifest.dsh?.profile?.bundles
+  if (!Array.isArray(bundles)) return false
+
+  let changed = false
+  const seen = new Set<string>()
+  const normalized: string[] = []
+  for (const bundle of bundles) {
+    const key = isThisPackage(bundle) ? PKG_NAME : bundle
+    if (seen.has(key)) {
+      if (key !== bundle) changed = true
+      continue
+    }
+    seen.add(key)
+    normalized.push(key)
+    if (key !== bundle) changed = true
+  }
+  if (manifest.dependencies) {
+    for (const dep of Object.keys(manifest.dependencies)) {
+      if (dep !== PKG_NAME && LEGACY_BUNDLE_NAMES.has(dep)) {
+        delete manifest.dependencies[dep]
+        changed = true
+      }
+    }
+  }
+  if (changed && manifest.dsh?.profile) {
+    manifest.dsh.profile.bundles = normalized
+    writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`)
+  }
+  return seen.has(PKG_NAME)
 }
 
 /** Probe a harness at `url` with a cheap `host.describe` RPC. */
@@ -136,7 +186,7 @@ export async function run(args: readonly string[]): Promise<number> {
   }
 
   const dsh = resolveDsh()
-  if (!profileHasBundle()) {
+  if (!normalizeProfileBundles()) {
     const setup = internals.spawnSync(
       dsh.bin,
       [...dsh.prefix, "plugin", "--profile", PROFILE_NAME, "add", pathToFileURL(PKG_ROOT).href],

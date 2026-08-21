@@ -19,7 +19,7 @@ import { fileURLToPath } from "node:url"
 const root = join(dirname(fileURLToPath(import.meta.url)), "..")
 const vendor = join(root, "vendor")
 
-const sources: Array<{ dir: string; url: string }> = [
+const sources = [
   {
     dir: join(vendor, "ai-thinker-src"),
     url: process.env.AT_SKILLS_URL ?? "https://github.com/Ai-Thinker-Open/skills.git",

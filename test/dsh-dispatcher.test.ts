@@ -1,5 +1,5 @@
 import { EventEmitter } from "node:events"
-import { mkdirSync, mkdtempSync, writeFileSync, rmSync } from "node:fs"
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterEach, expect, test } from "bun:test"
@@ -157,4 +157,67 @@ test("dispatcher reuses an installed npx cache entry instead of npx", async () =
 
   expect(calls[0]?.command).toBe(join(cache, "1e7f6d9597241db0", "node_modules", ".bin", "dsh"))
   expect(calls[0]?.args).toEqual(["--profile", "tui"])
+})
+
+test("dispatcher migrates a stale legacy bundle alias before booting", async () => {
+  const { calls, children } = installSpawn()
+  const { calls: syncCalls } = installSpawnSync({ "--help": { status: 0 }, plugin: { status: 0 } })
+  dispatcherInternals.probe = async () => false
+  writeProfile(["deepseek-harness-cli"])
+
+  const pending = run([])
+  await settle()
+  children[0]?.emit("exit", 0)
+  await expect(pending).resolves.toBe(0)
+
+  const dir = join(profileHome!, "profiles", PROFILE_NAME)
+  const manifest = JSON.parse(readFileSync(join(dir, "package.json"), "utf8"))
+  expect(manifest.dsh.profile.bundles).toEqual(["@ai-thinker/deepseek-harness-cli"])
+  expect(syncCalls.map((c) => c.args[0])).not.toContain("plugin")
+  expect(calls[0]?.command).toBe("dsh")
+})
+
+test("dispatcher dedupes a legacy alias alongside the current name", async () => {
+  const { children } = installSpawn()
+  installSpawnSync({ "--help": { status: 0 }, plugin: { status: 0 } })
+  dispatcherInternals.probe = async () => false
+  writeProfile(["@ai-thinker/deepseek-harness-cli", "deepseek-harness-cli", "@deepseek-ai/dsh-base"])
+
+  const pending = run([])
+  await settle()
+  children[0]?.emit("exit", 0)
+  await expect(pending).resolves.toBe(0)
+
+  const dir = join(profileHome!, "profiles", PROFILE_NAME)
+  const manifest = JSON.parse(readFileSync(join(dir, "package.json"), "utf8"))
+  expect(manifest.dsh.profile.bundles).toEqual(["@ai-thinker/deepseek-harness-cli", "@deepseek-ai/dsh-base"])
+})
+
+test("dispatcher prunes legacy dependency entries during migration", async () => {
+  const { children } = installSpawn()
+  installSpawnSync({ "--help": { status: 0 }, plugin: { status: 0 } })
+  dispatcherInternals.probe = async () => false
+  profileHome = mkdtempSync(join(tmpdir(), "dsh-cli-test-"))
+  process.env.DSH_HOME = profileHome
+  const dir = join(profileHome, "profiles", PROFILE_NAME)
+  mkdirSync(dir, { recursive: true })
+  writeFileSync(
+    join(dir, "package.json"),
+    JSON.stringify({
+      dependencies: {
+        "deepseek-harness-cli": "link:/home/seahi/workspace/dsh-cli",
+        other: "1.0.0",
+      },
+      dsh: { profile: { bundles: ["deepseek-harness-cli"] } },
+    }),
+  )
+
+  const pending = run([])
+  await settle()
+  children[0]?.emit("exit", 0)
+  await expect(pending).resolves.toBe(0)
+
+  const manifest = JSON.parse(readFileSync(join(dir, "package.json"), "utf8"))
+  expect(manifest.dependencies).toEqual({ other: "1.0.0" })
+  expect(manifest.dsh.profile.bundles).toEqual(["@ai-thinker/deepseek-harness-cli"])
 })
