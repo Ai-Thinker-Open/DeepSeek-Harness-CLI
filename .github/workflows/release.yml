@@ -14,6 +14,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
@@ -40,10 +42,32 @@ jobs:
       - name: Build
         run: bun run build
 
+      - name: Generate release notes
+        id: notes
+        run: |
+          PREV=$(git describe --tags --abbrev=0 HEAD~1 2>/dev/null || true)
+          if [ -n "$PREV" ]; then
+            RANGE="$PREV..HEAD"
+            HEADER="## What's Changed since $PREV"
+          else
+            RANGE="HEAD"
+            HEADER="## What's Changed"
+          fi
+          {
+            echo "$HEADER"
+            echo ""
+            git log "$RANGE" --pretty=format:"- %s (%h)" --no-merges
+            echo ""
+          } > notes.md
+          echo "body<<EOF" >> "$GITHUB_OUTPUT"
+          cat notes.md >> "$GITHUB_OUTPUT"
+          echo "EOF" >> "$GITHUB_OUTPUT"
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           name: ${{ steps.version.outputs.version }}
+          body: ${{ steps.notes.outputs.body }}
           generate_release_notes: true
 
       - name: Publish to npm
