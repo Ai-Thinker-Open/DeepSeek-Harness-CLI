@@ -28,6 +28,32 @@ It drives a locally running DeepSeek Harness instance: sessions, tool calls, per
 - [Bun](https://bun.sh) (both build and runtime depend on it; `dist/cli.js` runs under Bun)
 - An optional local DeepSeek Harness instance (`dsh-cli` probes for one and boots it if missing)
 
+## Installation
+
+1. **Install Bun** — required to build and run the client:
+
+   ```sh
+   curl -fsSL https://bun.sh/install | bash   # or use your package manager
+   ```
+
+2. **Install the DeepSeek Harness CLI (optional)** — `dsh-cli` can boot the harness automatically through npx, but a global install makes startup faster:
+
+   ```sh
+   npm install -g @deepseek-ai/dsh
+   ```
+
+3. **Install `dsh-cli` from source**:
+
+   ```sh
+   git clone git@github.com:Ai-Thinker-Open/DeepSeek-Harness-CLI.git
+   cd DeepSeek-Harness-CLI
+   bun install
+   bun run build
+   bun link          # exposes the global `dsh-cli` command
+   ```
+
+Then run `dsh-cli` (or `dsh-cli -c`). The first launch auto-builds `dist/` if it is missing and boots a harness when none is running.
+
 ## Quick start
 
 ```sh

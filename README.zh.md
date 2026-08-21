@@ -28,6 +28,32 @@
 - [Bun](https://bun.sh)（构建与运行均依赖 Bun；`dist/cli.js` 由 Bun 执行）
 - 本地可选的 DeepSeek Harness 实例（`dsh-cli` 会自动探测并拉起）
 
+## 安装
+
+1. **安装 Bun**（构建与运行必需）：
+
+   ```sh
+   curl -fsSL https://bun.sh/install | bash   # 或用你的包管理器安装
+   ```
+
+2. **安装 DeepSeek Harness CLI（可选）**——`dsh-cli` 也可以通过 npx 自动拉起 harness，但全局安装能让启动更快：
+
+   ```sh
+   npm install -g @deepseek-ai/dsh
+   ```
+
+3. **从源码安装 `dsh-cli`**：
+
+   ```sh
+   git clone git@github.com:Ai-Thinker-Open/DeepSeek-Harness-CLI.git
+   cd DeepSeek-Harness-CLI
+   bun install
+   bun run build
+   bun link          # 把全局 `dsh-cli` 命令暴露出来
+   ```
+
+然后运行 `dsh-cli`（或 `dsh-cli -c`）。首次启动若 `dist/` 缺失会自动构建，没有运行中的 harness 时也会自动拉起。
+
 ## 快速开始
 
 ```sh
