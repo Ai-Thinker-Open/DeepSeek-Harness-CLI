@@ -22,7 +22,7 @@
 - **队列停靠**：待发 / 引导中的消息可直接编辑、移除或发送
 - **统计栏**：轮次、步骤、LLM/工具耗时、首 token 平均、缓存命中率、token 用量
 - **健壮连接**：断线自动重连、流式卡死看门狗、从持久历史恢复会话
-- **首次启动自动安装**：自动安装 Ai-Thinker skills 技能集与 FlashKey MCP 服务器（SSE）
+- **内置 skills 与 FlashKey MCP**：Ai-Thinker skills 技能集与 FlashKey MCP 服务器源码随 npm 包分发（`vendor/`），首次启动直接链接/启用，无需联网克隆仓库
 
 ## 环境要求
 
@@ -140,9 +140,18 @@ dsh --profile tui -c                     # 恢复最近会话
 | `DSH_SKIP_BOOTSTRAP` | 置 `1` 完全跳过首次启动的资源安装 |
 | `DSH_NO_SKILLS` | 置 `1` 跳过 Ai-Thinker skills 安装 |
 | `DSH_NO_FLASHKEY` | 置 `1` 跳过 FlashKey MCP 安装 |
-| `AT_SKILLS_URL` | skills 仓库 git 地址（默认 `https://github.com/Ai-Thinker-Open/skills.git`） |
-| `FLASHKEY_INSTALL_URL` | flashkey-mcp 的 pip/uv 安装源（支持镜像覆盖） |
+| `AT_SKILLS_URL` | 未内置时 skills 仓库 git 地址（默认 `https://github.com/Ai-Thinker-Open/skills.git`） |
+| `FLASHKEY_INSTALL_URL` | 未内置时 flashkey-mcp 的 pip/uv 安装源（支持镜像覆盖） |
 | `FLASHKEY_SSE_PORT` | FlashKey SSE 常驻端口（默认 `8100`） |
+
+## 内置资源
+
+发布到 npm 的包自带两份运行资源，`npm install -g` 后即可离线启用：
+
+- `vendor/ai-thinker-src`：Ai-Thinker skills 仓库，首次启动把 `skills/` 下的技能包链接进 `~/.dsh/skills/`；
+- `vendor/flashkey-mcp`：FlashKey MCP 服务器 Python 源码，启动时与 harness 同步拉起 SSE 常驻服务（默认 `127.0.0.1:8100`）。
+
+MCP 服务端依赖 `pyserial`、`mcp`、`starlette`、`uvicorn`。若本机 Python 已具备这些依赖，启动会直接从内置源码运行（完全离线）；否则首次启动会用 pip/uv 从内置源码安装，依赖需从 PyPI 获取一次。skills 与 MCP 都可用环境变量跳过或换源（见上表）。
 
 ## 常用操作
 

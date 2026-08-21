@@ -22,7 +22,7 @@ It drives a locally running DeepSeek Harness instance: sessions, tool calls, per
 - **Queue dock**: pending / steering messages can be edited, removed or sent inline
 - **Stats bar**: turns, steps, LLM/tool time, average first-token latency, cache-hit ratio and token usage
 - **Resilient connection**: auto-reconnect, a streaming stall watchdog and recovery from durable history
-- **First-run bootstrap**: automatically installs the Ai-Thinker skills collection and the FlashKey MCP server (SSE) on first launch
+- **Bundled skills + FlashKey MCP**: the Ai-Thinker skills collection and the FlashKey MCP server source ship inside the npm package (`vendor/`), so first launch links/enables them locally without cloning repositories
 
 ## Requirements
 
@@ -139,10 +139,26 @@ Once started, the `tui-runner` plugin reads the bound web-server address, spawns
 | `OPENTUI_GRAPHICS` | Set to `false` to disable Kitty/Sixel detection (icons fall back to glyphs) |
 | `DSH_SKIP_BOOTSTRAP` | Set to `1` to skip first-run resource installation entirely |
 | `DSH_NO_SKILLS` | Set to `1` to skip installing the Ai-Thinker skills collection |
-| `DSH_NO_FLASHKEY` | Set to `1` to skip installing the FlashKey MCP server |
-| `AT_SKILLS_URL` | Git URL of the skills repository (default: `https://github.com/Ai-Thinker-Open/skills.git`) |
-| `FLASHKEY_INSTALL_URL` | pip/uv install spec for flashkey-mcp (mirror override supported) |
+| `DSH_NO_FLASHKEY` | Set to `1` to skip enabling the FlashKey MCP server |
+| `AT_SKILLS_URL` | Git URL of the skills repository when not bundled (default: `https://github.com/Ai-Thinker-Open/skills.git`) |
+| `FLASHKEY_INSTALL_URL` | pip/uv install spec for flashkey-mcp when not bundled (mirror override supported) |
 | `FLASHKEY_SSE_PORT` | FlashKey SSE daemon port (default `8100`) |
+
+## Bundled resources
+
+The published npm package carries both runtime resources, so they work offline
+right after `npm install -g`:
+
+- `vendor/ai-thinker-src` — the Ai-Thinker skills repository; on first launch the
+  skill bundles under `skills/` are linked into `~/.dsh/skills/`;
+- `vendor/flashkey-mcp` — the FlashKey MCP server Python source; it starts as a
+  local SSE daemon (default `127.0.0.1:8100`) alongside the harness.
+
+The MCP server depends on `pyserial`, `mcp`, `starlette` and `uvicorn`. If those
+are already importable by `python3`, the daemon runs straight from the bundled
+source, fully offline. Otherwise first launch installs it from the bundled
+source with pip/uv, fetching those dependencies from PyPI once. Both resources
+can be skipped or redirected with the environment variables above.
 
 ## Usage
 

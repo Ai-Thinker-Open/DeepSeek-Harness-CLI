@@ -97,3 +97,83 @@ test("bootstrapAll tolerates install failures without throwing", async () => {
   process.env.DSH_NO_SKILLS = "1"
   await expect(bootstrapAll()).resolves.toBeUndefined()
 })
+
+test("bootstrap links bundled skills without cloning when vendor/ is present", async () => {
+  const bundled = join(temp, "vendor", "ai-thinker-src")
+  internals.bundledSkillsRepo = bundled
+  for (const name of ["alpha", "beta"]) {
+    mkdirSync(join(bundled, "skills", name), { recursive: true })
+    writeFileSync(join(bundled, "skills", name, "SKILL.md"), `---\nname: ${name}\n---\n`)
+  }
+  let gitCalls = 0
+  internals.spawnSync = ((command: string) => {
+    if (command === "git") gitCalls += 1
+    return { status: 1, stdout: "", stderr: "", pid: 0, output: [], signal: null }
+  }) as unknown as typeof internals.spawnSync
+
+  process.env.DSH_NO_FLASHKEY = "1"
+  await bootstrapAll()
+
+  expect(gitCalls).toBe(0)
+  expect(existsSync(join(temp, "skills", "alpha", "SKILL.md"))).toBe(true)
+  expect(existsSync(join(temp, "skills", "beta", "SKILL.md"))).toBe(true)
+})
+
+test("bootstrap falls back to cloning skills when vendor/ is absent", async () => {
+  internals.bundledSkillsRepo = join(temp, "vendor", "ai-thinker-src")
+  let cloned = false
+  internals.spawnSync = ((command: string, args: string[]) => {
+    if (command === "git" && args[0] === "clone") cloned = true
+    return { status: 0, stdout: "", stderr: "", pid: 0, output: [], signal: null }
+  }) as unknown as typeof internals.spawnSync
+
+  process.env.DSH_NO_FLASHKEY = "1"
+  await bootstrapAll()
+
+  expect(cloned).toBe(true)
+})
+
+test("bootstrap starts the vendored FlashKey server in place when Python deps exist", async () => {
+  const bundled = join(temp, "vendor", "flashkey-mcp")
+  internals.bundledFlashkey = bundled
+  mkdirSync(join(bundled, "src", "flashkey_mcp"), { recursive: true })
+  const spawned: Array<{ command: string; args: string[]; env: NodeJS.ProcessEnv }> = []
+  internals.spawnSync = ((command: string, args: string[]) => {
+    if (command === "python3" && args[0] === "-c") {
+      return { status: 0, stdout: "", stderr: "", pid: 0, output: [], signal: null }
+    }
+    return { status: 1, stdout: "", stderr: "", pid: 0, output: [], signal: null }
+  }) as unknown as typeof internals.spawnSync
+  internals.spawn = ((command: string, args: string[], options?: { env?: NodeJS.ProcessEnv }) => {
+    spawned.push({ command, args, env: options?.env ?? process.env })
+    return { unref() {} }
+  }) as unknown as typeof internals.spawn
+
+  process.env.DSH_NO_SKILLS = "1"
+  await bootstrapAll()
+
+  expect(spawned.length).toBe(1)
+  expect(spawned[0]!.command).toBe("python3")
+  expect(spawned[0]!.args).toEqual(["-m", "flashkey_mcp.server", "--sse", "--host", "127.0.0.1", "--port", "8100"])
+  expect(spawned[0]!.env.PYTHONPATH).toBe(join(bundled, "src"))
+})
+
+test("flashkey install prefers the bundled source path over the git URL", async () => {
+  const bundled = join(temp, "vendor", "flashkey-mcp")
+  internals.bundledFlashkey = bundled
+  mkdirSync(bundled, { recursive: true })
+  const pipArgs: string[][] = []
+  internals.spawnSync = ((command: string, args: string[]) => {
+    if (command === "python3" && args[0] === "-m" && args[1] === "pip") {
+      pipArgs.push(args)
+      return { status: 0, stdout: "", stderr: "", pid: 0, output: [], signal: null }
+    }
+    return { status: 1, stdout: "", stderr: "", pid: 0, output: [], signal: null }
+  }) as unknown as typeof internals.spawnSync
+
+  process.env.DSH_NO_SKILLS = "1"
+  await bootstrapAll()
+
+  expect(pipArgs.length).toBeGreaterThan(0)
+  expect(pipArgs[0]!.slice(2)).toContain(bundled)
+})

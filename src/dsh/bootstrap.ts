@@ -3,26 +3,53 @@
  * Ai-Thinker skills collection into the harness skill roots and installs +
  * registers the FlashKey MCP server (SSE) with the tui profile.
  *
+ * The published npm package carries both resources inside `vendor/`
+ * (`ai-thinker-src` = the skills repo, `flashkey-mcp` = the MCP server Python
+ * source). Startup prefers those bundled copies, so first run works without
+ * cloning GitHub repositories. The git/pip URL paths remain as fallbacks for
+ * source checkouts that have not been vendored.
+ *
  * Every step is best-effort and never blocks startup:
  * - `DSH_SKIP_BOOTSTRAP=1` disables everything,
  * - `DSH_NO_SKILLS=1` / `DSH_NO_FLASHKEY=1` disable one resource,
- * - `AT_SKILLS_URL` / `FLASHKEY_INSTALL_URL` override the download sources,
+ * - `AT_SKILLS_URL` / `FLASHKEY_INSTALL_URL` override the fallback sources,
  * - `FLASHKEY_SSE_PORT` overrides the SSE port (default 8100).
  */
 import { spawn, spawnSync, type ChildProcess } from "node:child_process"
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, symlinkSync, writeFileSync } from "node:fs"
 import { homedir } from "node:os"
-import { join } from "node:path"
+import { dirname, join } from "node:path"
+import { fileURLToPath } from "node:url"
 
 const MCP_ROW_ID = "mcp-flashkey"
 const DEFAULT_SKILLS_URL = "https://github.com/Ai-Thinker-Open/skills.git"
 const DEFAULT_FLASHKEY_URL = "flashkey-mcp[sse] @ git+https://github.com/Ai-Thinker-Open/FlashKey_MCP-Server.git"
 
-/** Spawn seams; tests substitute these. */
+/** Locate the package root from a source or built module location. */
+function findRoot(start: string): string {
+  let dir = start
+  for (;;) {
+    if (existsSync(join(dir, "package.json"))) return dir
+    const parent = dirname(dir)
+    if (parent === dir) throw new Error("dsh-cli: unable to locate package root")
+    dir = parent
+  }
+}
+
+const PKG_ROOT = findRoot(dirname(fileURLToPath(import.meta.url)))
+
+/** Spawn seams and bundled resource roots; tests substitute these. */
 export const internals: {
   spawnSync: typeof spawnSync
   spawn: typeof spawn
-} = { spawnSync, spawn }
+  bundledSkillsRepo: string
+  bundledFlashkey: string
+} = {
+  spawnSync,
+  spawn,
+  bundledSkillsRepo: join(PKG_ROOT, "vendor", "ai-thinker-src"),
+  bundledFlashkey: join(PKG_ROOT, "vendor", "flashkey-mcp"),
+}
 
 function info(message: string): void {
   process.stderr.write(`[dsh-cli] bootstrap: ${message}\n`)
@@ -94,10 +121,18 @@ function hasCommand(command: string): boolean {
 
 async function ensureSkills(): Promise<void> {
   const skillsRoot = join(dshHome(), "skills")
+  mkdirSync(skillsRoot, { recursive: true })
+  // Bundled resources ship in the npm package (vendor/ai-thinker-src): link
+  // straight from there, no network needed.
+  if (existsSync(join(internals.bundledSkillsRepo, "skills"))) {
+    const linked = linkSkillBundles(skillsRoot, internals.bundledSkillsRepo)
+    info(`skills ready (${linked} new bundles linked from the bundled package resources)`)
+    return
+  }
+  // Fallback for source checkouts that have not been vendored.
   const repoRoot = join(skillsRoot, "ai-thinker-src")
   const url = process.env.AT_SKILLS_URL ?? DEFAULT_SKILLS_URL
   if (!existsSync(join(repoRoot, ".git"))) {
-    mkdirSync(skillsRoot, { recursive: true })
     info(`cloning Ai-Thinker skills -> ${repoRoot}`)
     const result = internals.spawnSync("git", ["clone", "--depth", "1", url, repoRoot], { stdio: "ignore" })
     if (result.status !== 0) {
@@ -111,17 +146,33 @@ async function ensureSkills(): Promise<void> {
 
 async function installFlashkey(): Promise<boolean> {
   const installUrl = process.env.FLASHKEY_INSTALL_URL ?? DEFAULT_FLASHKEY_URL
-  const attempts: Array<Array<string>> = [
+  const attempts: Array<Array<string>> = []
+  // Prefer the bundled Python source over the git URL: no repository clone.
+  if (existsSync(internals.bundledFlashkey)) {
+    attempts.push(
+      ["python3", "-m", "pip", "install", "--user", internals.bundledFlashkey],
+      ["python3", "-m", "pip", "install", internals.bundledFlashkey],
+      ["uv", "tool", "install", "--reinstall", internals.bundledFlashkey],
+    )
+  }
+  attempts.push(
     ["python3", "-m", "pip", "install", "--user", installUrl],
     ["python3", "-m", "pip", "install", installUrl],
     ["uv", "tool", "install", "--reinstall", installUrl],
-  ]
+  )
   for (const args of attempts) {
     info(`installing flashkey-mcp: ${args[0]} ${args.slice(1).join(" ")}`)
     const result = internals.spawnSync(args[0]!, args.slice(1), { stdio: "ignore" })
     if (result.status === 0) return true
   }
   return false
+}
+
+/** Can the vendored MCP server run directly (deps already importable)? */
+async function canRunVendoredFlashkey(): Promise<boolean> {
+  if (!existsSync(join(internals.bundledFlashkey, "src", "flashkey_mcp"))) return false
+  const probe = internals.spawnSync("python3", ["-c", "import mcp, starlette, uvicorn, serial"], { stdio: "ignore" })
+  return probe.status === 0
 }
 
 async function ensureSseDaemon(port: number): Promise<void> {
@@ -138,12 +189,27 @@ async function ensureSseDaemon(port: number): Promise<void> {
   } catch {
     // Not running yet — start it below.
   }
+  const installed = hasCommand("flashkey-mcp")
+  const vendored = !installed && (await canRunVendoredFlashkey())
+  if (!installed && !vendored) {
+    warn("flashkey-mcp is not installed and the bundled copy cannot run (missing Python deps: mcp, starlette, uvicorn, pyserial); run pip/uv install or check the FlashKey_MCP-Server README")
+    return
+  }
+  let command = "flashkey-mcp"
+  let args = ["--sse", "--host", "127.0.0.1", "--port", String(port)]
+  let env: NodeJS.ProcessEnv = process.env
+  if (vendored) {
+    // Run the bundled Python source in place: offline once its deps are present.
+    command = "python3"
+    args = ["-m", "flashkey_mcp.server", "--sse", "--host", "127.0.0.1", "--port", String(port)]
+    env = { ...process.env, PYTHONPATH: join(internals.bundledFlashkey, "src") }
+  }
   info(`starting FlashKey SSE daemon on :${port}`)
   try {
     const child: ChildProcess = internals.spawn(
-      "flashkey-mcp",
-      ["--sse", "--host", "127.0.0.1", "--port", String(port)],
-      { stdio: "ignore", detached: true },
+      command,
+      args,
+      { stdio: "ignore", detached: true, env },
     )
     child.unref()
   } catch (error) {
@@ -153,7 +219,7 @@ async function ensureSseDaemon(port: number): Promise<void> {
 
 async function ensureFlashkey(): Promise<void> {
   const port = Number(process.env.FLASHKEY_SSE_PORT ?? 8100)
-  if (!hasCommand("flashkey-mcp")) {
+  if (!hasCommand("flashkey-mcp") && !(await canRunVendoredFlashkey())) {
     if (!(await installFlashkey())) {
       warn("flashkey-mcp install failed; install it manually (see FlashKey_MCP-Server README)")
       return
