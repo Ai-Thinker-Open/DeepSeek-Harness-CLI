@@ -1,5 +1,3 @@
-# DeepSeek Harness CLI（`dsh-cli`）
-
 ![DeepSeek Harness CLI](assets/deepseek-harness-cli.png)
 
 基于 [OpenTUI](https://github.com/opentui/opentui) 0.5.x + SolidJS 构建的 [DeepSeek Harness (DSH)](https://github.com/deepseek-ai/DeepSeek-Harness) 终端客户端。
