@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test"
-import type { HarnessClientLike, HostDescribe, ServerRequest, SessionEvent } from "../src/harness/client"
+import type { CredentialView, HarnessClientLike, HostDescribe, ServerRequest, SessionEvent } from "../src/harness/client"
 import { HarnessError } from "../src/harness/client"
 import { createHarnessSession } from "../src/harness/session"
 
@@ -50,6 +50,25 @@ class FakeClient implements HarnessClientLike {
 
   async commandExecute() {
     return undefined
+  }
+
+  credentialsDescribeResult: Record<string, { configured: boolean; source?: string; writable: boolean }> = {}
+  credentialsFail = false
+  credentialsSetCalls: Array<{ ref: string; value: string }> = []
+
+  async credentialsDescribe(refs: string[]): Promise<Record<string, CredentialView>> {
+    if (this.credentialsFail) throw new Error("credentials service unavailable")
+    const out: Record<string, CredentialView> = {}
+    for (const ref of refs) {
+      const view = this.credentialsDescribeResult[ref]
+      if (view) out[ref] = view
+    }
+    return out
+  }
+
+  async credentialsSet(ref: string, value: string) {
+    if (this.credentialsFail) throw new Error("credentials service unavailable")
+    this.credentialsSetCalls.push({ ref, value })
   }
 
   async listModels() {
@@ -934,4 +953,40 @@ test("second send reuses the same session", async () => {
   expect(client.prompts.map((p) => p.text)).toEqual(["first", "second"])
   expect(session.stats().turns).toBe(2)
   expect(session.messages().filter((m) => m.role === "user").map((m) => m.content)).toEqual(["first", "second"])
+})
+
+test("checkApiKey reports configured / missing / unsupported", async () => {
+  const client = new FakeClient()
+  const session = createHarnessSession(client, "/tmp")
+
+  client.credentialsDescribeResult = { DEEPSEEK_API_KEY: { configured: true, source: "file", writable: true } }
+  expect(await session.checkApiKey()).toBe("configured")
+
+  client.credentialsDescribeResult = { DEEPSEEK_API_KEY: { configured: false, writable: true } }
+  expect(await session.checkApiKey()).toBe("missing")
+
+  client.credentialsDescribeResult = { DEEPSEEK_API_KEY: { configured: false, writable: false } }
+  expect(await session.checkApiKey()).toBe("unsupported")
+
+  client.credentialsDescribeResult = {}
+  expect(await session.checkApiKey()).toBe("unsupported")
+
+  client.credentialsFail = true
+  expect(await session.checkApiKey()).toBe("unsupported")
+  session.dispose()
+})
+
+test("saveApiKey trims, persists via the harness and reports failures", async () => {
+  const client = new FakeClient()
+  const session = createHarnessSession(client, "/tmp")
+
+  expect(await session.saveApiKey("   sk-abc123  ")).toBe(true)
+  expect(client.credentialsSetCalls).toEqual([{ ref: "DEEPSEEK_API_KEY", value: "sk-abc123" }])
+
+  expect(await session.saveApiKey("   ")).toBe(false)
+  expect(client.credentialsSetCalls).toHaveLength(1)
+
+  client.credentialsFail = true
+  expect(await session.saveApiKey("sk-other")).toBe(false)
+  session.dispose()
 })

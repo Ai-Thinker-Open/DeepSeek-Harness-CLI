@@ -116,7 +116,7 @@ bun test              # 全量测试（协议 / 事件折叠 / 渲染帧 / 交�
 
 ### 图标
 
-工具与 Think 图标以 SVG 形式存放在 `assets/icons-src/`：来源是 DSH web 客户端官方图标集（deepseek-ai/DeepSeek-Harness 的 `packages/client/ui-primitives/src/icons`），另有 TUI 专属的 `terminal` / `job` 两个自绘图标。`bun run icons` 会把每个图标渲染成 `assets/icons/` 下的 64×64 PNG，并重新生成 `src/assets-icons.ts`（base64 data URL 模块），因此 bundle 不依赖运行时资源路径。界面上的 `ToolIcon` 在终端支持 Kitty / Sixel 图形协议时渲染 PNG（2 格宽），否则回退 Unicode 字形；tmux、普通 SSH 会话会自动使用字形。
+工具与 Think 图标以 SVG 形式存放在 `assets/icons-src/`：来源是 DSH web 客户端官方图标集（deepseek-ai/DeepSeek-Harness 的 `packages/client/ui-primitives/src/icons`），另有 TUI 专属的 `terminal` 自绘图标（`job` 使用官方齿轮图标）。`bun run icons` 会把每个图标渲染成 `assets/icons/` 下的 64×64 PNG，并重新生成 `src/assets-icons.ts`（base64 data URL 模块），因此 bundle 不依赖运行时资源路径。界面上的 `ToolIcon` 在终端支持 Kitty / Sixel 图形协议时渲染 PNG（2 格宽），否则回退 Unicode 字形；tmux、普通 SSH 会话会自动使用字形。
 
 没有真实 harness 时，用内置 mock 服务器联调 TUI：
 

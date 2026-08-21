@@ -116,7 +116,7 @@ bun test              # full suite (protocol / event folding / rendered frames /
 
 ### Icons
 
-Tool and Think icons start as SVGs in `assets/icons-src/` — extracted from the official DSH web-client icon set (`packages/client/ui-primitives/src/icons` in deepseek-ai/DeepSeek-Harness), plus TUI-only `terminal` / `job` variants. `bun run icons` renders each one to a 64×64 PNG in `assets/icons/` and regenerates `src/assets-icons.ts` as base64 data URLs, so the bundle needs no runtime asset paths. On screen, `ToolIcon` renders the PNG (2 cells wide) when the terminal supports Kitty or Sixel graphics and falls back to the Unicode glyph otherwise; tmux and plain SSH sessions get glyphs automatically.
+Tool and Think icons start as SVGs in `assets/icons-src/` — extracted from the official DSH web-client icon set (`packages/client/ui-primitives/src/icons` in deepseek-ai/DeepSeek-Harness), plus a TUI-only `terminal` variant (`job` uses the official gear icon). `bun run icons` renders each one to a 64×64 PNG in `assets/icons/` and regenerates `src/assets-icons.ts` as base64 data URLs, so the bundle needs no runtime asset paths. On screen, `ToolIcon` renders the PNG (2 cells wide) when the terminal supports Kitty or Sixel graphics and falls back to the Unicode glyph otherwise; tmux and plain SSH sessions get glyphs automatically.
 
 No real harness handy? Use the built-in mock server to develop the TUI:
 

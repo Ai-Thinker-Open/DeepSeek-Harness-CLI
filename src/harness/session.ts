@@ -51,6 +51,10 @@ export interface HarnessSessionApi {
   /** Fast `-c` path: attach to the newest workspace session and show its
    *  transcript without hydrating previews for every other session. */
   resumeLastSession: () => Promise<ResumeResult>
+  /** Startup gate: whether the harness has a configured DeepSeek API key. */
+  checkApiKey: () => Promise<"configured" | "missing" | "unsupported">
+  /** Persist a DeepSeek API key through the harness credentials service. */
+  saveApiKey: (value: string) => Promise<boolean>
   queue: () => QueueItem[]
   updateQueueItem: (itemId: string, action: QueueAction) => Promise<boolean>
   refreshCommands: () => Promise<void>
@@ -913,6 +917,38 @@ export function createHarnessSession(
     }
   }
 
+  /** Credential reference the DeepSeek provider reads (`apiKeyEnv`). */
+  const API_KEY_REF = "DEEPSEEK_API_KEY"
+
+  /**
+   * Ask the harness whether `DEEPSEEK_API_KEY` is configured. When the
+   * credentials service is absent (mock server, older harness) the check is
+   * skipped rather than blocking startup.
+   */
+  async function checkApiKey(): Promise<"configured" | "missing" | "unsupported"> {
+    try {
+      const views = await client.credentialsDescribe([API_KEY_REF])
+      const view = views[API_KEY_REF]
+      if (!view) return "unsupported"
+      if (view.configured) return "configured"
+      return view.writable ? "missing" : "unsupported"
+    } catch {
+      return "unsupported"
+    }
+  }
+
+  /** Persist the key through the harness so it lands in the managed store. */
+  async function saveApiKey(value: string): Promise<boolean> {
+    const trimmed = value.trim()
+    if (!trimmed) return false
+    try {
+      await client.credentialsSet(API_KEY_REF, trimmed)
+      return true
+    } catch {
+      return false
+    }
+  }
+
   async function send(text: string): Promise<boolean> {
     if (!sessionId) return start(text)
     return sendToSession(text)
@@ -1368,6 +1404,8 @@ export function createHarnessSession(
     ensureSession,
     resumeSession,
     resumeLastSession,
+    checkApiKey,
+    saveApiKey,
     queue,
     updateQueueItem,
     refreshCommands,

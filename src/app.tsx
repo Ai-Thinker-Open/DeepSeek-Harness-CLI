@@ -2,6 +2,7 @@ import { Show, createEffect, createSignal, onCleanup, onMount } from "solid-js"
 import { useKeyboard, useRenderer, useSelectionHandler } from "@opentui/solid"
 import { copySelection } from "./clipboard"
 import { Toast, type ToastMessage } from "./components/toast"
+import { ApiKeyModal } from "./components/api-key-modal"
 import { createHarnessSession } from "./harness/session"
 import type { HarnessClientLike, ModelCatalog } from "./harness/client"
 import { nextMode, type PermissionMode } from "./permission"
@@ -57,8 +58,10 @@ export function App(props: { client?: HarnessClientLike; continueLast?: boolean;
   const [commandOpen, setCommandOpen] = createSignal(false)
   const [resultOverride, setResultOverride] = createSignal<CommandResultView | null>(null)
   const [skills, setSkills] = createSignal<SkillEntry[]>([])
+  const [apiKeyOpen, setApiKeyOpen] = createSignal(false)
   const session = createHarnessSession(props.client, undefined, { minToolRunningMs: props.minToolRunningMs })
   let toastTimer: ReturnType<typeof setTimeout> | undefined
+  let startupRan = false
 
   const showToast = (text: string, kind: ToastMessage["kind"] = "success") => {
     setToast({ text, kind })
@@ -71,30 +74,47 @@ export function App(props: { client?: HarnessClientLike; continueLast?: boolean;
     session.dispose()
   })
 
-  // `-c`/`--continue`: attach to the most recently used session and jump
-  // straight into it, with its history loaded by the resume flow.
-  onMount(() => {
+  // Startup gate: prompt for a missing DeepSeek API key, then run the
+  // `-c`/`--continue` resume flow (or a plain home start).
+  const runStartup = async () => {
+    if (startupRan) return
+    startupRan = true
     if (!props.continueLast) return
+    const result = await session.resumeLastSession()
+    if (result.status === "none") {
+      showToast("没有可继续的会话（或 harness 未连接）", "error")
+      setScreen("home")
+      return
+    }
+    if (result.status === "failed") {
+      showToast(`继续上次会话失败：${result.reason}`, "error")
+      setScreen("home")
+      return
+    }
+    void session.refreshCommands()
+    void refreshSkills()
+    setScreen("session")
+  }
+
+  const handleApiKeyDone = (saved: boolean) => {
+    setApiKeyOpen(false)
+    if (saved) showToast("✓ 已保存 DeepSeek API Key")
+    void runStartup()
+  }
+
+  onMount(() => {
     void (async () => {
-      const result = await session.resumeLastSession()
-      if (result.status === "none") {
-        showToast("没有可继续的会话（或 harness 未连接）", "error")
-        setScreen("home")
+      const state = await session.checkApiKey()
+      if (state === "missing") {
+        setApiKeyOpen(true)
         return
       }
-      if (result.status === "failed") {
-        showToast(`继续上次会话失败：${result.reason}`, "error")
-        setScreen("home")
-        return
-      }
-      void session.refreshCommands()
-      void refreshSkills()
-      setScreen("session")
+      void runStartup()
     })()
   })
 
   useKeyboard((key) => {
-    if (session.question()) return
+    if (session.question() || apiKeyOpen()) return
     // The slash menu owns Tab while a command draft is live.
     if (commandOpen()) return
     if (key.name === "tab") {
@@ -356,6 +376,11 @@ export function App(props: { client?: HarnessClientLike; continueLast?: boolean;
           active={() => screen() === "session"}
         />
       </box>
+      <ApiKeyModal
+        open={apiKeyOpen}
+        onSave={(value) => session.saveApiKey(value)}
+        onDone={handleApiKeyDone}
+      />
     </box>
   )
 }

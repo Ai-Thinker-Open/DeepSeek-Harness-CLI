@@ -5,6 +5,7 @@
  *   bun scripts/mock-dsh-server.mjs          # listens on 127.0.0.1:3080
  *   PORT=3456 bun scripts/mock-dsh-server.mjs
  *   MOCK_SLOW=1 bun scripts/mock-dsh-server.mjs   # slower streaming
+ *   MOCK_API_KEY=sk-... bun scripts/mock-dsh-server.mjs  # preconfigure the key
  *
  * Speaks the DSH protocol:
  *   - POST /api/<method> with a `client-request` envelope
@@ -27,6 +28,8 @@ let seq = 0
 const sockets = new Set()
 const sessions = new Map()
 const pendingQuestions = new Map() // rpcId -> { resolve }
+const credentials = new Map()
+if (process.env.MOCK_API_KEY) credentials.set("DEEPSEEK_API_KEY", process.env.MOCK_API_KEY)
 
 function emit(method, payload) {
   const frame = JSON.stringify({ type: "server-request", rpcId: `mux-${++seq}`, method, payload })
@@ -301,6 +304,24 @@ async function handleRpc(req) {
   switch (method) {
     case "host.describe":
       return respond(ok({ version: "mock", cwd: process.cwd(), provider: "deepseek", model: MODEL, attachedSessions: sessions.size, canOpenPath: true }))
+    case "credentials.describe": {
+      const refs = Array.isArray(payload.refs) ? payload.refs : []
+      const views = Object.fromEntries(
+        refs.map((ref) => [
+          String(ref),
+          { configured: credentials.has(String(ref)), writable: true },
+        ]),
+      )
+      return respond(ok({ credentials: views }))
+    }
+    case "credentials.set": {
+      const ref = String(payload.ref ?? "")
+      if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(ref)) {
+        return respond(fail("invalid credential ref", "bad-request"))
+      }
+      credentials.set(ref, String(payload.value ?? ""))
+      return respond(ok({}))
+    }
     case "session.create": {
       // Resume when a sessionId is supplied (the TUI's `-c`/continue flow),
       // matching the real harness's attach semantics.

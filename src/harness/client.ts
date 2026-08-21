@@ -49,6 +49,13 @@ export interface SessionSummary {
   preview?: string
 }
 
+/** One entry of `credentials.describe`: configured/source/writable, no value. */
+export interface CredentialView {
+  configured: boolean
+  source?: string
+  writable: boolean
+}
+
 /** One selectable model advertised by a provider group. */
 export interface ModelEntry {
   id: string
@@ -153,6 +160,8 @@ export interface HarnessClientLike {
   forkSession(sessionId: string): Promise<{ sessionId: string }>
   skillList(sessionId: string): Promise<{ skills: SkillEntry[] }>
   updateQueue(sessionId: string, itemId: string, action: QueueAction): Promise<{ accepted: boolean }>
+  credentialsDescribe(refs: string[]): Promise<Record<string, CredentialView>>
+  credentialsSet(ref: string, value: string): Promise<void>
   eventStream(signal?: AbortSignal): AsyncGenerator<ServerRequest>
 }
 
@@ -291,6 +300,16 @@ export class HarnessClient implements HarnessClientLike {
 
   skillList(sessionId: string): Promise<{ skills: SkillEntry[] }> {
     return this.call("skill.list", { sessionId })
+  }
+
+  credentialsDescribe(refs: string[]): Promise<Record<string, CredentialView>> {
+    return this.call<{ credentials: Record<string, CredentialView> }>("credentials.describe", { refs }).then(
+      (res) => res.credentials,
+    )
+  }
+
+  credentialsSet(ref: string, value: string): Promise<void> {
+    return this.call("credentials.set", { ref, value }).then(() => undefined)
   }
 
   /** Discover the effective slash commands for a session's agent. */

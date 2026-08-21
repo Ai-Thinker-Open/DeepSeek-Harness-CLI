@@ -131,7 +131,7 @@ const VARIANT_ICONS: Record<ToolVariant, string> = {
   todo: "☑", // IconChecklistOutline14 (checklist)
   question: "?", // IconQuestionOutline14 (ring + question mark)
   terminal: "◉", // no official DSH counterpart (TUI extension)
-  job: "⚙", // no official DSH counterpart (TUI extension)
+  job: "⚙", // IconSettingsOutline14 (gear)
   others: "✦", // IconSparkle16 (three sparkles)
 }
 

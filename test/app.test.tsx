@@ -28,6 +28,9 @@ class FakeClient implements HarnessClientLike {
   commandCalls: string[] = []
   selectedModel: { provider: string; model: string } | null = null
   sessionsResult: SessionSummary[] = []
+  apiKeyConfigured = true
+  apiKeyUnsupported = false
+  credentialsSetCalls: Array<{ ref: string; value: string }> = []
   private frames: ServerRequest[] = []
   private waiters: Array<(r: IteratorResult<ServerRequest>) => void> = []
   private closed = false
@@ -111,6 +114,18 @@ class FakeClient implements HarnessClientLike {
 
   async updateQueue() {
     return { accepted: true }
+  }
+
+  async credentialsDescribe(refs: string[]) {
+    if (this.apiKeyUnsupported) throw new Error("credentials service unavailable")
+    return Object.fromEntries(
+      refs.map((ref) => [ref, { configured: this.apiKeyConfigured, writable: true }]),
+    )
+  }
+
+  async credentialsSet(ref: string, value: string) {
+    this.credentialsSetCalls.push({ ref, value })
+    this.apiKeyConfigured = true
   }
 
   async *eventStream() {
@@ -698,4 +713,77 @@ test("continueLast failure toast includes the underlying reason", async () => {
   expect(frame).toContain("继续上次会话失败")
   expect(frame).toContain("harness unreachable")
   expect(frame).toContain("DeepSeek Harness CLI")
+})
+
+test("missing API key opens the masked input modal with the gray placeholder", async () => {
+  const client = new FakeClient()
+  client.apiKeyConfigured = false
+  const app = await testRender(() => <App client={client} />, { width: 80, height: 32 })
+  await app.renderOnce()
+  await tick(80)
+  await app.renderOnce()
+
+  const frame = app.captureCharFrame()
+  expect(frame).toContain("DeepSeek API Key")
+  expect(frame).toContain("请输入DeepSeek API Key")
+  // The modal blocks the home screen and no key is saved yet.
+  expect(frame).not.toContain("给智能体发消息")
+  expect(client.credentialsSetCalls).toHaveLength(0)
+})
+
+test("entering a key and confirming saves it and closes the modal", async () => {
+  const client = new FakeClient()
+  client.apiKeyConfigured = false
+  const app = await testRender(() => <App client={client} />, { width: 80, height: 32 })
+  await app.renderOnce()
+  await tick(80)
+  await app.renderOnce()
+
+  app.mockInput.typeText("sk-abc123")
+  await app.renderOnce()
+  app.mockInput.pressEnter()
+  await tick()
+  await app.renderOnce()
+
+  expect(client.credentialsSetCalls).toEqual([{ ref: "DEEPSEEK_API_KEY", value: "sk-abc123" }])
+  const frame = app.captureCharFrame()
+  expect(frame).not.toContain("请输入DeepSeek API Key")
+  expect(frame).toContain("给智能体发消息")
+})
+
+test("escaping the API key prompt skips it and continues startup", async () => {
+  const client = new FakeClient()
+  client.apiKeyConfigured = false
+  client.sessionsResult = [
+    { sessionId: "s-last", updatedAt: 20, running: false, blank: false, cwd: process.cwd() },
+  ]
+  const app = await testRender(() => <App client={client} continueLast />, { width: 80, height: 32 })
+  await app.renderOnce()
+  await tick(80)
+  await app.renderOnce()
+
+  expect(app.captureCharFrame()).toContain("请输入DeepSeek API Key")
+  app.mockInput.pressEscape()
+  await tick(80)
+  await app.renderOnce()
+
+  const frame = app.captureCharFrame()
+  expect(frame).not.toContain("DeepSeek API Key")
+  // Resume still runs after skipping: the session screen opens.
+  expect(frame).toContain("发送消息开始对话")
+  expect(client.resumedId).toBe("s-last")
+  expect(client.credentialsSetCalls).toHaveLength(0)
+})
+
+test("API key prompt is skipped when the credentials service is unavailable", async () => {
+  const client = new FakeClient()
+  client.apiKeyUnsupported = true
+  const app = await testRender(() => <App client={client} />, { width: 80, height: 32 })
+  await app.renderOnce()
+  await tick(80)
+  await app.renderOnce()
+
+  const frame = app.captureCharFrame()
+  expect(frame).not.toContain("请输入DeepSeek API Key")
+  expect(frame).toContain("给智能体发消息")
 })
