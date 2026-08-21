@@ -1,5 +1,7 @@
 # DeepSeek Harness CLI（`dsh-cli`）
 
+![DeepSeek Harness CLI](assets/deepseek-harness-cli.png)
+
 基于 [OpenTUI](https://github.com/opentui/opentui) 0.5.x + SolidJS 构建的 [DeepSeek Harness (DSH)](https://github.com/deepseek-ai/DeepSeek-Harness) 终端客户端。
 
 它直接驱动本地运行的 DeepSeek Harness 实例：会话、工具调用、权限审批、计划模式、历史记录全部由 harness 持有，本客户端负责把它们渲染成一个流畅的终端界面——MiMo 风格启动屏、工具卡片动画，并在终端支持 Kitty/Sixel 图形协议时显示真正的 SVG 图标。**不需要本地 API Key。**

@@ -1,5 +1,7 @@
 # DeepSeek Harness CLI (`dsh-cli`)
 
+![DeepSeek Harness CLI](assets/deepseek-harness-cli.png)
+
 A terminal client for [DeepSeek Harness (DSH)](https://github.com/deepseek-ai/DeepSeek-Harness), built with [OpenTUI](https://github.com/opentui/opentui) 0.5.x + SolidJS.
 
 It drives a locally running DeepSeek Harness instance: sessions, tool calls, permission approvals, plan mode and history all live in the harness, while this client renders them as a fluid terminal interface — MiMo-style launch screen, animated tool cards, and real SVG icons where the terminal supports Kitty/Sixel graphics. **No local API key required.**
