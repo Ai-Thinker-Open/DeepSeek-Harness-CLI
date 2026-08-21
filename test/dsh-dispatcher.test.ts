@@ -88,7 +88,7 @@ test("dispatcher boots dsh --profile tui when the profile already has the bundle
   const { calls, children } = installSpawn()
   const { calls: syncCalls } = installSpawnSync({ "--help": { status: 0 }, plugin: { status: 0 } })
   dispatcherInternals.probe = async () => false
-  writeProfile(["deepseek-harness-cli"])
+  writeProfile(["@ai-thinker/deepseek-harness-cli"])
 
   const pending = run(["--port", "3199"])
   await settle()
@@ -128,7 +128,7 @@ test("dispatcher falls back to npx when dsh is not installed and no cache exists
   const { calls, children } = installSpawn()
   installSpawnSync({ "--help": { status: null } })
   dispatcherInternals.probe = async () => false
-  writeProfile(["deepseek-harness-cli"])
+  writeProfile(["@ai-thinker/deepseek-harness-cli"])
   process.env.DSH_NPX_CACHE = join(tmpdir(), "dsh-cli-empty-npx")
 
   const pending = run([])
@@ -144,7 +144,7 @@ test("dispatcher reuses an installed npx cache entry instead of npx", async () =
   const { calls, children } = installSpawn()
   installSpawnSync({ "--help": { status: null } })
   dispatcherInternals.probe = async () => false
-  writeProfile(["deepseek-harness-cli"])
+  writeProfile(["@ai-thinker/deepseek-harness-cli"])
   const cache = join(tmpdir(), "dsh-cli-npx-cache")
   mkdirSync(join(cache, "1e7f6d9597241db0", "node_modules", ".bin"), { recursive: true })
   writeFileSync(join(cache, "1e7f6d9597241db0", "node_modules", ".bin", "dsh"), "#!/bin/sh\n")

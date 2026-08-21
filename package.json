@@ -1,10 +1,12 @@
 {
-  "name": "deepseek-harness-cli",
+  "name": "@ai-thinker/deepseek-harness-cli",
   "version": "0.1.0",
   "description": "DeepSeek Harness - OpenTUI terminal interface",
   "type": "module",
   "license": "MIT",
-  "private": true,
+  "publishConfig": {
+    "access": "public"
+  },
   "main": "./dist/runner.js",
   "exports": {
     ".": "./dist/runner.js",
@@ -23,13 +25,15 @@
     }
   },
   "bin": {
-    "dsh-cli": "bin/dsh-cli"
+    "dsh-cli": "bin/dsh-cli",
+    "deepseek-harness-cli": "bin/dsh-cli"
   },
   "scripts": {
     "dev": "bun run --preload @opentui/solid/preload src/cli.tsx",
     "dev:debug": "DSH_DEBUG=1 bun run --preload @opentui/solid/preload src/cli.tsx",
     "icons": "bun run scripts/icons.mjs",
     "build": "bun run scripts/build.ts",
+    "prepack": "bun run build",
     "typecheck": "tsc --noEmit",
     "test": "bun test --preload @opentui/solid/preload"
   },

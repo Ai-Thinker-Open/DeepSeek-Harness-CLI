@@ -32,7 +32,7 @@ function readManifest(): { name?: string } {
   return JSON.parse(readFileSync(join(PKG_ROOT, "package.json"), "utf8")) as { name?: string }
 }
 
-const PKG_NAME = readManifest().name ?? "deepseek-harness-cli"
+const PKG_NAME = readManifest().name ?? "@ai-thinker/deepseek-harness-cli"
 
 function profileDir(): string {
   const home = process.env.DSH_HOME ?? join(homedir(), ".dsh")

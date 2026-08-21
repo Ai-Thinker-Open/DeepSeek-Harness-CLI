@@ -1,4 +1,4 @@
-# The deepseek-harness-cli bundle patch: the terminal surface over dsh-base.
+# The @ai-thinker/deepseek-harness-cli bundle patch: the terminal surface over dsh-base.
 # Applied after dsh-base's insert; rows here override base rows by id, with
 # the profile's own cordis.patch.yml and any --patch overlays still to come.
 #
@@ -29,7 +29,7 @@
 #
 # The `name` entries below reference THIS package's own name (it exports
 # `./startup` and its main entry). If you ever rename the package in
-# package.json, update the two `deepseek-harness-cli` names here to match.
+# package.json, update the two `@ai-thinker/deepseek-harness-cli` names here to match.
 - insert:
     - id: code-runtime
       name: '@deepseek-ai/dsh-code-runtime-worker-thread'
@@ -57,7 +57,7 @@
       name: '@deepseek-ai/dsh-host-directory-picker-auto'
 
     - id: tui-startup
-      name: 'deepseek-harness-cli/startup'
+      name: '@ai-thinker/deepseek-harness-cli/startup'
 
     # The API gateway: the transport-agnostic dispatch face every client shape
     # shares (the same gateway the web surface proxies).
@@ -78,7 +78,7 @@
     # The terminal runner: spawns the OpenTUI client once the server binds and
     # requests dsh shutdown when the client exits.
     - id: tui-runner
-      name: 'deepseek-harness-cli'
+      name: '@ai-thinker/deepseek-harness-cli'
       inject: [tuiStartup, webServer]
       config:
         startup: !!js ctx.tuiStartup

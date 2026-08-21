@@ -34,8 +34,8 @@ test("bundle patch declares the terminal surface over dsh-base", () => {
   for (const id of ["code-runtime", "tui-startup", "api-gateway", "webserver", "connection", "tui-runner"]) {
     expect(byId.get(id), `missing row ${id}`).toBeDefined()
   }
-  expect(byId.get("tui-startup")?.name).toBe("deepseek-harness-cli/startup")
-  expect(byId.get("tui-runner")?.name).toBe("deepseek-harness-cli")
+  expect(byId.get("tui-startup")?.name).toBe("@ai-thinker/deepseek-harness-cli/startup")
+  expect(byId.get("tui-runner")?.name).toBe("@ai-thinker/deepseek-harness-cli")
   expect(byId.get("webserver")?.inject).toContain("tuiStartup")
   expect(byId.get("tui-runner")?.inject).toEqual(["tuiStartup", "webServer"])
   expect(byId.get("hmr")?.disabled).toBe(true)

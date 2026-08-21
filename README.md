@@ -42,7 +42,16 @@ It drives a locally running DeepSeek Harness instance: sessions, tool calls, per
    npm install -g @deepseek-ai/dsh
    ```
 
-3. **Install `dsh-cli` from source**:
+3. **Install `dsh-cli`**:
+
+   From npm (after publishing):
+
+   ```sh
+   npm install -g @ai-thinker/deepseek-harness-cli   # provides the `dsh-cli` command
+   npx @ai-thinker/deepseek-harness-cli              # or run it directly without installing
+   ```
+
+   Or from source:
 
    ```sh
    git clone git@github.com:Ai-Thinker-Open/DeepSeek-Harness-CLI.git
@@ -52,7 +61,7 @@ It drives a locally running DeepSeek Harness instance: sessions, tool calls, per
    bun link          # exposes the global `dsh-cli` command
    ```
 
-Then run `dsh-cli` (or `dsh-cli -c`). The first launch auto-builds `dist/` if it is missing and boots a harness when none is running.
+Then run `dsh-cli` (or `dsh-cli -c`). The first launch auto-builds `dist/` if it is missing and boots a harness when none is running. Note: the terminal client itself is executed by Bun, so Bun must be installed even for the npm/npx install.
 
 ## Quick start
 

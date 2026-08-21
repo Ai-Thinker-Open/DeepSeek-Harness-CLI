@@ -42,7 +42,16 @@
    npm install -g @deepseek-ai/dsh
    ```
 
-3. **从源码安装 `dsh-cli`**：
+3. **安装 `dsh-cli`**：
+
+   通过 npm（发布后可用）：
+
+   ```sh
+   npm install -g @ai-thinker/deepseek-harness-cli   # 提供 `dsh-cli` 命令
+   npx @ai-thinker/deepseek-harness-cli              # 或者不安装直接运行
+   ```
+
+   或从源码安装：
 
    ```sh
    git clone git@github.com:Ai-Thinker-Open/DeepSeek-Harness-CLI.git
@@ -52,7 +61,7 @@
    bun link          # 把全局 `dsh-cli` 命令暴露出来
    ```
 
-然后运行 `dsh-cli`（或 `dsh-cli -c`）。首次启动若 `dist/` 缺失会自动构建，没有运行中的 harness 时也会自动拉起。
+然后运行 `dsh-cli`（或 `dsh-cli -c`）。首次启动若 `dist/` 缺失会自动构建，没有运行中的 harness 时也会自动拉起。注意：终端客户端由 Bun 执行，即使通过 npm/npx 安装，本机仍需要 Bun。
 
 ## 快速开始
 
