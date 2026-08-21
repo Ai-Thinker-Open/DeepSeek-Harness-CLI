@@ -33,9 +33,27 @@ It drives a locally running DeepSeek Harness instance: sessions, tool calls, per
 
 1. **Install Bun** — required to build and run the client:
 
+   Linux / macOS:
+
    ```sh
-   curl -fsSL https://bun.sh/install | bash   # or use your package manager
+   curl -fsSL https://bun.sh/install | bash
    ```
+
+   Windows (PowerShell):
+
+   ```powershell
+   powershell -c "irm bun.sh/install.ps1 | iex"
+   ```
+
+   Or via a package manager (any platform):
+
+   ```sh
+   npm install -g bun
+   # winget install Oven-sh.Bun
+   # scoop install bun
+   ```
+
+   > Windows 下建议在 WSL 中运行本项目——终端体验一致，USB 类工具（如 FlashKey FK-01）也需要通过 WSL 的 `usbip` 附加。
 
 2. **Install the DeepSeek Harness CLI (optional)** — `dsh-cli` can boot the harness automatically through npx, but a global install makes startup faster:
 

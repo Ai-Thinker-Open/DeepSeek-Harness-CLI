@@ -33,9 +33,27 @@
 
 1. **安装 Bun**（构建与运行必需）：
 
+   Linux / macOS：
+
    ```sh
-   curl -fsSL https://bun.sh/install | bash   # 或用你的包管理器安装
+   curl -fsSL https://bun.sh/install | bash
    ```
+
+   Windows（PowerShell）：
+
+   ```powershell
+   powershell -c "irm bun.sh/install.ps1 | iex"
+   ```
+
+   或用包管理器（各平台通用）：
+
+   ```sh
+   npm install -g bun
+   # winget install Oven-sh.Bun
+   # scoop install bun
+   ```
+
+   > Windows 下建议在 WSL 中运行本项目——终端体验一致，USB 类工具（如 FlashKey FK-01）也需要通过 WSL 的 `usbip` 附加。
 
 2. **安装 DeepSeek Harness CLI（可选）**——`dsh-cli` 也可以通过 npx 自动拉起 harness，但全局安装能让启动更快：
 
