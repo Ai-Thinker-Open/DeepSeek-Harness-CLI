@@ -178,6 +178,7 @@ export async function run(args: readonly string[]): Promise<number> {
 
   if (await internals.probe(url)) {
     // An instance is already serving: run the terminal client directly.
+    process.stderr.write(`[dsh-cli] harness reachable at ${url}; launching terminal client\n`)
     const child = internals.spawn("bun", [TUI_CLI, ...args], {
       stdio: "inherit",
       env: { ...process.env, DSH_URL: url, DSH_CWD: process.cwd() },
@@ -187,6 +188,7 @@ export async function run(args: readonly string[]): Promise<number> {
 
   const dsh = resolveDsh()
   if (!normalizeProfileBundles()) {
+    process.stderr.write(`[dsh-cli] registering the tui profile bundle (${PKG_NAME})\n`)
     const setup = internals.spawnSync(
       dsh.bin,
       [...dsh.prefix, "plugin", "--profile", PROFILE_NAME, "add", pathToFileURL(PKG_ROOT).href],
@@ -195,6 +197,7 @@ export async function run(args: readonly string[]): Promise<number> {
     if (setup.status !== 0) return setup.status ?? 1
   }
 
+  process.stderr.write("[dsh-cli] starting harness (dsh --profile tui); the terminal client will take over this screen\n")
   const child = internals.spawn(dsh.bin, [...dsh.prefix, "--profile", PROFILE_NAME, ...args], {
     stdio: "inherit",
     env: process.env,
