@@ -170,6 +170,11 @@ cross-platform too, but it must be installed for the platform you run on: in
 WSL install `@deepseek-ai/dsh` with WSL's npm instead of running a
 Windows-installed `dsh` inside WSL.
 
+`npm install -g @ai-thinker/deepseek-harness-cli` (global installs only)
+detects and installs a missing `@deepseek-ai/dsh` and `pnpm` (the harness
+needs pnpm to build profiles) automatically, so the CLI works out of the box;
+non-global installs are untouched.
+
 ## Usage
 
 | Action | Description |

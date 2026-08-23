@@ -1,6 +1,6 @@
 {
   "name": "@ai-thinker/deepseek-harness-cli",
-  "version": "0.2.4",
+  "version": "0.2.5",
   "description": "DeepSeek Harness - OpenTUI terminal interface",
   "type": "module",
   "license": "MIT",
@@ -19,6 +19,7 @@
     "bin",
     "cordis.patch.yml",
     "dist",
+    "scripts/ensure-runtime.mjs",
     "vendor"
   ],
   "dsh": {
@@ -36,6 +37,7 @@
     "icons": "bun run scripts/icons.mjs",
     "build": "bun run scripts/build.ts",
     "resources": "bun run scripts/vendor-resources.ts",
+    "postinstall": "node scripts/ensure-runtime.mjs",
     "prepack": "bun run scripts/vendor-resources.ts && bun run build",
     "typecheck": "tsc --noEmit",
     "test": "bun test --preload @opentui/solid/preload"

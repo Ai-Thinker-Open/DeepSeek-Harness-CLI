@@ -156,6 +156,8 @@ MCP 服务端依赖 `pyserial`、`mcp`、`starlette`、`uvicorn`。若本机 Pyt
 
 正常启动时不输出 bootstrap/启动进度信息，只有错误会打印到终端；需要详细日志时设置 `DSH_DEBUG=1`。harness（`dsh`）本身也支持全平台，但必须使用与运行平台一致的安装：WSL 里请用 WSL 的 npm 安装 `@deepseek-ai/dsh`，不要在 WSL 里运行 Windows 侧安装的 `dsh`。
 
+`npm install -g @ai-thinker/deepseek-harness-cli` 时（仅全局安装）会自动检测并安装缺失的 `@deepseek-ai/dsh` 与 `pnpm`（harness 搭建 profile 需要 pnpm），保证开箱即用；非全局安装不会触发。
+
 ## 常用操作
 
 | 操作 | 说明 |
