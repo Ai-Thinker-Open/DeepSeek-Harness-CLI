@@ -204,6 +204,17 @@ export async function run(args: readonly string[]): Promise<number> {
   const dsh = resolveDsh()
   if (!normalizeProfileBundles()) {
     if (process.env.DSH_DEBUG === "1") process.stderr.write(`[dsh-cli] registering the tui profile bundle (${PKG_NAME})\n`)
+    // Profile setup is forwarded to pnpm by dsh; auto-install it when missing
+    // so first run works even if the package postinstall was skipped.
+    const pnpmProbe = internals.spawnSync("pnpm", ["--version"], { stdio: "ignore" })
+    if (pnpmProbe.status !== 0) {
+      process.stderr.write("[dsh-cli] pnpm not found; the harness needs it to build the tui profile. Installing pnpm…\n")
+      const pnpmInstall = internals.spawnSync("npm", ["install", "-g", "pnpm"], { stdio: "inherit" })
+      if (pnpmInstall.status !== 0) {
+        process.stderr.write('[dsh-cli] could not auto-install pnpm; run "npm install -g pnpm" and retry.\n')
+        return pnpmInstall.status ?? 1
+      }
+    }
     const setup = internals.spawnSync(
       dsh.bin,
       [...dsh.prefix, "plugin", "--profile", PROFILE_NAME, "add", pathToFileURL(PKG_ROOT).href],
