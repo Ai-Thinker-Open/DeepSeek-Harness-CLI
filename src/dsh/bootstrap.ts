@@ -87,6 +87,9 @@ export function linkSkillBundles(skillsRoot: string, repoRoot: string): number {
 
 /** Register the FlashKey MCP row in the tui profile's cordis.patch.yml (idempotent). */
 export function applyMcpPatch(profileDir: string, port: number): boolean {
+  // Bootstrap runs before `dsh plugin add` on a fresh install, so the profile
+  // directory may not exist yet — create it so the row survives profile setup.
+  mkdirSync(profileDir, { recursive: true })
   const patchFile = join(profileDir, "cordis.patch.yml")
   const entry = `- insert:\n    - id: ${MCP_ROW_ID}\n      name: '@deepseek-ai/dsh-mcp-client'\n      config:\n        serverName: flashkey\n        url: http://127.0.0.1:${port}/sse\n`
   try {

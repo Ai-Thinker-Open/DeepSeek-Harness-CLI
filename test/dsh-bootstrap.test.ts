@@ -63,6 +63,13 @@ test("applyMcpPatch writes the FlashKey row once and survives re-runs", () => {
   expect(text.split("id: mcp-flashkey").length - 1).toBe(1)
 })
 
+test("applyMcpPatch creates the profile directory when missing", () => {
+  const profile = join(temp, "profiles", "tui")
+
+  expect(applyMcpPatch(profile, 8100)).toBe(true)
+  expect(existsSync(join(profile, "cordis.patch.yml"))).toBe(true)
+})
+
 test("applyMcpPatch replaces an empty [] array keeping header comments", () => {
   const profile = join(temp, "profiles", "tui")
   mkdirSync(profile, { recursive: true })
