@@ -181,6 +181,16 @@ export const internals: {
 export async function run(args: readonly string[]): Promise<number> {
   const url = process.env.DSH_URL ?? DEFAULT_HARNESS_URL
 
+  // The terminal client always runs under bun; fail loudly instead of exiting
+  // silently when it is missing from PATH.
+  const bunProbe = internals.spawnSync("bun", ["--version"], { stdio: "ignore" })
+  if (bunProbe.status !== 0) {
+    process.stderr.write(
+      "[dsh-cli] bun is required to run the terminal client. Install it from https://bun.sh and make sure it is on PATH.\n",
+    )
+    return 1
+  }
+
   if (await internals.probe(url)) {
     // An instance is already serving: run the terminal client directly.
     if (process.env.DSH_DEBUG === "1") process.stderr.write(`[dsh-cli] harness reachable at ${url}; launching terminal client\n`)
@@ -199,7 +209,12 @@ export async function run(args: readonly string[]): Promise<number> {
       [...dsh.prefix, "plugin", "--profile", PROFILE_NAME, "add", pathToFileURL(PKG_ROOT).href],
       { stdio: "inherit" },
     )
-    if (setup.status !== 0) return setup.status ?? 1
+    if (setup.status !== 0) {
+      process.stderr.write(
+        `[dsh-cli] failed to register the tui profile (dsh plugin add exited with ${setup.status ?? "error"}). The profile setup uses pnpm — install it with "npm install -g pnpm" (or enable corepack) and retry.\n`,
+      )
+      return setup.status ?? 1
+    }
   }
 
   if (process.env.DSH_DEBUG === "1") {
