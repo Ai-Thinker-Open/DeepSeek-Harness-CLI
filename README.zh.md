@@ -146,12 +146,15 @@ dsh --profile tui -c                     # 恢复最近会话
 
 ## 内置资源
 
-发布到 npm 的包自带两份运行资源，`npm install -g` 后即可离线启用：
+发布到 npm 的包自带运行资源，`npm install -g` 后即可离线启用：
 
 - `vendor/ai-thinker-src`：Ai-Thinker skills 仓库，首次启动把 `skills/` 下的技能包链接进 `~/.dsh/skills/`；
-- `vendor/flashkey-mcp`：FlashKey MCP 服务器 Python 源码，启动时与 harness 同步拉起 SSE 常驻服务（默认 `127.0.0.1:8100`）。
+- `vendor/flashkey-mcp`：FlashKey MCP 服务器 Python 源码，启动时与 harness 同步拉起 SSE 常驻服务（默认 `127.0.0.1:8100`）；
+- `vendor/opentui-native`：OpenTUI 各平台原生库（linux x64/arm64、win32 x64/arm64、darwin x64/arm64，含 musl）。终端客户端通过 `OTUI_ASSET_ROOT` 使用包内库，不依赖安装时的平台——Windows 上安装的包在 WSL/Linux 里也能直接跑。
 
 MCP 服务端依赖 `pyserial`、`mcp`、`starlette`、`uvicorn`。若本机 Python 已具备这些依赖，启动会直接从内置源码运行（完全离线）；否则首次启动会用 pip/uv 从内置源码安装，依赖需从 PyPI 获取一次。skills 与 MCP 都可用环境变量跳过或换源（见上表）。
+
+正常启动时不输出 bootstrap/启动进度信息，只有错误会打印到终端；需要详细日志时设置 `DSH_DEBUG=1`。harness（`dsh`）本身也支持全平台，但必须使用与运行平台一致的安装：WSL 里请用 WSL 的 npm 安装 `@deepseek-ai/dsh`，不要在 WSL 里运行 Windows 侧安装的 `dsh`。
 
 ## 常用操作
 

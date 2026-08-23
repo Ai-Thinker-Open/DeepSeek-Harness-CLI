@@ -146,19 +146,29 @@ Once started, the `tui-runner` plugin reads the bound web-server address, spawns
 
 ## Bundled resources
 
-The published npm package carries both runtime resources, so they work offline
+The published npm package carries its runtime resources, so they work offline
 right after `npm install -g`:
 
 - `vendor/ai-thinker-src` — the Ai-Thinker skills repository; on first launch the
   skill bundles under `skills/` are linked into `~/.dsh/skills/`;
 - `vendor/flashkey-mcp` — the FlashKey MCP server Python source; it starts as a
-  local SSE daemon (default `127.0.0.1:8100`) alongside the harness.
+  local SSE daemon (default `127.0.0.1:8100`) alongside the harness;
+- `vendor/opentui-native` — OpenTUI native libraries for every supported
+  platform (linux x64/arm64, win32 x64/arm64, darwin x64/arm64, musl included).
+  The terminal client uses them via `OTUI_ASSET_ROOT`, so the package works on
+  any platform regardless of where it was installed.
 
 The MCP server depends on `pyserial`, `mcp`, `starlette` and `uvicorn`. If those
 are already importable by `python3`, the daemon runs straight from the bundled
 source, fully offline. Otherwise first launch installs it from the bundled
 source with pip/uv, fetching those dependencies from PyPI once. Both resources
 can be skipped or redirected with the environment variables above.
+
+Startup/bootstrap progress is silent by default; only errors reach the
+terminal. Set `DSH_DEBUG=1` for verbose progress. The harness (`dsh`) is
+cross-platform too, but it must be installed for the platform you run on: in
+WSL install `@deepseek-ai/dsh` with WSL's npm instead of running a
+Windows-installed `dsh` inside WSL.
 
 ## Usage
 

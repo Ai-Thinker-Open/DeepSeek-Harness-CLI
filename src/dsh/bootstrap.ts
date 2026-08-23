@@ -52,7 +52,8 @@ export const internals: {
 }
 
 function info(message: string): void {
-  process.stderr.write(`[dsh-cli] bootstrap: ${message}\n`)
+  // Normal startup progress is invisible by default; `DSH_DEBUG=1` shows it.
+  if (process.env.DSH_DEBUG === "1") process.stderr.write(`[dsh-cli] bootstrap: ${message}\n`)
 }
 
 function warn(message: string): void {

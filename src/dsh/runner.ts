@@ -11,6 +11,11 @@ import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
 import type { AppExitLike, DshContext } from "./types"
 import type { TuiStartupValues } from "./startup"
+import { applyBundledOpentuiAssets } from "./native-assets"
+
+// The spawned client inherits this so it uses the bundled OpenTUI native
+// library for the current platform (see native-assets.ts).
+applyBundledOpentuiAssets()
 
 export const name = "tui-runner"
 

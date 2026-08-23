@@ -10,6 +10,7 @@ import { existsSync, readFileSync, readdirSync, writeFileSync } from "node:fs"
 import { homedir } from "node:os"
 import { dirname, join } from "node:path"
 import { fileURLToPath, pathToFileURL } from "node:url"
+import { applyBundledOpentuiAssets } from "./native-assets"
 export { bootstrapAll } from "./bootstrap"
 
 export const DEFAULT_HARNESS_URL = "http://127.0.0.1:3080"
@@ -28,6 +29,10 @@ function findRoot(start: string): string {
 
 const PKG_ROOT = findRoot(dirname(fileURLToPath(import.meta.url)))
 const TUI_CLI = join(PKG_ROOT, "dist", "cli.js")
+
+// The terminal client and the harness inherit this: bundled OpenTUI native
+// libraries make the client run on any platform, independent of the install.
+applyBundledOpentuiAssets()
 
 function readManifest(): { name?: string } {
   return JSON.parse(readFileSync(join(PKG_ROOT, "package.json"), "utf8")) as { name?: string }
@@ -178,7 +183,7 @@ export async function run(args: readonly string[]): Promise<number> {
 
   if (await internals.probe(url)) {
     // An instance is already serving: run the terminal client directly.
-    process.stderr.write(`[dsh-cli] harness reachable at ${url}; launching terminal client\n`)
+    if (process.env.DSH_DEBUG === "1") process.stderr.write(`[dsh-cli] harness reachable at ${url}; launching terminal client\n`)
     const child = internals.spawn("bun", [TUI_CLI, ...args], {
       stdio: "inherit",
       env: { ...process.env, DSH_URL: url, DSH_CWD: process.cwd() },
@@ -188,7 +193,7 @@ export async function run(args: readonly string[]): Promise<number> {
 
   const dsh = resolveDsh()
   if (!normalizeProfileBundles()) {
-    process.stderr.write(`[dsh-cli] registering the tui profile bundle (${PKG_NAME})\n`)
+    if (process.env.DSH_DEBUG === "1") process.stderr.write(`[dsh-cli] registering the tui profile bundle (${PKG_NAME})\n`)
     const setup = internals.spawnSync(
       dsh.bin,
       [...dsh.prefix, "plugin", "--profile", PROFILE_NAME, "add", pathToFileURL(PKG_ROOT).href],
@@ -197,7 +202,9 @@ export async function run(args: readonly string[]): Promise<number> {
     if (setup.status !== 0) return setup.status ?? 1
   }
 
-  process.stderr.write("[dsh-cli] starting harness (dsh --profile tui); the terminal client will take over this screen\n")
+  if (process.env.DSH_DEBUG === "1") {
+    process.stderr.write("[dsh-cli] starting harness (dsh --profile tui); the terminal client will take over this screen\n")
+  }
   const child = internals.spawn(dsh.bin, [...dsh.prefix, "--profile", PROFILE_NAME, ...args], {
     stdio: "inherit",
     env: process.env,
