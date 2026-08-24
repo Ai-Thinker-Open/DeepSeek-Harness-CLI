@@ -12,7 +12,7 @@ import { fileURLToPath } from "node:url"
 import type { AppExitLike, DshContext } from "./types"
 import type { TuiStartupValues } from "./startup"
 import { applyBundledOpentuiAssets } from "./native-assets"
-import { portableSpawnOptions } from "./portable"
+import { portableSpawnOptions, resolveBun } from "./portable"
 
 // The spawned client inherits this so it uses the bundled OpenTUI native
 // library for the current platform (see native-assets.ts).
@@ -72,7 +72,7 @@ export function apply(ctx: DshContext, config: TuiRunnerConfig = {}): void {
 
   // Forward the continue flag so the client attaches to the last session.
   const cliArgs = startup?.continueLast ? ["--continue"] : []
-  const child = internals.spawn("bun", [cliPath, ...cliArgs], {
+  const child = internals.spawn(resolveBun(), [cliPath, ...cliArgs], {
     stdio: "inherit",
     env: { ...process.env, DSH_URL: url, DSH_CWD: cwd },
     ...portableSpawnOptions({}),

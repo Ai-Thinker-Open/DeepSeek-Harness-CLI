@@ -89,4 +89,9 @@ if (!hasCommand("pnpm")) {
   installGlobal("pnpm")
 }
 
+if (!hasCommand("bun")) {
+  console.log("[dsh-cli] bun not found; installing bun (terminal client runtime)…")
+  installGlobal("bun")
+}
+
 ensureTuiProfile()

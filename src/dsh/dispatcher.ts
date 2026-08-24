@@ -11,7 +11,7 @@ import { homedir } from "node:os"
 import { dirname, join } from "node:path"
 import { fileURLToPath, pathToFileURL } from "node:url"
 import { applyBundledOpentuiAssets } from "./native-assets"
-import { portableSpawnOptions, portableSpawnSyncOptions } from "./portable"
+import { portableSpawnOptions, portableSpawnSyncOptions, resolveBun } from "./portable"
 export { bootstrapAll } from "./bootstrap"
 
 export const DEFAULT_HARNESS_URL = "http://127.0.0.1:3080"
@@ -193,10 +193,11 @@ export async function run(args: readonly string[]): Promise<number> {
 
   // The terminal client always runs under bun; fail loudly instead of exiting
   // silently when it is missing from PATH.
-  const bunProbe = internals.spawnSync("bun", ["--version"], portableSpawnSyncOptions({ stdio: "ignore" }))
+  const bunBin = resolveBun()
+  const bunProbe = internals.spawnSync(bunBin, ["--version"], portableSpawnSyncOptions({ stdio: "ignore" }))
   if (bunProbe.status !== 0) {
     process.stderr.write(
-      "[dsh-cli] bun is required to run the terminal client. Install it from https://bun.sh and make sure it is on PATH.\n",
+      '[dsh-cli] bun is required to run the terminal client. Install it with "npm install -g bun" (or from https://bun.sh).\n',
     )
     return 1
   }
@@ -204,7 +205,7 @@ export async function run(args: readonly string[]): Promise<number> {
   if (await internals.probe(url)) {
     // An instance is already serving: run the terminal client directly.
     if (process.env.DSH_DEBUG === "1") process.stderr.write(`[dsh-cli] harness reachable at ${url}; launching terminal client\n`)
-    const child = internals.spawn("bun", [TUI_CLI, ...args], {
+    const child = internals.spawn(bunBin, [TUI_CLI, ...args], {
       stdio: "inherit",
       env: { ...process.env, DSH_URL: url, DSH_CWD: process.cwd() },
       ...portableSpawnOptions({}),
