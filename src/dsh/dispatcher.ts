@@ -12,6 +12,7 @@ import { homedir } from "node:os"
 import { dirname, join } from "node:path"
 import { fileURLToPath, pathToFileURL } from "node:url"
 import { applyBundledOpentuiAssets } from "./native-assets"
+import { nodeVersionProblem } from "./node-version"
 import { portableSpawnOptions, portableSpawnSyncOptions, resolveBun } from "./portable"
 export { bootstrapAll } from "./bootstrap"
 
@@ -208,6 +209,11 @@ export const internals: {
  * @param args - arguments forwarded verbatim to `dsh --profile tui`.
  */
 export async function run(args: readonly string[]): Promise<number> {
+  const versionProblem = nodeVersionProblem()
+  if (versionProblem) {
+    process.stderr.write(`[dsh-cli] ${versionProblem}\n`)
+    return 1
+  }
   const url = process.env.DSH_URL ?? DEFAULT_HARNESS_URL
 
   // The terminal client always runs under bun; fail loudly instead of exiting

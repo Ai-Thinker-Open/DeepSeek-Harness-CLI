@@ -4,6 +4,21 @@ import { existsSync } from "node:fs"
 import { dirname, join } from "node:path"
 import { fileURLToPath, pathToFileURL } from "node:url"
 
+// The harness (dsh-mcp-client) uses Promise.withResolvers(), which only
+// exists in Node.js 22+. Fail with a clear message instead of a stack trace.
+if (!process.isBun) {
+  const nodeMajor = Number.parseInt(String(process.versions.node ?? "").split(".")[0] ?? "", 10)
+  if (nodeMajor < 22) {
+    process.stderr.write(
+      "[dsh-cli] Node.js " +
+        process.versions.node +
+        " is too old: the DeepSeek Harness requires Node.js 22+ (Promise.withResolvers is only available since Node 22). " +
+        "Upgrade Node.js and reinstall the global @deepseek-ai/dsh, then retry.\n",
+    )
+    process.exit(1)
+  }
+}
+
 const root = join(dirname(fileURLToPath(import.meta.url)), "..")
 const dispatcher = join(root, "dist", "dispatcher.js")
 

@@ -8,6 +8,9 @@
     "access": "public"
   },
   "main": "./dist/runner.js",
+  "engines": {
+    "node": ">=22"
+  },
   "exports": {
     ".": "./dist/runner.js",
     "./startup": "./dist/startup.js",

@@ -23,6 +23,18 @@ const PKG_NAME = JSON.parse(readFileSync(join(PKG_ROOT, "package.json"), "utf8")
 /** Bun releases after 1.3.x have crashed the OpenTUI client on Windows (bun.report/1.4.0). */
 const BUN_VERSION = process.env.DSH_BUN_VERSION || "1.3.14"
 
+// The harness (dsh-mcp-client) uses Promise.withResolvers(), which only
+// exists in Node.js 22+. Warn during install so failures later are not a
+// surprise; the runtime check in bin/dsh-cli still fails loudly.
+const NODE_MAJOR = Number.parseInt((process.versions?.node ?? "").split(".")[0] ?? "", 10)
+if (NODE_MAJOR >= 1 && NODE_MAJOR < 22) {
+  console.warn(
+    `[dsh-cli] Node.js ${process.versions.node} is too old: the DeepSeek Harness requires Node.js 22+ ` +
+      "(Promise.withResolvers is only available since Node 22). " +
+      "Upgrade Node.js and reinstall @deepseek-ai/dsh after upgrading.",
+  )
+}
+
 function hasCommand(command) {
   const result = spawnSync(command, ["--version"], {
     stdio: "ignore",

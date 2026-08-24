@@ -26,7 +26,7 @@
 
 ## 环境要求
 
-只需要 [Node.js](https://nodejs.org) 18+（运行 `npm` 的前提）——下面的一条命令会自动补齐 Bun、harness 与 pnpm。从源码构建才额外需要 [Bun](https://bun.sh)。本地 DeepSeek Harness 实例在所有安装方式下都是可选的：`dsh-cli` 会自动探测并拉起。
+需要 [Node.js](https://nodejs.org) 22+（推荐 LTS）：harness 的 MCP 客户端用到了 `Promise.withResolvers()`，该 API 从 Node 22 起才可用。下面的一条命令会自动补齐 Bun、harness 与 pnpm。从源码构建才额外需要 [Bun](https://bun.sh)。本地 DeepSeek Harness 实例在所有安装方式下都是可选的：`dsh-cli` 会自动探测并拉起。
 
 ## 安装
 

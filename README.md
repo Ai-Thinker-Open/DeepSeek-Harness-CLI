@@ -26,11 +26,12 @@ It drives a locally running DeepSeek Harness instance: sessions, tool calls, per
 
 ## Requirements
 
-Only [Node.js](https://nodejs.org) 18+ (needed to run `npm` in the first
-place) — the one-command install below auto-provisions Bun, the DeepSeek
-Harness and pnpm. Source builds additionally need [Bun](https://bun.sh). A
-local DeepSeek Harness instance is optional everywhere: `dsh-cli` probes for
-one and boots it when missing.
+[Node.js](https://nodejs.org) 22+ (LTS recommended) is required at runtime:
+the DeepSeek Harness's MCP client uses `Promise.withResolvers()`, an API only
+available since Node 22. The one-command install below auto-provisions Bun,
+the DeepSeek Harness and pnpm. Source builds additionally need
+[Bun](https://bun.sh). A local DeepSeek Harness instance is optional
+everywhere: `dsh-cli` probes for one and boots it when missing.
 
 ## Installation
 
