@@ -12,14 +12,28 @@ import { spawnSync } from "node:child_process"
 
 if (process.env.npm_config_global !== "true") process.exit(0)
 
+const IS_WIN32 = process.platform === "win32"
+
 function hasCommand(command) {
-  return spawnSync(command, ["--version"], { stdio: "ignore" }).status === 0
+  const result = spawnSync(command, ["--version"], {
+    stdio: "ignore",
+    ...(IS_WIN32 ? { shell: true } : {}),
+  })
+  return result.status === 0
 }
 
 function installGlobal(pkg) {
-  const result = spawnSync("npm", ["install", "-g", pkg], { stdio: "inherit" })
+  const result = spawnSync("npm", ["install", "-g", pkg], {
+    stdio: ["ignore", "inherit", "pipe"],
+    ...(IS_WIN32 ? { shell: true } : {}),
+  })
   if (result.status !== 0) {
-    console.error(`[dsh-cli] could not auto-install ${pkg}; run "npm install -g ${pkg}" manually.`)
+    const detail = result.error ? `: ${result.error.message}` : ""
+    console.error(`[dsh-cli] could not auto-install ${pkg}${detail}.`)
+    if (result.stderr && typeof result.stderr === "string" && result.stderr.trim()) {
+      console.error(result.stderr.trim())
+    }
+    console.error(`[dsh-cli] run "npm install -g ${pkg}" manually to see the full error.`)
     return false
   }
   return true

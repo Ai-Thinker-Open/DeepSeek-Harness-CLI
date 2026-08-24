@@ -167,6 +167,19 @@ function exitCodeOf(child: ReturnType<typeof spawn>): Promise<number> {
   })
 }
 
+/**
+ * Spawn a CLI that may be a `.cmd` shim on Windows (npm/pnpm/dsh). Node can
+ * only launch `.cmd` shims through the shell, so use `shell: true` there;
+ * stderr is piped back so failures show the underlying error.
+ */
+function runPortable(command: string, args: string[]): ReturnType<typeof spawnSync> {
+  const options: Parameters<typeof spawnSync>[2] = {
+    stdio: ["ignore", "inherit", "pipe"],
+    ...(process.platform === "win32" ? { shell: true } : {}),
+  }
+  return internals.spawnSync(command, args, options)
+}
+
 /** Test seam: probe, process spawn, and synchronous spawn. */
 export const internals: {
   probe: typeof probe
@@ -206,12 +219,17 @@ export async function run(args: readonly string[]): Promise<number> {
     if (process.env.DSH_DEBUG === "1") process.stderr.write(`[dsh-cli] registering the tui profile bundle (${PKG_NAME})\n`)
     // Profile setup is forwarded to pnpm by dsh; auto-install it when missing
     // so first run works even if the package postinstall was skipped.
-    const pnpmProbe = internals.spawnSync("pnpm", ["--version"], { stdio: "ignore" })
+    const pnpmProbe = runPortable("pnpm", ["--version"])
     if (pnpmProbe.status !== 0) {
       process.stderr.write("[dsh-cli] pnpm not found; the harness needs it to build the tui profile. Installing pnpm…\n")
-      const pnpmInstall = internals.spawnSync("npm", ["install", "-g", "pnpm"], { stdio: "inherit" })
+      const pnpmInstall = runPortable("npm", ["install", "-g", "pnpm"])
       if (pnpmInstall.status !== 0) {
-        process.stderr.write('[dsh-cli] could not auto-install pnpm; run "npm install -g pnpm" and retry.\n')
+        const detail = pnpmInstall.error ? `: ${pnpmInstall.error.message}` : ""
+        process.stderr.write(`[dsh-cli] could not auto-install pnpm${detail}.\n`)
+        if (typeof pnpmInstall.stderr === "string" && pnpmInstall.stderr.trim()) {
+          process.stderr.write(`${pnpmInstall.stderr.trim()}\n`)
+        }
+        process.stderr.write('[dsh-cli] run "npm install -g pnpm" in your terminal to see the full error, then retry.\n')
         return pnpmInstall.status ?? 1
       }
     }
