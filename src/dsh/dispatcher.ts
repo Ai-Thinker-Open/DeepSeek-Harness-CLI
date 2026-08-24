@@ -7,6 +7,7 @@
 
 import { spawn, spawnSync } from "node:child_process"
 import { existsSync, readFileSync, readdirSync, writeFileSync } from "node:fs"
+import { Socket } from "node:net"
 import { homedir } from "node:os"
 import { dirname, join } from "node:path"
 import { fileURLToPath, pathToFileURL } from "node:url"
@@ -168,6 +169,24 @@ function exitCodeOf(child: ReturnType<typeof spawn>): Promise<number> {
   })
 }
 
+/** True when something is listening on 127.0.0.1:<port> (even a non-harness). */
+function isPortInUse(port: number): Promise<boolean> {
+  return new Promise((resolvePort) => {
+    const socket = new Socket()
+    socket.setTimeout(800)
+    socket.once("connect", () => {
+      socket.destroy()
+      resolvePort(true)
+    })
+    socket.once("timeout", () => {
+      socket.destroy()
+      resolvePort(false)
+    })
+    socket.once("error", () => resolvePort(false))
+    socket.connect(port, "127.0.0.1")
+  })
+}
+
 /**
  * Spawn a CLI that may be a `.cmd` shim on Windows (npm/pnpm/dsh). Node can
  * only launch `.cmd` shims through the shell, so use `shell: true` there;
@@ -211,6 +230,13 @@ export async function run(args: readonly string[]): Promise<number> {
       ...portableSpawnOptions({}),
     })
     return exitCodeOf(child)
+  }
+
+  const urlPort = Number(new URL(url).port) || 3080
+  if (await isPortInUse(urlPort)) {
+    process.stderr.write(
+      `[dsh-cli] ${url} is already in use by another process, but it does not look like a reachable harness. Stop that process (e.g. fuser -k ${urlPort}/tcp) or run with --port 0 to pick a free port.\n`,
+    )
   }
 
   const dsh = resolveDsh()
