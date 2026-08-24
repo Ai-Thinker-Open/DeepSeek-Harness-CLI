@@ -26,10 +26,44 @@ It drives a locally running DeepSeek Harness instance: sessions, tool calls, per
 
 ## Requirements
 
-- [Bun](https://bun.sh) (both build and runtime depend on it; `dist/cli.js` runs under Bun)
-- An optional local DeepSeek Harness instance (`dsh-cli` probes for one and boots it if missing)
+Only [Node.js](https://nodejs.org) 18+ (needed to run `npm` in the first
+place) — the one-command install below auto-provisions Bun, the DeepSeek
+Harness and pnpm. Source builds additionally need [Bun](https://bun.sh). A
+local DeepSeek Harness instance is optional everywhere: `dsh-cli` probes for
+one and boots it when missing.
 
 ## Installation
+
+### One command (recommended)
+
+```sh
+npm install -g @ai-thinker/deepseek-harness-cli
+```
+
+That single command completes the whole setup: it detects and installs a
+missing `@deepseek-ai/dsh` (harness), `pnpm` (the harness needs it to build
+profiles) and `bun` (the terminal client runtime), then creates the `tui`
+profile. After install you can run `dsh-cli` directly — no manual setup on
+first launch:
+
+```sh
+dsh-cli              # probes http://127.0.0.1:3080 for a running harness;
+                     # otherwise boots dsh --profile tui
+dsh-cli -c           # resume the most recent session and jump straight in
+```
+
+Prefer a quick try without installing?
+
+```sh
+npx @ai-thinker/deepseek-harness-cli
+```
+
+npx runs skip the install-time bootstrap, so the first launch fills in whatever
+is missing at runtime (Bun included — it still executes the terminal client).
+
+### Manual setup (optional)
+
+Prefer to install the pieces yourself?
 
 1. **Install Bun** — required to build and run the client:
 
@@ -55,22 +89,15 @@ It drives a locally running DeepSeek Harness instance: sessions, tool calls, per
 
    > Windows 下建议在 WSL 中运行本项目——终端体验一致，USB 类工具（如 FlashKey FK-01）也需要通过 WSL 的 `usbip` 附加。
 
-2. **Install the DeepSeek Harness CLI (optional)** — `dsh-cli` can boot the harness automatically through npx, but a global install makes startup faster:
+2. **Install the DeepSeek Harness CLI (optional)** — `dsh-cli` can boot the
+   harness automatically through npx, but a global install makes startup
+   faster:
 
    ```sh
    npm install -g @deepseek-ai/dsh
    ```
 
-3. **Install `dsh-cli`**:
-
-   From npm (after publishing):
-
-   ```sh
-   npm install -g @ai-thinker/deepseek-harness-cli   # provides the `dsh-cli` command
-   npx @ai-thinker/deepseek-harness-cli              # or run it directly without installing
-   ```
-
-   Or from source:
+3. **Install `dsh-cli`** — via the one-command npm route above, or from source:
 
    ```sh
    git clone git@github.com:Ai-Thinker-Open/DeepSeek-Harness-CLI.git
@@ -80,7 +107,8 @@ It drives a locally running DeepSeek Harness instance: sessions, tool calls, per
    bun link          # exposes the global `dsh-cli` command
    ```
 
-Then run `dsh-cli` (or `dsh-cli -c`). The first launch auto-builds `dist/` if it is missing and boots a harness when none is running. Note: the terminal client itself is executed by Bun, so Bun must be installed even for the npm/npx install.
+Then run `dsh-cli` (or `dsh-cli -c`). The first launch auto-builds `dist/` if
+it is missing and boots a harness when none is running.
 
 ## Quick start
 
@@ -170,12 +198,9 @@ cross-platform too, but it must be installed for the platform you run on: in
 WSL install `@deepseek-ai/dsh` with WSL's npm instead of running a
 Windows-installed `dsh` inside WSL.
 
-`npm install -g @ai-thinker/deepseek-harness-cli` (global installs only) does
-the whole setup in one step: it detects and installs a missing
-`@deepseek-ai/dsh` (harness), `pnpm` (the harness needs it to build profiles)
-and `bun` (the terminal client runtime), then creates the tui profile. After
-install you can run `dsh-cli` directly — no manual setup on first launch.
-Non-global installs are untouched.
+Global installs additionally auto-provision the harness, `pnpm` and `bun` and
+create the `tui` profile (see Installation above); non-global installs are
+untouched.
 
 If the install stage is skipped (`--ignore-scripts`, transient `npx` runs,
 etc.), the runtime falls back automatically: bun is located under

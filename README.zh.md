@@ -26,10 +26,35 @@
 
 ## 环境要求
 
-- [Bun](https://bun.sh)（构建与运行均依赖 Bun；`dist/cli.js` 由 Bun 执行）
-- 本地可选的 DeepSeek Harness 实例（`dsh-cli` 会自动探测并拉起）
+只需要 [Node.js](https://nodejs.org) 18+（运行 `npm` 的前提）——下面的一条命令会自动补齐 Bun、harness 与 pnpm。从源码构建才额外需要 [Bun](https://bun.sh)。本地 DeepSeek Harness 实例在所有安装方式下都是可选的：`dsh-cli` 会自动探测并拉起。
 
 ## 安装
+
+### 一条命令安装（推荐）
+
+```sh
+npm install -g @ai-thinker/deepseek-harness-cli
+```
+
+这一条命令会一次性完成整个环境配置：自动检测并安装缺失的 `@deepseek-ai/dsh`（harness）、`pnpm`（harness 搭建 profile 需要）与 `bun`（终端客户端运行时），然后创建 `tui` profile。装完即可直接运行，首次启动无需任何手动配置：
+
+```sh
+dsh-cli              # 自动探测 http://127.0.0.1:3080 上的 harness
+                     # 没有则自动拉起 dsh --profile tui
+dsh-cli -c           # 恢复最近一次会话并直接进入
+```
+
+想先快速体验、不全局安装？
+
+```sh
+npx @ai-thinker/deepseek-harness-cli
+```
+
+npx 临时运行不会触发安装时的 bootstrap，缺失的部分会在首次启动时自动补齐（包括 Bun——终端客户端仍由它执行）。
+
+### 手动安装（可选）
+
+想自己逐个安装？
 
 1. **安装 Bun**（构建与运行必需）：
 
@@ -61,16 +86,7 @@
    npm install -g @deepseek-ai/dsh
    ```
 
-3. **安装 `dsh-cli`**：
-
-   通过 npm（发布后可用）：
-
-   ```sh
-   npm install -g @ai-thinker/deepseek-harness-cli   # 提供 `dsh-cli` 命令
-   npx @ai-thinker/deepseek-harness-cli              # 或者不安装直接运行
-   ```
-
-   或从源码安装：
+3. **安装 `dsh-cli`**——用上面的 npm 一条命令，或从源码安装：
 
    ```sh
    git clone git@github.com:Ai-Thinker-Open/DeepSeek-Harness-CLI.git
@@ -80,7 +96,7 @@
    bun link          # 把全局 `dsh-cli` 命令暴露出来
    ```
 
-然后运行 `dsh-cli`（或 `dsh-cli -c`）。首次启动若 `dist/` 缺失会自动构建，没有运行中的 harness 时也会自动拉起。注意：终端客户端由 Bun 执行，即使通过 npm/npx 安装，本机仍需要 Bun。
+然后运行 `dsh-cli`（或 `dsh-cli -c`）。首次启动若 `dist/` 缺失会自动构建，没有运行中的 harness 时也会自动拉起。
 
 ## 快速开始
 
@@ -156,7 +172,7 @@ MCP 服务端依赖 `pyserial`、`mcp`、`starlette`、`uvicorn`。若本机 Pyt
 
 正常启动时不输出 bootstrap/启动进度信息，只有错误会打印到终端；需要详细日志时设置 `DSH_DEBUG=1`。harness（`dsh`）本身也支持全平台，但必须使用与运行平台一致的安装：WSL 里请用 WSL 的 npm 安装 `@deepseek-ai/dsh`，不要在 WSL 里运行 Windows 侧安装的 `dsh`。
 
-`npm install -g @ai-thinker/deepseek-harness-cli`（仅全局安装）会一次性完成环境配置：自动检测并安装缺失的 `@deepseek-ai/dsh`（harness）、`pnpm`（harness 搭建 profile 需要）与 `bun`（终端客户端运行时），然后创建 tui profile。装完即可直接运行 `dsh-cli`，首次启动不需要手动安装任何东西；非全局安装不会触发。
+全局安装还会自动补齐 harness、`pnpm` 与 `bun` 并创建 `tui` profile（见上文「安装」）；非全局安装不触发。
 
 即使安装阶段被跳过（`--ignore-scripts`、npx 临时运行等），运行时也会自动兜底：bun 不在 PATH 时会自动查找 `~/.bun/bin/bun(.exe)`，dsh 缺失走 npx，pnpm 缺失自动安装。Windows 下所有子进程调用都兼容 `.cmd` shim，全平台一致。
 
