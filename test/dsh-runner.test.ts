@@ -1,6 +1,7 @@
 import { EventEmitter } from "node:events"
 import { expect, test } from "bun:test"
 import { apply, internals as runnerInternals } from "../src/dsh/runner"
+import { resolveBun } from "../src/dsh/portable"
 
 type SpawnCall = { command: string; args: string[]; options: { env?: Record<string, string | undefined> } }
 
@@ -36,7 +37,7 @@ test("tui-runner spawns the client with the bound URL and workspace", () => {
   apply(ctx, { startup: { host: "127.0.0.1", port: 4123, cwd: "/ws", continueLast: false } })
 
   expect(calls).toHaveLength(1)
-  expect(calls[0]?.command).toBe("bun")
+  expect(calls[0]?.command).toBe(resolveBun())
   expect(calls[0]?.args[0]?.endsWith("cli.js")).toBe(true)
   expect(calls[0]?.options.env?.DSH_URL).toBe("http://127.0.0.1:4123")
   expect(calls[0]?.options.env?.DSH_CWD).toBe("/ws")

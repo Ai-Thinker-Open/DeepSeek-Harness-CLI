@@ -4,6 +4,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterEach, expect, test } from "bun:test"
 import { internals as dispatcherInternals, PROFILE_NAME, run } from "../src/dsh/dispatcher"
+import { resolveBun } from "../src/dsh/portable"
 
 type SpawnCall = { command: string; args: string[]; options: { env?: Record<string, string | undefined> } }
 type SyncCall = { command: string; args: string[] }
@@ -66,7 +67,7 @@ test("dispatcher reuses a reachable harness and runs the client directly", async
   await expect(pending).resolves.toBe(0)
 
   expect(calls).toHaveLength(1)
-  expect(calls[0]?.command).toBe("bun")
+  expect(calls[0]?.command).toBe(resolveBun())
   expect(calls[0]?.options.env?.DSH_URL).toBe("http://127.0.0.1:3999")
   expect(calls[0]?.options.env?.DSH_CWD).toBe(process.cwd())
 })
