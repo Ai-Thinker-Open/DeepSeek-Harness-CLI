@@ -12,6 +12,7 @@ import { fileURLToPath } from "node:url"
 import type { AppExitLike, DshContext } from "./types"
 import type { TuiStartupValues } from "./startup"
 import { applyBundledOpentuiAssets } from "./native-assets"
+import { portableSpawnOptions } from "./portable"
 
 // The spawned client inherits this so it uses the bundled OpenTUI native
 // library for the current platform (see native-assets.ts).
@@ -74,6 +75,7 @@ export function apply(ctx: DshContext, config: TuiRunnerConfig = {}): void {
   const child = internals.spawn("bun", [cliPath, ...cliArgs], {
     stdio: "inherit",
     env: { ...process.env, DSH_URL: url, DSH_CWD: cwd },
+    ...portableSpawnOptions({}),
   })
 
   child.on("error", (error) => {

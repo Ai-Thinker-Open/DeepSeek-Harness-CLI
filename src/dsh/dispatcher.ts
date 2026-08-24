@@ -11,6 +11,7 @@ import { homedir } from "node:os"
 import { dirname, join } from "node:path"
 import { fileURLToPath, pathToFileURL } from "node:url"
 import { applyBundledOpentuiAssets } from "./native-assets"
+import { portableSpawnOptions, portableSpawnSyncOptions } from "./portable"
 export { bootstrapAll } from "./bootstrap"
 
 export const DEFAULT_HARNESS_URL = "http://127.0.0.1:3080"
@@ -134,7 +135,7 @@ async function probe(url: string): Promise<boolean> {
 
 /** Resolve how to invoke the official dsh CLI: global binary or npx. */
 function resolveDsh(): { bin: string; prefix: string[] } {
-  const probeResult = internals.spawnSync("dsh", ["--help"], { stdio: "ignore" })
+  const probeResult = internals.spawnSync("dsh", ["--help"], portableSpawnSyncOptions({ stdio: "ignore" }))
   if (probeResult.status === 0) return { bin: "dsh", prefix: [] }
   // Reuse an already-installed npx cache entry instead of asking npx to
   // resolve the package every launch (the npm registry round-trip is what
@@ -154,7 +155,7 @@ function cachedNpxDsh(): string | undefined {
     return undefined
   }
   for (const entry of entries) {
-    const bin = join(npxRoot, entry, "node_modules", ".bin", "dsh")
+    const bin = join(npxRoot, entry, "node_modules", ".bin", process.platform === "win32" ? "dsh.cmd" : "dsh")
     if (existsSync(bin)) return bin
   }
   return undefined
@@ -173,11 +174,7 @@ function exitCodeOf(child: ReturnType<typeof spawn>): Promise<number> {
  * stderr is piped back so failures show the underlying error.
  */
 function runPortable(command: string, args: string[]): ReturnType<typeof spawnSync> {
-  const options: Parameters<typeof spawnSync>[2] = {
-    stdio: ["ignore", "inherit", "pipe"],
-    ...(process.platform === "win32" ? { shell: true } : {}),
-  }
-  return internals.spawnSync(command, args, options)
+  return internals.spawnSync(command, args, portableSpawnSyncOptions({ stdio: ["ignore", "inherit", "pipe"] }))
 }
 
 /** Test seam: probe, process spawn, and synchronous spawn. */
@@ -196,7 +193,7 @@ export async function run(args: readonly string[]): Promise<number> {
 
   // The terminal client always runs under bun; fail loudly instead of exiting
   // silently when it is missing from PATH.
-  const bunProbe = internals.spawnSync("bun", ["--version"], { stdio: "ignore" })
+  const bunProbe = internals.spawnSync("bun", ["--version"], portableSpawnSyncOptions({ stdio: "ignore" }))
   if (bunProbe.status !== 0) {
     process.stderr.write(
       "[dsh-cli] bun is required to run the terminal client. Install it from https://bun.sh and make sure it is on PATH.\n",
@@ -210,6 +207,7 @@ export async function run(args: readonly string[]): Promise<number> {
     const child = internals.spawn("bun", [TUI_CLI, ...args], {
       stdio: "inherit",
       env: { ...process.env, DSH_URL: url, DSH_CWD: process.cwd() },
+      ...portableSpawnOptions({}),
     })
     return exitCodeOf(child)
   }
@@ -236,12 +234,13 @@ export async function run(args: readonly string[]): Promise<number> {
     const setup = internals.spawnSync(
       dsh.bin,
       [...dsh.prefix, "plugin", "--profile", PROFILE_NAME, "add", pathToFileURL(PKG_ROOT).href],
-      { stdio: "inherit" },
+      portableSpawnSyncOptions({ stdio: ["ignore", "inherit", "pipe"] }),
     )
     if (setup.status !== 0) {
-      process.stderr.write(
-        `[dsh-cli] failed to register the tui profile (dsh plugin add exited with ${setup.status ?? "error"}). The profile setup uses pnpm — install it with "npm install -g pnpm" (or enable corepack) and retry.\n`,
-      )
+      const stderrText = setup.stderr == null ? "" : String(setup.stderr)
+      if (stderrText.trim()) process.stderr.write(`${stderrText.trim()}\n`)
+      const pnpmHint = pnpmProbe.status !== 0 ? ' The profile setup uses pnpm — install it with "npm install -g pnpm" and retry.' : ""
+      process.stderr.write(`[dsh-cli] failed to register the tui profile (dsh plugin add exited with ${setup.status ?? "error"}).${pnpmHint}\n`)
       return setup.status ?? 1
     }
   }
@@ -252,6 +251,7 @@ export async function run(args: readonly string[]): Promise<number> {
   const child = internals.spawn(dsh.bin, [...dsh.prefix, "--profile", PROFILE_NAME, ...args], {
     stdio: "inherit",
     env: process.env,
+    ...portableSpawnOptions({}),
   })
   return exitCodeOf(child)
 }

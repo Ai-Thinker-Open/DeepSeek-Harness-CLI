@@ -20,6 +20,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, symlinkSync
 import { homedir } from "node:os"
 import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
+import { portableSpawnOptions, portableSpawnSyncOptions } from "./portable"
 
 const MCP_ROW_ID = "mcp-flashkey"
 const DEFAULT_SKILLS_URL = "https://github.com/Ai-Thinker-Open/skills.git"
@@ -120,7 +121,7 @@ export function applyMcpPatch(profileDir: string, port: number): boolean {
 }
 
 function hasCommand(command: string): boolean {
-  return internals.spawnSync(command, ["--version"], { stdio: "ignore" }).status === 0
+  return internals.spawnSync(command, ["--version"], portableSpawnSyncOptions({ stdio: "ignore" })).status === 0
 }
 
 async function ensureSkills(): Promise<void> {
@@ -138,7 +139,7 @@ async function ensureSkills(): Promise<void> {
   const url = process.env.AT_SKILLS_URL ?? DEFAULT_SKILLS_URL
   if (!existsSync(join(repoRoot, ".git"))) {
     info(`cloning Ai-Thinker skills -> ${repoRoot}`)
-    const result = internals.spawnSync("git", ["clone", "--depth", "1", url, repoRoot], { stdio: "ignore" })
+    const result = internals.spawnSync("git", ["clone", "--depth", "1", url, repoRoot], portableSpawnSyncOptions({ stdio: "ignore" }))
     if (result.status !== 0) {
       warn("skills clone failed; run it manually or retry next launch")
       return
@@ -166,7 +167,7 @@ async function installFlashkey(): Promise<boolean> {
   )
   for (const args of attempts) {
     info(`installing flashkey-mcp: ${args[0]} ${args.slice(1).join(" ")}`)
-    const result = internals.spawnSync(args[0]!, args.slice(1), { stdio: "ignore" })
+    const result = internals.spawnSync(args[0]!, args.slice(1), portableSpawnSyncOptions({ stdio: "ignore" }))
     if (result.status === 0) return true
   }
   return false
@@ -175,7 +176,7 @@ async function installFlashkey(): Promise<boolean> {
 /** Can the vendored MCP server run directly (deps already importable)? */
 async function canRunVendoredFlashkey(): Promise<boolean> {
   if (!existsSync(join(internals.bundledFlashkey, "src", "flashkey_mcp"))) return false
-  const probe = internals.spawnSync("python3", ["-c", "import mcp, starlette, uvicorn, serial"], { stdio: "ignore" })
+  const probe = internals.spawnSync("python3", ["-c", "import mcp, starlette, uvicorn, serial"], portableSpawnSyncOptions({ stdio: "ignore" }))
   return probe.status === 0
 }
 
@@ -213,7 +214,7 @@ async function ensureSseDaemon(port: number): Promise<void> {
     const child: ChildProcess = internals.spawn(
       command,
       args,
-      { stdio: "ignore", detached: true, env },
+      portableSpawnOptions({ stdio: "ignore", detached: true, env }),
     )
     child.unref()
   } catch (error) {
