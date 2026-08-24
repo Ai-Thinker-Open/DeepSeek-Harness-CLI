@@ -170,10 +170,19 @@ cross-platform too, but it must be installed for the platform you run on: in
 WSL install `@deepseek-ai/dsh` with WSL's npm instead of running a
 Windows-installed `dsh` inside WSL.
 
-`npm install -g @ai-thinker/deepseek-harness-cli` (global installs only)
-detects and installs a missing `@deepseek-ai/dsh` and `pnpm` (the harness
-needs pnpm to build profiles) automatically, so the CLI works out of the box;
-non-global installs are untouched.
+`npm install -g @ai-thinker/deepseek-harness-cli` (global installs only) does
+the whole setup in one step: it detects and installs a missing
+`@deepseek-ai/dsh` (harness), `pnpm` (the harness needs it to build profiles)
+and `bun` (the terminal client runtime), then creates the tui profile. After
+install you can run `dsh-cli` directly — no manual setup on first launch.
+Non-global installs are untouched.
+
+If the install stage is skipped (`--ignore-scripts`, transient `npx` runs,
+etc.), the runtime falls back automatically: bun is located under
+`~/.bun/bin/bun(.exe)` when it is not on PATH, `dsh` is provisioned through
+npx, and pnpm is installed on demand. On Windows every subprocess call goes
+through the shell so `.cmd` shims work, giving one consistent experience
+across platforms.
 
 ## Usage
 
