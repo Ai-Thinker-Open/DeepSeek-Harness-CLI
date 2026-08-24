@@ -20,6 +20,8 @@ const IS_WIN32 = process.platform === "win32"
 
 const PKG_ROOT = process.cwd()
 const PKG_NAME = JSON.parse(readFileSync(join(PKG_ROOT, "package.json"), "utf8")).name
+/** Bun releases after 1.3.x have crashed the OpenTUI client on Windows (bun.report/1.4.0). */
+const BUN_VERSION = process.env.DSH_BUN_VERSION || "1.3.14"
 
 function hasCommand(command) {
   const result = spawnSync(command, ["--version"], {
@@ -27,6 +29,14 @@ function hasCommand(command) {
     ...(IS_WIN32 ? { shell: true } : {}),
   })
   return result.status === 0
+}
+
+function bunVersion() {
+  const result = spawnSync("bun", ["--version"], {
+    stdio: ["ignore", "ignore", "pipe"],
+    ...(IS_WIN32 ? { shell: true } : {}),
+  })
+  return result.status === 0 ? String(result.stdout ?? "").trim() : ""
 }
 
 function installGlobal(pkg) {
@@ -90,8 +100,14 @@ if (!hasCommand("pnpm")) {
 }
 
 if (!hasCommand("bun")) {
-  console.log("[dsh-cli] bun not found; installing bun (terminal client runtime)…")
-  installGlobal("bun")
+  console.log(`[dsh-cli] bun not found; installing bun@${BUN_VERSION} (terminal client runtime)…`)
+  installGlobal(`bun@${BUN_VERSION}`)
+} else {
+  const current = bunVersion()
+  if (current && current !== BUN_VERSION) {
+    console.log(`[dsh-cli] bun ${current} is incompatible with the OpenTUI client; installing bun@${BUN_VERSION}…`)
+    installGlobal(`bun@${BUN_VERSION}`)
+  }
 }
 
 ensureTuiProfile()
