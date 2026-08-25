@@ -110,6 +110,27 @@ export const EMPTY_STATS: SessionStats = {
   firstTokenCount: 0,
 }
 
+/** One selectable permission request inside a permission question. */
+export interface PermissionRequestItem {
+  id: string
+  /** Display text, e.g. `Bash(ls -la)` or the harness question text. */
+  label: string
+  /** Expanded detail (full command, file path, description). */
+  detail?: string
+  /** Whether the request is suggested/checked by default. */
+  suggested?: boolean
+  /** Original option labels so the answer preserves the harness contract. */
+  options?: Array<{ label: string; description?: string }>
+}
+
+/** A pending sandbox-escalation approval (`approval/requested` frame). */
+export interface ApprovalInfo {
+  /** The harness approval request id (echoed back in the respond payload). */
+  id: string
+  toolName?: string
+  callId?: string
+}
+
 /** A question raised by the harness (permission / ask_user / plan review). */
 export interface HarnessQuestion {
   rpcId: string
@@ -118,4 +139,8 @@ export interface HarnessQuestion {
   detail?: string
   options: string[]
   kind: "permission" | "ask-user" | "plan-approval"
+  /** `kind === "permission"` questions carry one selectable request per row. */
+  requests?: PermissionRequestItem[]
+  /** Set when this pending prompt is a sandbox-escalation approval. */
+  approval?: ApprovalInfo
 }

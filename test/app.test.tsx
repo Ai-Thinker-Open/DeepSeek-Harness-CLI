@@ -60,6 +60,8 @@ class FakeClient implements HarnessClientLike {
 
   async respond() {}
 
+  async respondApproval() {}
+
   async history() {
     return { events: [], hasMore: false }
   }
@@ -349,7 +351,7 @@ test("host slash command from home auto-creates a session and reaches the harnes
   expect(client.commandCalls).toContain("/plan")
 })
 
-test("host /plan from home shows the command result and stays on home", async () => {
+test("host /plan from home reports via toast and stays on home", async () => {
   const client = new FakeClient()
   client.commandExecute = (async (_sessionId: string, line: string) => {
     client.commandCalls.push(line)
@@ -370,12 +372,14 @@ test("host /plan from home shows the command result and stays on home", async ()
 
   expect(client.created).toBe(1)
   expect(client.commandCalls).toContain("/plan 帮我看看这个项目")
-  // The command result panel shows on the home screen; no session switch
-  // happens until the user actually sends a message.
+  // No session switch happens until the user actually sends a message; the
+  // plan-mode notice arrives as a transient toast instead of a persistent
+  // "/plan" result panel above the composer.
   const frame = app.captureCharFrame()
   expect(frame).toContain("Plan mode on")
   expect(frame).toContain("给智能体发消息")
   expect(frame).not.toContain("发送消息开始对话")
+  expect(frame.split("\n").some((l) => l.trim() === "/plan")).toBe(false)
 })
 
 test("/sessions lists first message, time and short id", async () => {

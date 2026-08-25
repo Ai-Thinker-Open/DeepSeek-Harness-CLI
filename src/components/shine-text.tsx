@@ -28,8 +28,11 @@ export function shineSpans(text: string, tick: number, base: RGBA = theme.primar
   })
 }
 
-/** A self-animating text: the sweep band keeps rolling over the letters. */
-export function ShineText(props: { text: string; base?: RGBA }) {
+/**
+ * Span-only self-animating sweep (no `<text>` wrapper), so it can be nested
+ * inside another text node without violating TextNode's string-only children.
+ */
+export function ShineSpans(props: { text: string; base?: RGBA }) {
   const [tick, setTick] = createSignal(0)
 
   createEffect(() => {
@@ -38,10 +41,17 @@ export function ShineText(props: { text: string; base?: RGBA }) {
   })
 
   return (
+    <For each={shineSpans(props.text, tick(), props.base)}>
+      {(s) => <span style={{ fg: s.fg }}>{s.ch}</span>}
+    </For>
+  )
+}
+
+/** A self-animating text: the sweep band keeps rolling over the letters. */
+export function ShineText(props: { text: string; base?: RGBA }) {
+  return (
     <text>
-      <For each={shineSpans(props.text, tick(), props.base)}>
-        {(s) => <span style={{ fg: s.fg }}>{s.ch}</span>}
-      </For>
+      <ShineSpans text={props.text} base={props.base} />
     </text>
   )
 }

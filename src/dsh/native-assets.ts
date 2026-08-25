@@ -7,9 +7,10 @@
  * run from WSL/Linux (or vice versa) is missing the other platform's library.
  *
  * The published dsh-cli ships the native libraries for every supported
- * platform under `vendor/opentui-native`, and points `@opentui/core` at them
- * via `OTUI_ASSET_ROOT`, so the terminal client runs on any platform
- * regardless of where the package was installed.
+ * platform plus the core runtime assets (parser worker, tree-sitter grammars
+ * and the web-tree-sitter wasm) under `vendor/opentui-native`, and points
+ * `@opentui/core` at them via `OTUI_ASSET_ROOT`, so the terminal client runs
+ * on any platform regardless of where the package was installed.
  */
 import { existsSync } from "node:fs"
 import { dirname, join } from "node:path"

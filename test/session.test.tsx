@@ -21,12 +21,17 @@ async function renderSession(opts: {
   messages?: ChatMessage[]
   stats?: SessionStats
   statusText?: string
+  busy?: () => boolean
   planMode?: () => boolean
   planPending?: () => boolean
   height?: number
   question?: () => HarnessQuestion | null
   onQuestion?: (choice: string) => void
+  onQuestionMany?: (ids: string[]) => void
+  onApproval?: (outcome: "allowed-once" | "rejected") => void
+  onApprovalAllowSession?: () => void
   onBack?: () => void
+  onCancel?: () => void
   onSend?: (text: string) => void
   commandItems?: () => CommandItem[]
   onCommand?: (line: string) => Promise<CommandResultView | null>
@@ -42,12 +47,17 @@ async function renderSession(opts: {
         toast={() => null}
         stats={() => opts.stats ?? EMPTY_STATS}
         statusText={() => opts.statusText ?? ""}
+        busy={opts.busy ?? (() => false)}
         planMode={opts.planMode ?? (() => false)}
         planPending={opts.planPending ?? (() => false)}
         question={opts.question ?? (() => null)}
         onSend={opts.onSend ?? (() => {})}
         onBack={opts.onBack ?? (() => {})}
+        onCancel={opts.onCancel ?? (() => {})}
         onQuestion={opts.onQuestion ?? (() => {})}
+        onQuestionMany={opts.onQuestionMany}
+        onApproval={opts.onApproval}
+        onApprovalAllowSession={opts.onApprovalAllowSession}
         commandItems={opts.commandItems}
         onCommand={opts.onCommand}
         queue={opts.queue}
@@ -478,6 +488,108 @@ test("edit tool cards auto-expand to show the file change diff", async () => {
   expect(app.captureCharFrame()).not.toContain("- OLD")
 })
 
+test("adjacent bash cards keep one-row spacing despite newline-ended output", async () => {
+  const output = "one\ntwo\n\n"
+  const messages: ChatMessage[] = [
+    assistantMsg("", {
+      toolCalls: [
+        {
+          id: "b1",
+          name: "bash",
+          args: { command: "echo one", description: "echo one" },
+          summary: "echo one",
+          status: "ok",
+          startedAt: 2,
+          finishedAt: 2200,
+        },
+        {
+          id: "b2",
+          name: "bash",
+          args: { command: "echo two" },
+          summary: "echo two",
+          status: "ok",
+          startedAt: 3,
+          finishedAt: 3200,
+        },
+      ],
+      toolResults: [
+        { toolCallId: "b1", ok: true, output },
+        { toolCallId: "b2", ok: true, output: "three" },
+      ],
+    }),
+  ]
+  const app = await renderSession({ messages, height: 40 })
+  await app.renderOnce()
+
+  // Bash cards are collapsed by default: click the first row to expand it so
+  // the trailing newlines in its output are visible.
+  const before = app.captureCharFrame().split("\n")
+  const y = before.findIndex((l) => l.includes("Bash · echo one"))
+  await app.mockMouse.click(before[y]!.indexOf("Bash") + 1, y)
+  await app.renderOnce()
+
+  const lines = app.captureCharFrame().split("\n")
+  // The output line is indented inside the card's left border, so match it by
+  // content while excluding the second card's header ("Bash · echo two").
+  const lastOut = lines.findIndex((l) => l.includes("two") && !l.includes("Bash"))
+  const nextBash = lines.findIndex((l, i) => i > lastOut && l.includes("Bash · echo two"))
+  expect(lastOut).toBeGreaterThanOrEqual(0)
+  expect(nextBash).toBeGreaterThan(lastOut)
+  // Only the one-row card margin separates the two cards; the trailing
+  // newline in the first output must not render an extra blank row.
+  const blankRows = lines.slice(lastOut + 1, nextBash).filter((l) => l.trim() === "")
+  expect(blankRows).toHaveLength(1)
+})
+
+test("edit diff renders removed lines red and added lines green", async () => {
+  const messages: ChatMessage[] = [
+    userMsg("改一下"),
+    assistantMsg("完成", {
+      toolCalls: [
+        {
+          id: "e1",
+          name: "edit",
+          args: { file_path: "src/main.ts", old_string: "OLD", new_string: "NEW" },
+          summary: "src/main.ts",
+          status: "ok",
+          startedAt: 3,
+          finishedAt: 3400,
+        },
+      ],
+      toolResults: [
+        {
+          toolCallId: "e1",
+          ok: true,
+          output: "updated",
+          meta: { diffs: [{ path: "src/main.ts", oldText: "OLD", newText: "NEW" }] },
+        },
+      ],
+    }),
+  ]
+  const app = await renderSession({ messages, height: 40 })
+  await app.renderOnce()
+  await app.renderOnce()
+
+  const spans = app.captureSpans().lines.flatMap((line) => line.spans)
+  const removed = spans.find((s) => s.text.includes("OLD"))
+  const added = spans.find((s) => s.text.includes("NEW"))
+  const removedSign = spans.find((s) => s.text.trim() === "-")
+  const addedSign = spans.find((s) => s.text.trim() === "+")
+  expect(removed).toBeDefined()
+  expect(added).toBeDefined()
+  // Removed content sits on a dark red background (red channel dominant).
+  expect(removed!.bg.r).toBeGreaterThan(removed!.bg.g)
+  expect(removed!.bg.r).toBeGreaterThan(removed!.bg.b)
+  // Added content sits on a dark green background (green channel dominant).
+  expect(added!.bg.g).toBeGreaterThan(added!.bg.r)
+  expect(added!.bg.g).toBeGreaterThan(added!.bg.b)
+  // Sign characters are canonical red (#ef4444) / green (#22c55e).
+  expect(removedSign!.fg.r).toBeGreaterThan(0.9)
+  expect(removedSign!.fg.g).toBeLessThan(0.3)
+  expect(addedSign!.fg.g).toBeGreaterThan(0.7)
+  expect(addedSign!.fg.r).toBeLessThan(0.2)
+})
+
 test("assistant markdown renders blocks and inline styles without raw markers", async () => {
   const content = `## 🖥️ 终端类（和你的环境很搭）
 
@@ -785,6 +897,54 @@ test("slash menu scrolls the selection window past the ten-row limit", async () 
   expect(scrolled).toContain("↑/↓ 滚动")
 })
 
+test("slash menu scrolls one command at a time across category headers", async () => {
+  const app = await renderSession({
+    messages: [userMsg("hi")],
+    commandItems: () => [
+      ...Array.from({ length: 10 }, (_, i) => ({
+        name: `cmd${i + 1}`,
+        description: `d${i + 1}`,
+        kind: "local" as const,
+        behavior: "run" as const,
+      })),
+      ...Array.from({ length: 5 }, (_, i) => ({
+        name: `skill${i + 1}`,
+        description: `s${i + 1}`,
+        kind: "skill" as const,
+        behavior: "run" as const,
+      })),
+    ],
+  })
+  await app.renderOnce()
+
+  app.mockInput.typeText("/")
+  await new Promise((resolve) => setTimeout(resolve, 80))
+  await app.renderOnce()
+
+  // Nine downs select cmd10; the 10-command window has not scrolled yet, so
+  // cmd1 is still visible (the section header does not steal a row).
+  for (let i = 0; i < 9; i++) {
+    app.mockInput.pressArrow("down")
+    await new Promise((resolve) => setTimeout(resolve, 20))
+  }
+  await new Promise((resolve) => setTimeout(resolve, 80))
+  await app.renderOnce()
+  let frame = app.captureCharFrame()
+  expect(frame).toContain("/cmd1 ")
+  expect(frame).toContain("/cmd10")
+
+  // One more down crosses into the skill section: the window advances by a
+  // single command instead of jumping two rows at the category boundary.
+  app.mockInput.pressArrow("down")
+  await new Promise((resolve) => setTimeout(resolve, 80))
+  await app.renderOnce()
+  frame = app.captureCharFrame()
+  expect(frame).not.toContain("/cmd1 ")
+  expect(frame).toContain("/cmd2 ")
+  expect(frame).toContain("/cmd10")
+  expect(frame).toContain("/skill1 ")
+})
+
 test("slash menu mouse click runs no-argument commands immediately", async () => {
   let ran = ""
   const app = await renderSession({
@@ -1039,4 +1199,349 @@ test("question modal escape chooses the last option", async () => {
   await new Promise((resolve) => setTimeout(resolve, 100))
   await app.renderOnce()
   expect(answered).toEqual(["No"])
+})
+
+test("permission modal lists every request as a checkbox", async () => {
+  const [current, setCurrent] = createSignal<HarnessQuestion | null>({
+    rpcId: "rpc-1",
+    id: "q1",
+    title: "权限请求",
+    options: ["Allow", "Deny"],
+    kind: "permission",
+    requests: [
+      { id: "q-bash", label: "Bash(ls -la)", suggested: true },
+      { id: "q-read", label: "Read(src/app.tsx)", suggested: true },
+      { id: "q-edit", label: "Edit(src/theme.ts)", detail: "src/theme.ts", suggested: true },
+    ],
+  })
+  const app = await renderSession({
+    messages: [userMsg("你好")],
+    question: current,
+  })
+  await app.renderOnce()
+
+  const frame = app.captureCharFrame()
+  expect(frame).toContain("Permission")
+  expect(frame).toContain("3 个请求")
+  expect(frame).toContain("[x] Bash(ls -la)")
+  expect(frame).toContain("[x] Read(src/app.tsx)")
+  expect(frame).toContain("[x] Edit(src/theme.ts)")
+  expect(frame).toContain("Space 切换")
+})
+
+test("permission modal space toggles a request and enter submits the selection", async () => {
+  const [current, setCurrent] = createSignal<HarnessQuestion | null>({
+    rpcId: "rpc-1",
+    id: "q1",
+    title: "权限请求",
+    options: ["Allow", "Deny"],
+    kind: "permission",
+    requests: [
+      { id: "q-bash", label: "Bash(ls -la)", suggested: true },
+      { id: "q-read", label: "Read(src/app.tsx)", suggested: true },
+    ],
+  })
+  const answered: string[][] = []
+  const app = await renderSession({
+    messages: [userMsg("你好")],
+    question: current,
+    onQuestionMany: (ids) => {
+      answered.push(ids)
+      setCurrent(null)
+    },
+  })
+  await app.renderOnce()
+
+  app.mockInput.pressKey(" ")
+  await new Promise((resolve) => setTimeout(resolve, 30))
+  await app.renderOnce()
+  expect(app.captureCharFrame()).toContain("[ ] Bash(ls -la)")
+
+  app.mockInput.pressEnter()
+  await new Promise((resolve) => setTimeout(resolve, 30))
+  await app.renderOnce()
+  expect(answered).toEqual([["q-read"]])
+  expect(app.captureCharFrame()).not.toContain("Permission")
+})
+
+test("permission modal batch keys select none / all / invert / latest", async () => {
+  const [current, setCurrent] = createSignal<HarnessQuestion | null>({
+    rpcId: "rpc-1",
+    id: "q1",
+    title: "权限请求",
+    options: ["Allow", "Deny"],
+    kind: "permission",
+    requests: [
+      { id: "q-bash", label: "Bash(ls -la)", suggested: true },
+      { id: "q-read", label: "Read(src/app.tsx)", suggested: true },
+      { id: "q-edit", label: "Edit(src/theme.ts)", suggested: true },
+    ],
+  })
+  const answered: string[][] = []
+  const app = await renderSession({
+    messages: [userMsg("你好")],
+    question: current,
+    onQuestionMany: (ids) => {
+      answered.push(ids)
+      setCurrent(null)
+    },
+  })
+  await app.renderOnce()
+
+  // n: none, then i: invert => all three checked again.
+  app.mockInput.pressKey("n")
+  app.mockInput.pressKey("i")
+  await new Promise((resolve) => setTimeout(resolve, 30))
+  await app.renderOnce()
+  expect(app.captureCharFrame()).not.toContain("[ ] ")
+
+  // l: only the latest request stays checked.
+  app.mockInput.pressKey("l")
+  await new Promise((resolve) => setTimeout(resolve, 30))
+  await app.renderOnce()
+  expect(app.captureCharFrame()).toContain("[x] Edit(src/theme.ts)")
+  expect(app.captureCharFrame()).toContain("[ ] Bash(ls -la)")
+
+  app.mockInput.pressEnter()
+  await new Promise((resolve) => setTimeout(resolve, 30))
+  await app.renderOnce()
+  expect(answered).toEqual([["q-edit"]])
+})
+
+test("permission modal escape denies every request", async () => {
+  const [current, setCurrent] = createSignal<HarnessQuestion | null>({
+    rpcId: "rpc-1",
+    id: "q1",
+    title: "权限请求",
+    options: ["Allow", "Deny"],
+    kind: "permission",
+    requests: [
+      { id: "q-bash", label: "Bash(ls -la)", suggested: true },
+      { id: "q-read", label: "Read(src/app.tsx)", suggested: true },
+    ],
+  })
+  const answered: string[][] = []
+  const app = await renderSession({
+    messages: [userMsg("你好")],
+    question: current,
+    onQuestionMany: (ids) => {
+      answered.push(ids)
+      setCurrent(null)
+    },
+  })
+  await app.renderOnce()
+
+  app.mockInput.pressEscape()
+  await new Promise((resolve) => setTimeout(resolve, 30))
+  await app.renderOnce()
+  expect(answered).toEqual([[]])
+  expect(app.captureCharFrame()).not.toContain("Permission")
+})
+
+test("approval modal allows once on Enter and rejects on escape", async () => {
+  const [current, setCurrent] = createSignal<HarnessQuestion | null>({
+    rpcId: "rpc-ap",
+    id: "ap-1",
+    title: "权限确认",
+    detail: "bash · escalate sandbox to danger-full-access: 写回 D 盘",
+    options: ["允许本次", "当前会话允许", "拒绝"],
+    kind: "permission",
+    approval: { id: "ap-1", toolName: "bash", callId: "call_1" },
+  })
+  const decided: Array<"allowed-once" | "rejected"> = []
+  const app = await renderSession({
+    messages: [userMsg("你好")],
+    question: current,
+    onApproval: (outcome) => {
+      decided.push(outcome)
+      setCurrent(null)
+    },
+  })
+  await app.renderOnce()
+
+  const frame = app.captureCharFrame()
+  expect(frame).toContain("权限确认")
+  expect(frame).toContain("写回 D 盘")
+  expect(frame).toContain("允许本次")
+  expect(frame).toContain("当前会话允许")
+  expect(frame).toContain("拒绝")
+
+  app.mockInput.pressEnter()
+  await new Promise((resolve) => setTimeout(resolve, 30))
+  await app.renderOnce()
+  expect(decided).toEqual(["allowed-once"])
+
+  // Re-open the approval and escape rejects it.
+  setCurrent({
+    rpcId: "rpc-ap2",
+    id: "ap-1",
+    title: "权限确认",
+    detail: "bash · escalate sandbox to danger-full-access: 写回 D 盘",
+    options: ["允许本次", "当前会话允许", "拒绝"],
+    kind: "permission",
+    approval: { id: "ap-1", toolName: "bash", callId: "call_1" },
+  })
+  await app.renderOnce()
+  app.mockInput.pressEscape()
+  await new Promise((resolve) => setTimeout(resolve, 100))
+  await app.renderOnce()
+  expect(decided).toEqual(["allowed-once", "rejected"])
+})
+
+test("approval modal arrow keys pick session-allow or reject", async () => {
+  const [current, setCurrent] = createSignal<HarnessQuestion | null>({
+    rpcId: "rpc-ap",
+    id: "ap-1",
+    title: "权限确认",
+    detail: "bash · escalate sandbox to danger-full-access: 写回 D 盘",
+    options: ["允许本次", "当前会话允许", "拒绝"],
+    kind: "permission",
+    approval: { id: "ap-1", toolName: "bash" },
+  })
+  const decided: Array<"allowed-once" | "rejected"> = []
+  let sessionAllowed = 0
+  const app = await renderSession({
+    messages: [userMsg("你好")],
+    question: current,
+    onApproval: (outcome) => {
+      decided.push(outcome)
+      setCurrent(null)
+    },
+    onApprovalAllowSession: () => {
+      sessionAllowed++
+      setCurrent(null)
+    },
+  })
+  await app.renderOnce()
+
+  // Down onto "当前会话允许", Enter allows for the session.
+  app.mockInput.pressArrow("down")
+  await new Promise((resolve) => setTimeout(resolve, 30))
+  await app.renderOnce()
+  app.mockInput.pressEnter()
+  await new Promise((resolve) => setTimeout(resolve, 30))
+  await app.renderOnce()
+  expect(sessionAllowed).toBe(1)
+  expect(decided).toEqual([])
+
+  // Re-open: down twice onto "拒绝", Enter rejects.
+  setCurrent({
+    rpcId: "rpc-ap2",
+    id: "ap-2",
+    title: "权限确认",
+    detail: "bash · escalate sandbox to danger-full-access: 写回 D 盘",
+    options: ["允许本次", "当前会话允许", "拒绝"],
+    kind: "permission",
+    approval: { id: "ap-2", toolName: "bash" },
+  })
+  await app.renderOnce()
+  app.mockInput.pressArrow("down")
+  app.mockInput.pressArrow("down")
+  await new Promise((resolve) => setTimeout(resolve, 30))
+  await app.renderOnce()
+  app.mockInput.pressEnter()
+  await new Promise((resolve) => setTimeout(resolve, 30))
+  await app.renderOnce()
+  expect(decided).toEqual(["rejected"])
+})
+
+test("plan review modal renders the harness options and answers them", async () => {
+  const [current, setCurrent] = createSignal<HarnessQuestion | null>({
+    rpcId: "rpc-plan",
+    id: "plan-review",
+    title: "Approve this plan and leave plan mode?",
+    options: ["Approve", "Keep planning"],
+    kind: "plan-approval",
+  })
+  const answered: string[] = []
+  const app = await renderSession({
+    messages: [userMsg("你好")],
+    question: current,
+    onQuestion: (choice) => {
+      answered.push(choice)
+      setCurrent(null)
+    },
+  })
+  await app.renderOnce()
+
+  const frame = app.captureCharFrame()
+  expect(frame).toContain("Plan review")
+  expect(frame).toContain("Approve this plan and leave plan mode?")
+  expect(frame).toContain("Approve")
+  expect(frame).toContain("Keep planning")
+
+  // Enter picks the highlighted "Approve".
+  app.mockInput.pressEnter()
+  await new Promise((resolve) => setTimeout(resolve, 30))
+  await app.renderOnce()
+  expect(answered).toEqual(["Approve"])
+
+  // Re-open: Escape falls through to "Keep planning" (the last option).
+  setCurrent({
+    rpcId: "rpc-plan2",
+    id: "plan-review",
+    title: "Approve this plan and leave plan mode?",
+    options: ["Approve", "Keep planning"],
+    kind: "plan-approval",
+  })
+  await app.renderOnce()
+  app.mockInput.pressEscape()
+  await new Promise((resolve) => setTimeout(resolve, 100))
+  await app.renderOnce()
+  expect(answered).toEqual(["Approve", "Keep planning"])
+})
+
+test("escape while busy cancels the running turn instead of going home", async () => {
+  let cancelled = 0
+  let backed = 0
+  const app = await renderSession({
+    messages: [userMsg("你好")],
+    busy: () => true,
+    statusText: "Deep diving",
+    onCancel: () => {
+      cancelled++
+    },
+    onBack: () => {
+      backed++
+    },
+  })
+  await app.renderOnce()
+  expect(app.captureCharFrame()).toContain("Esc 取消")
+
+  app.mockInput.pressEscape()
+  await new Promise((resolve) => setTimeout(resolve, 100))
+  await app.renderOnce()
+  expect(cancelled).toBe(1)
+  expect(backed).toBe(0)
+})
+
+test("escape while busy still rejects an open question first", async () => {
+  const [current, setCurrent] = createSignal<HarnessQuestion | null>({
+    rpcId: "rpc-1",
+    id: "q1",
+    title: "允许执行 bash 吗？",
+    options: ["Yes", "No"],
+    kind: "permission",
+  })
+  let cancelled = 0
+  const answered: string[] = []
+  const app = await renderSession({
+    messages: [userMsg("你好")],
+    busy: () => true,
+    question: current,
+    onCancel: () => {
+      cancelled++
+    },
+    onQuestion: (choice) => {
+      answered.push(choice)
+      setCurrent(null)
+    },
+  })
+  await app.renderOnce()
+
+  app.mockInput.pressEscape()
+  await new Promise((resolve) => setTimeout(resolve, 100))
+  await app.renderOnce()
+  expect(answered).toEqual(["No"])
+  expect(cancelled).toBe(0)
 })

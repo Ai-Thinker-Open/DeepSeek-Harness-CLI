@@ -13,7 +13,7 @@ import {
   type ToolRowModel,
 } from "../harness/tool-card"
 import { MarkdownText } from "./markdown"
-import { ShineText } from "./shine-text"
+import { ShineSpans, ShineText } from "./shine-text"
 import { ToolIcon } from "./tool-icon"
 
 /** While a message is streaming, only render its tail so layout stays cheap. */
@@ -29,7 +29,10 @@ function formatDuration(ms: number): string {
 }
 
 function OutputLines({ text }: { text: string }) {
-  const lines = createMemo(() => text.split("\n"))
+  // Bash-style outputs usually end with a newline; keeping it would render a
+  // blank row at the bottom of the card and read as a large gap between
+  // adjacent tool actions.
+  const lines = createMemo(() => text.replace(/\n+$/, "").split("\n"))
   return (
     <box paddingLeft={2} flexDirection="column">
       <For each={lines().slice(0, MAX_OUTPUT_LINES)}>
@@ -103,6 +106,13 @@ function ReadCard({ model }: { model: ToolRowModel }) {
 }
 
 function EditCard({ model, args, newOnly }: { model: ToolRowModel; args: Record<string, unknown>; newOnly?: boolean }) {
+  // Explicit OpenTUI diff colors (canonical green-for-added / red-for-removed,
+  // the same values MiMo Code uses): removed lines render red, added lines
+  // render green instead of relying on the component defaults drifting.
+  const DIFF_ADDED_SIGN = "#22c55e"
+  const DIFF_REMOVED_SIGN = "#ef4444"
+  const DIFF_ADDED_BG = "#1a4d1a"
+  const DIFF_REMOVED_BG = "#4d1a1a"
   const hunks = createMemo(() => {
     const hunks = model.card?.kind === "diff" ? model.card.diffs ?? null : null
     if (hunks) return hunks.map((h) => ({ path: h.path, oldText: h.oldText, newText: h.newText }))
@@ -135,7 +145,16 @@ function EditCard({ model, args, newOnly }: { model: ToolRowModel; args: Record<
             <text fg={theme.textMuted}>
               <b> {group.path}</b>
             </text>
-            <diff diff={group.diff} view="unified" showLineNumbers wrapMode="char" />
+            <diff
+              diff={group.diff}
+              view="unified"
+              showLineNumbers
+              wrapMode="char"
+              addedSignColor={DIFF_ADDED_SIGN}
+              removedSignColor={DIFF_REMOVED_SIGN}
+              addedBg={DIFF_ADDED_BG}
+              removedBg={DIFF_REMOVED_BG}
+            />
             <Show when={group.totalLines > MAX_OUTPUT_LINES}>
               <text fg={theme.textMuted}>… ({group.totalLines - MAX_OUTPUT_LINES} more lines)</text>
             </Show>
@@ -320,16 +339,16 @@ export function ToolCard({ call, result }: { call: ToolCallRecord; result?: Tool
           hovered={hovered()}
           expandable={expandable()}
         />
-        <text fg={theme.textMuted}>
+        {/* One non-wrapping line: a long summary used to wrap the header to
+         * two rows, making adjacent tool cards look far apart. */}
+        <text fg={theme.textMuted} wrapMode="none" truncate>
           <Show when={call.status !== "running"}>
             <b> {model().title}</b>
           </Show>
-        </text>
-        <Show when={call.status === "running"}>
-          <text fg={theme.textMuted}> </text>
-          <ShineText text={model().title} />
-        </Show>
-        <text fg={theme.textMuted}>
+          <Show when={call.status === "running"}>
+            <span> </span>
+            <ShineSpans text={model().title} />
+          </Show>
           <Show when={model().summary || errorLine()}>
             <span style={{ fg: call.status === "error" && errorLine() ? theme.error : theme.textMuted }}>
               {" · "}

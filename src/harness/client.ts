@@ -150,6 +150,7 @@ export interface HarnessClientLike {
   prompt(sessionId: string, text: string, mode?: "queue" | "steer"): Promise<{ accepted: boolean }>
   cancel(sessionId: string): Promise<{ accepted: boolean }>
   respond(rpcIdToAnswer: string, sessionId: string, answers: Array<{ id: string; selected: string[] }>): Promise<void>
+  respondApproval(rpcIdToAnswer: string, sessionId: string, approvalId: string, outcome: "allowed-once" | "rejected"): Promise<void>
   history(sessionId: string, maxMessages?: number): Promise<{ events: HistoryEntry[]; hasMore: boolean; projections?: Record<string, unknown> }>
   listSessions(): Promise<{ items: SessionSummary[] }>
   commandList(sessionId: string): Promise<CommandDescriptor[]>
@@ -237,6 +238,15 @@ export class HarnessClient implements HarnessClientLike {
       type: "client-response",
       rpcId: rpcIdToAnswer,
       result: { ok: true, value: { sessionId, answer: { answers } } },
+    })
+  }
+
+  /** Decide a pending sandbox-escalation approval (`approval/requested`). */
+  async respondApproval(rpcIdToAnswer: string, sessionId: string, approvalId: string, outcome: "allowed-once" | "rejected"): Promise<void> {
+    await this.post("/api/respond", {
+      type: "client-response",
+      rpcId: rpcIdToAnswer,
+      result: { ok: true, value: { sessionId, approvalId, outcome } },
     })
   }
 
@@ -331,13 +341,14 @@ export class HarnessClient implements HarnessClientLike {
    * settled execution, or undefined when the line does not resolve.
    */
   async commandExecute(sessionId: string, line: string): Promise<CommandExecutionResult | undefined> {
+    // Newer harnesses require `images` (composer attachments, empty for a
+    // plain invocation) alongside agentId/line.
+    const args = { agentId: sessionId, line, images: [] as unknown[] }
     try {
-      return await this.call<CommandExecutionResult | undefined>("commands/execute", {
-        args: { agentId: sessionId, line },
-      })
+      return await this.call<CommandExecutionResult | undefined>("commands/execute", { args })
     } catch (e) {
       if (e instanceof HarnessError && e.code === "not-found") {
-        return this.call<CommandExecutionResult | undefined>("commands.execute", { agentId: sessionId, line })
+        return this.call<CommandExecutionResult | undefined>("commands.execute", { args })
       }
       throw e
     }

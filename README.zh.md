@@ -16,7 +16,7 @@
 - **流式渲染**：正文、推理（Think 块）、工具调用增量实时渲染，30fps 下保持流畅
 - **工具卡片**：Bash / Read / Edit / Write / Search / Code / Todo / Question / Terminal / Job 等工具行分类，含摘要、展开正文、diff 查看器与运行闪光动画；行首图标使用 DSH web 客户端官方 SVG（预渲染为 PNG），通过 Kitty / Sixel 图形协议显示，不支持时自动回退 Unicode 字形
 - **Think 块**：推理内容以可折叠块呈现，与工具行共用闪光动画和 hover 折叠箭头交互
-- **权限审批**：harness 抛出的权限 / 提问 / 计划审批以弹窗呈现，↑↓ 选择、Enter 确认、Esc 拒绝
+- **权限审批**：harness 抛出的权限 / 提问 / 计划审批以弹窗呈现；权限请求支持多选 checkbox（`Space` 切换、`a`/`n`/`i`/`l` 全选 / 全不选 / 反选 / 只选最新、Enter 一次确认全部、Esc 全部拒绝）；沙箱升级授权（如写回 Windows D 盘）提供「允许本次 / 当前会话允许 / 拒绝」三个选项
 - **计划模式**：`/plan` 进入 / 退出计划模式，徽标实时反映 `active/pending` 状态
 - **Slash 命令**：本地命令 + harness 宿主命令 + 技能统一收录在 `/` 菜单
 - **队列停靠**：待发 / 引导中的消息可直接编辑、移除或发送
@@ -182,7 +182,7 @@ MCP 服务端依赖 `pyserial`、`mcp`、`starlette`、`uvicorn`。若本机 Pyt
 |---|---|
 | `Tab` / `Shift+Tab` | 切换权限预设：`read-only` → `workspace-write` → `full-access` |
 | `/` | 打开命令菜单（本地 / host / 技能，按前缀过滤） |
-| `Esc` | 关闭菜单 / 返回主页 / 拒绝当前问题 |
+| `Esc` | 执行中取消当前回合 / 关闭菜单 / 返回主页 / 拒绝当前问题与权限申请 |
 | `Enter` | 发送消息 / 确认选择 |
 | `↑↓` | 菜单与选项移动 |
 | 鼠标 | 点击展开工具卡片、队列行；hover 工具行显示折叠箭头；拖动选择文本（OSC52 复制） |
@@ -220,7 +220,7 @@ MOCK_SLOW=1 bun scripts/mock-dsh-server.mjs  # 放大时序便于观察流式动
 DSH_URL=http://127.0.0.1:3080 bun run dev
 ```
 
-mock 服务器实现了 DSH 协议（`/api/<method>` 一元 RPC、`events.mux` WebSocket 下行、`/api/respond`），收到 "ask …" 会触发权限提问，其余消息会按关键词回放一轮带工具调用的脚本回合（bash / read / grep / edit），方便观察工具卡片的闪光动画。
+mock 服务器实现了 DSH 协议（`/api/<method>` 一元 RPC、`events.mux` WebSocket 下行、`/api/respond`），收到 "ask …" 会触发权限提问（"ask multi permission" 会一次抛三条请求，方便验证多选弹窗），其余消息会按关键词回放一轮带工具调用的脚本回合（bash / read / grep / edit），方便观察工具卡片的闪光动画。
 
 ## 架构概览
 

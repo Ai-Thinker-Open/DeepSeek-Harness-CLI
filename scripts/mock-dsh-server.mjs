@@ -28,6 +28,8 @@ let seq = 0
 const sockets = new Set()
 const sessions = new Map()
 const pendingQuestions = new Map() // rpcId -> { resolve }
+const pendingApprovals = new Map() // rpcId -> { resolve, sessionId, approvalId }
+const cancelledSessions = new Map() // sessionId -> true while the turn is being cancelled
 const credentials = new Map()
 if (process.env.MOCK_API_KEY) credentials.set("DEEPSEEK_API_KEY", process.env.MOCK_API_KEY)
 
@@ -53,20 +55,49 @@ function nextSeq() {
   return ++seq
 }
 
-function askQuestion(sessionId, rpcId, question, options) {
+/** Sleep then report whether the session's turn was cancelled meanwhile. */
+async function pauseForCancel(sessionId, ms, turn) {
+  await sleep(ms)
+  if (cancelledSessions.get(sessionId) === true) {
+    cancelledSessions.delete(sessionId)
+    emitEvent(sessionId, {
+      type: "turn/end",
+      seq: nextSeq(),
+      time: Date.now(),
+      data: { turn, reason: { kind: "cancel" } },
+    })
+    return true
+  }
+  return false
+}
+
+/** Ask one or more permission requests in a single question/requested frame. */
+function askQuestion(sessionId, rpcId, questions) {
   return new Promise((resolve) => {
     pendingQuestions.set(rpcId, { resolve })
     emit("question/requested", {
       sessionId,
-      questions: [
-        {
-          id: `q-${rpcId}`,
-          question,
-          header: "权限请求",
-          options: options.map((label) => ({ label })),
-          intent: { kind: "permission" },
-        },
-      ],
+      questions: questions.map((q) => ({
+        id: q.id,
+        question: q.question,
+        header: "权限请求",
+        options: q.options.map((label) => ({ label })),
+        intent: { kind: "permission" },
+      })),
+    })
+  })
+}
+
+/** Ask a sandbox-escalation approval (the real harness's approval/requested frame). */
+function askApproval(sessionId, rpcId, approvalId, toolName, callId, reason) {
+  return new Promise((resolve) => {
+    pendingApprovals.set(rpcId, { resolve, sessionId, approvalId })
+    emit("approval/requested", {
+      sessionId,
+      approvalId,
+      toolName,
+      ...(callId ? { callId } : {}),
+      ...(reason ? { reason } : {}),
     })
   })
 }
@@ -128,6 +159,7 @@ async function runTurn(sessionId, text, firstTurn) {
   // first events (injections, user/message, turn/start) are not lost.
   await sleep(150)
   const turn = ++turnSeq
+  cancelledSessions.set(sessionId, false)
   const now = () => Date.now()
   if (firstTurn) {
     // Injected context, exactly like the real harness folds it into the
@@ -174,6 +206,7 @@ async function runTurn(sessionId, text, firstTurn) {
 
   const reasoning = ["让我先分析一下这个问题，", "然后我会调用工具来确认结果。"]
   for (const part of reasoning) {
+    if (await pauseForCancel(sessionId, 0, turn)) return
     emitEvent(sessionId, {
       type: "assistant/chunk",
       seq: nextSeq(),
@@ -181,18 +214,66 @@ async function runTurn(sessionId, text, firstTurn) {
       data: { turn, step: 1, chunk: { type: "reasoning-delta", text: part } },
     })
     await sleep(120)
+    if (await pauseForCancel(sessionId, 0, turn)) return
   }
 
   if (/ask/i.test(text)) {
-    const answer = await askQuestion(sessionId, `q-${turn}`, "允许执行 bash 命令吗？", ["Yes", "No"])
+    const multi = /multi|permission|多条/i.test(text)
+    const questions = multi
+      ? [
+          { id: `q-${turn}-bash`, question: "Bash(ls -la)", options: ["允许", "拒绝"] },
+          { id: `q-${turn}-read`, question: "Read(src/app.tsx)", options: ["允许", "拒绝"] },
+          { id: `q-${turn}-edit`, question: "Edit(src/theme.ts)", options: ["允许", "拒绝"] },
+        ]
+      : [{ id: `q-${turn}`, question: "允许执行 bash 命令吗？", options: ["Yes", "No"] }]
+    const answers = await askQuestion(sessionId, `q-${turn}`, questions)
+    const allowed = (answers ?? []).filter((a) => !/拒绝|No/i.test(a.selected?.[0] ?? "")).length
+    const denied = (answers ?? []).length - allowed
     emitEvent(sessionId, {
       type: "assistant/chunk",
       seq: nextSeq(),
       time: now(),
-      data: { turn, step: 1, chunk: { type: "text-delta", text: `你选择了「${answer}」。` } },
+      data: {
+        turn,
+        step: 1,
+        chunk: {
+          type: "text-delta",
+          text: multi
+            ? `权限确认完成：允许 ${allowed} 个，拒绝 ${denied} 个。`
+            : `你选择了「${answers?.[0]?.selected?.[0] ?? ""}」。`,
+        },
+      },
     })
   } else {
     const tool = pickToolCall(text)
+    // Prompts that need to leave the sandbox (write to a Windows drive, etc.)
+    // exercise the approval/requested flow instead of running straight away.
+    if (/xlsx|D盘|D drive|mnt\/d|approve|写回|cop(y|ied)/i.test(text)) {
+      const approvalId = `ap-${turn}`
+      const outcome = await askApproval(
+        sessionId,
+        approvalId,
+        approvalId,
+        tool.name,
+        `call_${turn}`,
+        "escalate sandbox to danger-full-access: 需要写入会话工作区之外的路径（如 Windows D 盘）",
+      )
+      if (outcome !== "allowed-once") {
+        emitEvent(sessionId, {
+          type: "assistant/chunk",
+          seq: nextSeq(),
+          time: now(),
+          data: { turn, step: 1, chunk: { type: "text-delta", text: "已拒绝该操作，回合结束。" } },
+        })
+        emitEvent(sessionId, {
+          type: "turn/end",
+          seq: nextSeq(),
+          time: now(),
+          data: { turn, reason: { kind: "cancel" } },
+        })
+        return
+      }
+    }
     const argsJson = JSON.stringify(tool.args)
     emitEvent(sessionId, {
       type: "assistant/chunk",
@@ -200,7 +281,7 @@ async function runTurn(sessionId, text, firstTurn) {
       time: now(),
       data: { turn, step: 1, chunk: { type: "text-delta", text: "好的，我执行一条命令看看结果。" } },
     })
-    await sleep(100)
+    if (await pauseForCancel(sessionId, 100, turn)) return
     emitEvent(sessionId, {
       type: "assistant/chunk",
       seq: nextSeq(),
@@ -223,7 +304,7 @@ async function runTurn(sessionId, text, firstTurn) {
       time: now(),
       data: { callId: `call_${turn}`, name: tool.name, arguments: argsJson },
     })
-    await sleep(250)
+    if (await pauseForCancel(sessionId, 250, turn)) return
     emitEvent(sessionId, {
       type: "tool/result",
       seq: nextSeq(),
@@ -242,7 +323,7 @@ async function runTurn(sessionId, text, firstTurn) {
         meta: tool.meta,
       },
     })
-    await sleep(100)
+    if (await pauseForCancel(sessionId, 100, turn)) return
     emitEvent(sessionId, {
       type: "assistant/chunk",
       seq: nextSeq(),
@@ -294,9 +375,19 @@ async function handleRpc(req) {
     const value = body.result?.value ?? {}
     const pending = pendingQuestions.get(rpcId)
     if (pending) {
-      const choice = value.answer?.answers?.[0]?.selected?.[0] ?? "Yes"
-      pending.resolve(choice)
+      pending.resolve(value.answer?.answers ?? [])
       pendingQuestions.delete(rpcId)
+      return respond(ok({}))
+    }
+    const approval = pendingApprovals.get(rpcId)
+    if (approval) {
+      const okOutcome =
+        value.sessionId === approval.sessionId &&
+        value.approvalId === approval.approvalId &&
+        (value.outcome === "allowed-once" || value.outcome === "rejected")
+      approval.resolve(okOutcome ? value.outcome : "rejected")
+      pendingApprovals.delete(rpcId)
+      return respond(ok({}))
     }
     return respond(ok({}))
   }
@@ -364,6 +455,7 @@ async function handleRpc(req) {
       return respond(ok({ accepted: true }))
     }
     case "session.cancel":
+      cancelledSessions.set(payload.sessionId, true)
       return respond(ok({ accepted: true }))
     case "session.rename":
       return respond(ok({}))

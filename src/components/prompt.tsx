@@ -99,18 +99,23 @@ export function Prompt(props: {
 
   type MenuRow = { type: "header"; text: string } | { type: "command"; index: number; item: CommandItem }
   /** Build the visible rows starting at command `start`, interleaving group
-   *  headers (muted, not selectable) up to the panel height. */
+   *  headers (muted, not selectable). Headers do NOT consume the command-row
+   *  budget: the window is exactly MAX_MENU_ROWS commands, so scrolling steps
+   *  one command at a time and the list never jumps when a section header
+   *  enters or leaves the window (the header renders as one extra row above
+   *  the window only when the window starts on a category boundary). */
   const buildRowsFrom = (start: number): MenuRow[] => {
     const rows: MenuRow[] = []
-    let lastCat: string | null = null
-    for (let i = start; i < matches().length && rows.length < MAX_MENU_ROWS; i++) {
+    let commandCount = 0
+    for (let i = start; i < matches().length && commandCount < MAX_MENU_ROWS; i++) {
       const item = matches()[i] as CommandItem
       const cat = categoryOf(item)
-      if (cat !== lastCat) {
+      const isCategoryStart = i === 0 || categoryOf(matches()[i - 1] as CommandItem) !== cat
+      if (isCategoryStart && i === start) {
         rows.push({ type: "header", text: cat })
-        lastCat = cat
       }
       rows.push({ type: "command", index: i, item })
+      commandCount++
     }
     return rows
   }

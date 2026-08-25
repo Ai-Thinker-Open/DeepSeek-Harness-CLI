@@ -16,7 +16,7 @@ It drives a locally running DeepSeek Harness instance: sessions, tool calls, per
 - **Streaming render**: body, reasoning (Think blocks) and tool calls stream in at 30fps without jank
 - **Tool cards**: Bash / Read / Edit / Write / Search / Code / Todo / Question / Terminal / Job row variants with summaries, expandable bodies, a diff viewer and a running shine animation; leading icons are the official DSH web-client SVGs baked to PNG and rendered via Kitty / Sixel graphics, with a Unicode glyph fallback
 - **Think blocks**: reasoning streams in a collapsible block that shares the tool rows' shine animation and hover collapse hint
-- **Permission approvals**: permission / ask-user / plan-review questions render as a modal — ↑↓ to select, Enter to confirm, Esc to reject
+- **Permission approvals**: permission / ask-user / plan-review questions render as a modal — permission requests are multi-select checkboxes (`Space` to toggle, `a`/`n`/`i`/`l` to select all / none / invert / latest, Enter to confirm all, Esc to deny); sandbox-escalation approvals (e.g. writing back to a Windows D drive) offer "allow once / allow for this session / reject"
 - **Plan mode**: `/plan` enters / exits plan mode; the badge reflects `active/pending` state live
 - **Slash commands**: local commands, harness host commands and skills all live in the `/` menu
 - **Queue dock**: pending / steering messages can be edited, removed or sent inline
@@ -216,7 +216,7 @@ across platforms.
 |---|---|
 | `Tab` / `Shift+Tab` | Cycle permission presets: `read-only` → `workspace-write` → `full-access` |
 | `/` | Open the command menu (local / host / skills, prefix-filtered) |
-| `Esc` | Close the menu / go back to home / reject the current question |
+| `Esc` | Cancel the running turn while busy / close the menu / go back to home / reject the current question or approval |
 | `Enter` | Send message / confirm selection |
 | `↑↓` | Move through menus and options |
 | Mouse | Click to expand tool cards and queue rows; hover tool rows to reveal the collapse hint; drag to select text (OSC52 copy) |
@@ -254,7 +254,7 @@ MOCK_SLOW=1 bun scripts/mock-dsh-server.mjs  # slower streaming to watch animati
 DSH_URL=http://127.0.0.1:3080 bun run dev
 ```
 
-The mock speaks the DSH protocol (`/api/<method>` unary RPC, `events.mux` WebSocket downlink, `/api/respond`). Prompts containing "ask …" trigger a permission question; anything else replays a scripted turn with a tool call (bash / read / grep / edit) so the tool-card shine animation is visible across tool kinds.
+The mock speaks the DSH protocol (`/api/<method>` unary RPC, `events.mux` WebSocket downlink, `/api/respond`). Prompts containing "ask …" trigger a permission question ("ask multi permission" raises three requests at once to exercise the multi-select modal); anything else replays a scripted turn with a tool call (bash / read / grep / edit) so the tool-card shine animation is visible across tool kinds.
 
 ## Architecture
 

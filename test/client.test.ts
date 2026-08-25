@@ -15,7 +15,7 @@ test("command RPCs hit the Typert remote gateway with agentId args", async () =>
   await client.commandExecute("s-1", "/compact")
   expect(seen).toEqual([
     { method: "commands/list", payload: { args: { agentId: "s-1" } } },
-    { method: "commands/execute", payload: { args: { agentId: "s-1", line: "/compact" } } },
+    { method: "commands/execute", payload: { args: { agentId: "s-1", line: "/compact", images: [] } } },
   ])
 })
 

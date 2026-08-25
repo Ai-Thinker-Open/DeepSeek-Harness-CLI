@@ -76,6 +76,9 @@ export interface HarnessSessionApi {
   start: (text: string) => Promise<boolean>
   send: (text: string) => Promise<boolean>
   answer: (choice: string) => Promise<void>
+  answerPermission: (checkedIds: string[]) => Promise<void>
+  answerApproval: (outcome: "allowed-once" | "rejected") => Promise<void>
+  answerApprovalAllowSession: () => Promise<void>
   cancelQuestion: () => Promise<void>
   abort: () => Promise<void>
   clearError: () => void
@@ -670,6 +673,9 @@ export function createHarnessSession(
       case "question/requested":
         onQuestionRequested(frame)
         break
+      case "approval/requested":
+        onApprovalRequested(frame)
+        break
       case "host/session-status":
         setBusy(Boolean((payload as { running?: boolean }).running))
         break
@@ -719,7 +725,8 @@ export function createHarnessSession(
         intent?: { kind: "plan-review"; approve: string }
       }>
     }
-    const q = payload.questions[0]
+    const questions = payload.questions
+    const q = questions[0]
     if (!q) return
     const options = q.options?.length ? q.options.map((o) => o.label) : ["Yes", "No"]
     const kind: HarnessQuestion["kind"] =
@@ -728,6 +735,26 @@ export function createHarnessSession(
         : /allow|permission|deny|允许/i.test(`${q.header ?? ""} ${q.question} ${options.join(" ")}`)
           ? "permission"
           : "ask-user"
+    if (kind === "permission") {
+      // Permission questions carry one selectable request per harness question:
+      // surface them all (mimo code shows every pending request in one dialog)
+      // instead of dropping everything after the first one.
+      setQuestion({
+        rpcId: frame.rpcId,
+        id: q.id,
+        title: q.header ?? "权限请求",
+        options: ["Allow", "Deny"],
+        kind,
+        requests: questions.map((item) => ({
+          id: item.id,
+          label: item.question,
+          detail: item.detail ?? item.options?.[0]?.description ?? item.header,
+          suggested: true,
+          options: item.options,
+        })),
+      })
+      return
+    }
     setQuestion({
       rpcId: frame.rpcId,
       id: q.id,
@@ -735,6 +762,31 @@ export function createHarnessSession(
       detail: q.detail ?? q.header,
       options,
       kind,
+    })
+  }
+
+  function onApprovalRequested(frame: ServerRequest): void {
+    // Sandbox-escalation approvals arrive as their own answerable frame
+    // (`approval/requested`), separate from `question/requested`. Surfacing
+    // them as a permission prompt is what lets the harness's Bash tool stop
+    // waiting forever on a user decision (the tool only runs after the
+    // approval/decided outcome is recorded).
+    const payload = frame.payload as {
+      sessionId: string
+      approvalId: string
+      toolName?: string
+      callId?: string
+      reason?: string
+    }
+    if (!payload.approvalId) return
+    setQuestion({
+      rpcId: frame.rpcId,
+      id: payload.approvalId,
+      title: "权限确认",
+      detail: [payload.toolName, payload.reason].filter(Boolean).join(" · "),
+      options: ["允许本次", "当前会话允许", "拒绝"],
+      kind: "permission",
+      approval: { id: payload.approvalId, toolName: payload.toolName, callId: payload.callId },
     })
   }
 
@@ -1350,8 +1402,64 @@ export function createHarnessSession(
     }
   }
 
+  /** Answer a permission question: `checkedIds` are the requests the user allowed. */
+  async function answerPermission(checkedIds: string[]): Promise<void> {
+    const q = question()
+    if (!q || !sessionId) return
+    setQuestion(null)
+    setStatusText("")
+    const checked = new Set(checkedIds)
+    // The harness expects one answer entry per question id, using the option
+    // labels it advertised. Allowed rows keep the first label; denied rows the
+    // second (or the same label when only one option was given).
+    const answers = (q.requests ?? []).map((r) => {
+      const opts = r.options ?? []
+      const allowLabel = opts[0]?.label ?? "Yes"
+      const denyLabel = opts[1]?.label ?? allowLabel
+      return { id: r.id, selected: [checked.has(r.id) ? allowLabel : denyLabel] }
+    })
+    try {
+      await client.respond(q.rpcId, sessionId, answers)
+    } catch {
+      // answering is best-effort; the harness will time out if it fails
+    }
+  }
+
+  /** Decide a pending sandbox-escalation approval (`approval/requested`). */
+  async function answerApproval(outcome: "allowed-once" | "rejected"): Promise<void> {
+    const q = question()
+    if (!q?.approval || !sessionId) return
+    setQuestion(null)
+    setStatusText("")
+    try {
+      await client.respondApproval(q.rpcId, sessionId, q.approval.id, outcome)
+    } catch {
+      // answering is best-effort; the harness will time out if it fails
+    }
+  }
+
+  /** Allow for the whole session: raise the preset, then approve this call. */
+  async function answerApprovalAllowSession(): Promise<void> {
+    // `/permission danger-full-access` (dsh-permission-presets) switches the
+    // session to full sandbox access with approval "never", so later
+    // escalations stop prompting. Best-effort: approving the pending call is
+    // what unblocks the current one.
+    await runCommand("/permission danger-full-access")
+    await answerApproval("allowed-once")
+  }
+
   async function cancelQuestion(): Promise<void> {
     const q = question()
+    if (q?.approval) {
+      // Explicit denial: reject the sandbox escalation in one RPC.
+      await answerApproval("rejected")
+      return
+    }
+    if (q?.kind === "permission" && q.requests?.length) {
+      // Explicit denial: reject every pending request in one RPC.
+      await answerPermission([])
+      return
+    }
     if (q?.options.length) await answer(q.options[q.options.length - 1] as string)
     else setQuestion(null)
   }
@@ -1396,6 +1504,9 @@ export function createHarnessSession(
     start,
     send,
     answer,
+    answerPermission,
+    answerApproval,
+    answerApprovalAllowSession,
     cancelQuestion,
     abort,
     commands,

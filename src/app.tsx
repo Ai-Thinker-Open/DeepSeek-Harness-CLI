@@ -313,6 +313,13 @@ export function App(props: { client?: HarnessClientLike; continueLast?: boolean;
       // as a user message so the conversation shows what is being worked on.
       const task = planTaskMessage(line, name)
       if (task) session.mirrorUserMessage(task)
+      // Plan-mode toggling is a state change, not a panel-worthy result: the
+      // PlanModeBadge reflects the mode and a transient toast reports it, so
+      // no "/plan" result container lingers above the composer.
+      if (name === "plan") {
+        if (res.text) showToast(res.text)
+        return null
+      }
       return { title: `/${bare ?? name}`, rows: [res.text ?? "已执行（完整结果见消息窗口）"] }
     }
     // Unknown lines are a typing slip, not a failure worth a panel: toast and
@@ -360,12 +367,20 @@ export function App(props: { client?: HarnessClientLike; continueLast?: boolean;
           toast={toast}
           stats={session.stats}
           statusText={session.statusText}
+          busy={session.busy}
           planMode={session.planMode}
           planPending={session.planPending}
           question={session.question}
           onSend={handleSubmit}
           onBack={() => setScreen("home")}
+          onCancel={() => {
+            void session.abort()
+            showToast("已取消当前执行")
+          }}
           onQuestion={session.answer}
+          onQuestionMany={(ids) => void session.answerPermission(ids)}
+          onApproval={(outcome) => void session.answerApproval(outcome)}
+          onApprovalAllowSession={() => void session.answerApprovalAllowSession()}
           commandItems={commandItems}
           onCommand={runCommand}
           onCommandPopupOpen={handleCommandOpen}

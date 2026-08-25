@@ -5,8 +5,9 @@
  *   SKILL.md bundles the harness links into the skill root)
  * - vendor/flashkey-mcp   — the FlashKey MCP server Python source
  * - vendor/opentui-native — OpenTUI native libraries for every supported
- *   platform, so the terminal client runs anywhere regardless of the platform
- *   npm resolved at install time (see src/dsh/native-assets.ts)
+ *   platform plus its runtime assets (parser worker, tree-sitter grammars and
+ *   the web-tree-sitter wasm), so the terminal client runs anywhere regardless
+ *   of the platform npm resolved at install time (see src/dsh/native-assets.ts)
  *
  * `prepack` runs this before `npm publish`/`npm pack`, and you can refresh the
  * copies manually with `bun run resources`. Requires network access to GitHub
@@ -97,6 +98,35 @@ for (const [platform, { file, packages }] of Object.entries(NATIVE_LIBS)) {
     await rm(join(packTmp, "package"), { recursive: true, force: true })
   }
 }
+
+// OpenTUI core runtime assets, laid out as OTUI_ASSET_ROOT keys so every
+// asset the client resolves (`@opentui/core/parser.worker.js`,
+// `@opentui/core/assets/...`, `web-tree-sitter/tree-sitter.wasm`) exists next
+// to the native libraries. Without them the renderer fails with
+// "Missing OpenTUI asset" as soon as a diff/code view spins up the parser.
+const coreAssetDest = join(nativeRoot, "@opentui", "core")
+await rm(coreAssetDest, { recursive: true, force: true })
+await mkdir(coreAssetDest, { recursive: true })
+const coreSpec = `@opentui/core@${OPENTUI_VERSION}`
+await runWithRetry(() => $`npm pack ${coreSpec} --pack-destination ${packTmp}`, `npm pack ${coreSpec}`)
+const coreTgz = join(packTmp, `opentui-core-${OPENTUI_VERSION}.tgz`)
+await $`tar -xzf ${coreTgz} -C ${packTmp} package/parser.worker.js package/assets`
+await $`mv ${join(packTmp, "package", "parser.worker.js")} ${join(coreAssetDest, "parser.worker.js")}`
+await $`mv ${join(packTmp, "package", "assets")} ${join(coreAssetDest, "assets")}`
+await rm(coreTgz, { force: true })
+await rm(join(packTmp, "package"), { recursive: true, force: true })
+
+const WEB_TREE_SITTER_VERSION = "0.25.10" // matches @opentui/core@0.5.6
+const webTreeSitterDest = join(nativeRoot, "web-tree-sitter")
+await mkdir(webTreeSitterDest, { recursive: true })
+const webTsSpec = `web-tree-sitter@${WEB_TREE_SITTER_VERSION}`
+await runWithRetry(() => $`npm pack ${webTsSpec} --pack-destination ${packTmp}`, `npm pack ${webTsSpec}`)
+const webTsTgz = join(packTmp, `web-tree-sitter-${WEB_TREE_SITTER_VERSION}.tgz`)
+await $`tar -xzf ${webTsTgz} -C ${packTmp} package/tree-sitter.wasm`
+await $`mv ${join(packTmp, "package", "tree-sitter.wasm")} ${join(webTreeSitterDest, "tree-sitter.wasm")}`
+await rm(webTsTgz, { force: true })
+await rm(join(packTmp, "package"), { recursive: true, force: true })
+
 await rm(packTmp, { recursive: true, force: true })
 
-console.log(`vendored skills + flashkey-mcp + OpenTUI native libs into ${vendor}`)
+console.log(`vendored skills + flashkey-mcp + OpenTUI native libs & assets into ${vendor}`)

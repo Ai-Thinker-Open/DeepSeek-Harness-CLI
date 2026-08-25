@@ -22,12 +22,17 @@ export function SessionScreen(props: {
   toast: () => ToastMessage | null
   stats: () => SessionStats
   statusText: () => string
+  busy: () => boolean
   planMode: () => boolean
   planPending: () => boolean
   question: () => HarnessQuestion | null
   onSend: (text: string) => void
   onBack: () => void
+  onCancel: () => void
   onQuestion: (choice: string) => void
+  onQuestionMany?: (ids: string[]) => void
+  onApproval?: (outcome: "allowed-once" | "rejected") => void
+  onApprovalAllowSession?: () => void
   commandItems?: () => CommandItem[]
   onCommand?: (line: string) => Promise<CommandResultView | null>
   onCommandPopupOpen?: (open: boolean) => void
@@ -42,7 +47,15 @@ export function SessionScreen(props: {
   useKeyboard((key) => {
     if (props.question()) return
     if (commandOpen()) return
-    if ((props.active?.() ?? true) && key.name === "escape") props.onBack()
+    if (!(props.active?.() ?? true) || key.name !== "escape") return
+    // While a turn is running, Esc cancels the current execution instead of
+    // navigating back home (question/menu Esc still win above).
+    if (props.busy()) {
+      props.onCancel()
+      key.preventDefault()
+    } else {
+      props.onBack()
+    }
   })
 
   return (
@@ -78,7 +91,7 @@ export function SessionScreen(props: {
 
       <Show when={!props.question()}>
         <box width="100%" paddingLeft={2} paddingRight={2} paddingTop={1} flexShrink={0}>
-          <Show when={props.statusText() || props.planMode() || props.planPending()}>
+          <Show when={props.statusText() || props.planMode() || props.planPending() || props.busy()}>
             <box flexDirection="row" width="100%" paddingBottom={1} alignItems="center">
               <box flexGrow={1} minWidth={0}>
                 <Show when={props.statusText()}>
@@ -88,6 +101,9 @@ export function SessionScreen(props: {
                   />
                 </Show>
               </box>
+              <Show when={props.busy()}>
+                <text fg={theme.textMuted}>Esc 取消</text>
+              </Show>
               <PlanModeBadge active={props.planMode} pending={props.planPending} />
             </box>
           </Show>
@@ -118,7 +134,13 @@ export function SessionScreen(props: {
       <Footer />
       <Toast toast={props.toast} />
       <Show when={props.question()}>
-        <QuestionModal question={props.question} onAnswer={props.onQuestion} />
+        <QuestionModal
+          question={props.question}
+          onAnswer={props.onQuestion}
+          onAnswerMany={props.onQuestionMany}
+          onApproval={props.onApproval}
+          onApprovalAllowSession={props.onApprovalAllowSession}
+        />
       </Show>
     </box>
   )

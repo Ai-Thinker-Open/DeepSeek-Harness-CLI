@@ -9,6 +9,9 @@ class FakeClient implements HarnessClientLike {
   created = 0
   prompts: Array<{ sessionId: string; text: string }> = []
   responded: Array<{ rpcId: string; sessionId: string; answers: Array<{ id: string; selected: string[] }> }> = []
+  respondedApprovals: Array<{ rpcId: string; sessionId: string; approvalId: string; outcome: "allowed-once" | "rejected" }> = []
+  cancelled: string[] = []
+  currentSessionId: string | null = null
   private frames: ServerRequest[] = []
   private waiters: Array<(r: IteratorResult<ServerRequest>) => void> = []
   private closed = false
@@ -20,6 +23,7 @@ class FakeClient implements HarnessClientLike {
 
   async createSession() {
     this.created += 1
+    this.currentSessionId = `s-${this.created}`
     return { sessionId: `s-${this.created}` }
   }
 
@@ -29,11 +33,16 @@ class FakeClient implements HarnessClientLike {
   }
 
   async cancel() {
+    if (this.currentSessionId) this.cancelled.push(this.currentSessionId)
     return { accepted: true }
   }
 
   async respond(rpcIdToAnswer: string, sessionId: string, answers: Array<{ id: string; selected: string[] }>) {
     this.responded.push({ rpcId: rpcIdToAnswer, sessionId, answers })
+  }
+
+  async respondApproval(rpcIdToAnswer: string, sessionId: string, approvalId: string, outcome: "allowed-once" | "rejected") {
+    this.respondedApprovals.push({ rpcId: rpcIdToAnswer, sessionId, approvalId, outcome })
   }
 
   async history() {
@@ -916,11 +925,217 @@ test("questions are surfaced and answers are sent back to the harness", async ()
   )
   await tick()
   expect(session.question()?.kind).toBe("permission")
-  expect(session.question()?.options).toEqual(["Yes", "No"])
+  expect(session.question()?.options).toEqual(["Allow", "Deny"])
+  expect(session.question()?.requests).toEqual([
+    {
+      id: "q1",
+      label: "允许执行 bash 吗？",
+      detail: undefined,
+      suggested: true,
+      options: [{ label: "Yes" }, { label: "No" }],
+    },
+  ])
 
   await session.answer("Yes")
   expect(client.responded).toEqual([{ rpcId: expect.any(String), sessionId: "s-1", answers: [{ id: "q1", selected: ["Yes"] }] }])
   expect(session.question()).toBeNull()
+})
+
+test("permission questions surface every request and answer as one multi-select", async () => {
+  const client = new FakeClient()
+  const session = createHarnessSession(client, "/tmp")
+  await session.start("hello")
+
+  client.push(
+    frame("question/requested", {
+      sessionId: "s-1",
+      questions: [
+        {
+          id: "q-bash",
+          question: "Bash(ls -la)",
+          detail: "ls -la",
+          options: [{ label: "允许" }, { label: "拒绝" }],
+          intent: { kind: "permission" },
+        },
+        {
+          id: "q-edit",
+          question: "Edit(src/theme.ts)",
+          detail: "src/theme.ts",
+          options: [{ label: "允许" }, { label: "拒绝" }],
+          intent: { kind: "permission" },
+        },
+      ],
+    }),
+  )
+  await tick()
+
+  const q = session.question()
+  expect(q?.kind).toBe("permission")
+  expect(q?.requests?.map((r) => r.label)).toEqual(["Bash(ls -la)", "Edit(src/theme.ts)"])
+
+  await session.answerPermission(["q-bash"])
+  expect(client.responded).toEqual([
+    {
+      rpcId: expect.any(String),
+      sessionId: "s-1",
+      answers: [
+        { id: "q-bash", selected: ["允许"] },
+        { id: "q-edit", selected: ["拒绝"] },
+      ],
+    },
+  ])
+  expect(session.question()).toBeNull()
+})
+
+test("permission cancelQuestion denies every pending request", async () => {
+  const client = new FakeClient()
+  const session = createHarnessSession(client, "/tmp")
+  await session.start("hello")
+
+  client.push(
+    frame("question/requested", {
+      sessionId: "s-1",
+      questions: [
+        { id: "q1", question: "Bash(ls -la)", options: [{ label: "允许" }, { label: "拒绝" }] },
+        { id: "q2", question: "Read(src/app.tsx)", options: [{ label: "允许" }, { label: "拒绝" }] },
+      ],
+    }),
+  )
+  await tick()
+
+  await session.cancelQuestion()
+  expect(client.responded).toEqual([
+    {
+      rpcId: expect.any(String),
+      sessionId: "s-1",
+      answers: [
+        { id: "q1", selected: ["拒绝"] },
+        { id: "q2", selected: ["拒绝"] },
+      ],
+    },
+  ])
+})
+
+test("approval requests surface as a permission prompt and answer with the outcome", async () => {
+  const client = new FakeClient()
+  const session = createHarnessSession(client, "/tmp")
+  await session.start("hello")
+
+  client.push(
+    frame("approval/requested", {
+      sessionId: "s-1",
+      approvalId: "ap-1",
+      toolName: "bash",
+      callId: "call_1",
+      reason: "escalate sandbox to danger-full-access: 写回 D 盘",
+    }),
+  )
+  await tick()
+
+  const q = session.question()
+  expect(q?.kind).toBe("permission")
+  expect(q?.approval).toEqual({ id: "ap-1", toolName: "bash", callId: "call_1" })
+  expect(q?.options).toEqual(["允许本次", "当前会话允许", "拒绝"])
+  expect(q?.detail).toContain("写回 D 盘")
+
+  await session.answerApproval("allowed-once")
+  expect(client.respondedApprovals).toEqual([
+    { rpcId: expect.any(String), sessionId: "s-1", approvalId: "ap-1", outcome: "allowed-once" },
+  ])
+  expect(session.question()).toBeNull()
+})
+
+test("approval allow-session raises the preset then approves the call", async () => {
+  const client = new FakeClient()
+  const commandCalls: string[] = []
+  client.commandExecute = (async (_sessionId: string, line: string) => {
+    commandCalls.push(line)
+    return { ok: true, result: { text: "权限预设已切换" } }
+  }) as unknown as typeof client.commandExecute
+  const session = createHarnessSession(client, "/tmp")
+  await session.start("hello")
+
+  client.push(
+    frame("approval/requested", {
+      sessionId: "s-1",
+      approvalId: "ap-session",
+      toolName: "bash",
+      reason: "写回 D 盘",
+    }),
+  )
+  await tick()
+
+  await session.answerApprovalAllowSession()
+  expect(commandCalls).toEqual(["/permission danger-full-access"])
+  expect(client.respondedApprovals).toEqual([
+    { rpcId: expect.any(String), sessionId: "s-1", approvalId: "ap-session", outcome: "allowed-once" },
+  ])
+  expect(session.question()).toBeNull()
+})
+
+test("approval cancelQuestion rejects the escalation", async () => {
+  const client = new FakeClient()
+  const session = createHarnessSession(client, "/tmp")
+  await session.start("hello")
+
+  client.push(
+    frame("approval/requested", {
+      sessionId: "s-1",
+      approvalId: "ap-2",
+      toolName: "bash",
+      reason: "需要权限",
+    }),
+  )
+  await tick()
+
+  await session.cancelQuestion()
+  expect(client.respondedApprovals).toEqual([
+    { rpcId: expect.any(String), sessionId: "s-1", approvalId: "ap-2", outcome: "rejected" },
+  ])
+})
+
+test("plan-review questions surface as plan-approval with harness options", async () => {
+  const client = new FakeClient()
+  const session = createHarnessSession(client, "/tmp")
+  await session.start("hello")
+
+  client.push(
+    frame("question/requested", {
+      sessionId: "s-1",
+      questions: [
+        {
+          id: "plan-review",
+          question: "Approve this plan and leave plan mode?",
+          options: [{ label: "Approve" }, { label: "Keep planning" }],
+          intent: { kind: "plan-review", approve: "Approve" },
+        },
+      ],
+    }),
+  )
+  await tick()
+
+  const q = session.question()
+  expect(q?.kind).toBe("plan-approval")
+  expect(q?.options).toEqual(["Approve", "Keep planning"])
+
+  await session.answer("Approve")
+  expect(client.responded).toEqual([
+    { rpcId: expect.any(String), sessionId: "s-1", answers: [{ id: "plan-review", selected: ["Approve"] }] },
+  ])
+  expect(session.question()).toBeNull()
+})
+
+test("abort cancels the running turn and clears busy state", async () => {
+  const client = new FakeClient()
+  const session = createHarnessSession(client, "/tmp")
+  await session.start("hello")
+  await session.send("again")
+  expect(session.busy()).toBe(true)
+
+  await session.abort()
+  expect(client.cancelled).toContain("s-1")
+  expect(session.busy()).toBe(false)
+  expect(session.statusText()).toBe("")
 })
 
 test("connection failure reports an error and keeps the session empty", async () => {
