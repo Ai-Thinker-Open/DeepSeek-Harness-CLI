@@ -10,9 +10,16 @@ import { testRender } from "@opentui/solid"
 // next to the native libraries, or diff/code views fail with
 // "Missing OpenTUI asset @opentui/core/parser.worker.js".
 const vendorRoot = join(import.meta.dir, "..", "vendor", "opentui-native")
-process.env.OTUI_ASSET_ROOT = vendorRoot
+// vendor/ is generated at publish time (prepack, `bun run resources`) and is
+// not committed, so a fresh CI checkout has no vendored assets. When they are
+// present (local dev) point OTUI_ASSET_ROOT at them to exercise the vendored
+// path; otherwise the diff test uses @opentui/core's package-relative
+// fallbacks, exactly like CI.
+const hasVendor = existsSync(vendorRoot)
+if (hasVendor) process.env.OTUI_ASSET_ROOT = vendorRoot
 
 test("vendored OpenTUI assets resolve under OTUI_ASSET_ROOT", async () => {
+  if (!hasVendor) return
   const requiredKeys = [
     "@opentui/core/parser.worker.js",
     "@opentui/core/assets/javascript/highlights.scm",
