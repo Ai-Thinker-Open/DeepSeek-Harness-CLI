@@ -68,7 +68,8 @@ export function QueueDock(props: {
                   value={editing()?.text ?? ""}
                   textColor={theme.text}
                   placeholderColor={theme.textMuted}
-                  cursorColor={theme.primary}
+                  cursorColor={theme.text}
+                  cursorStyle={{ style: "default" }}
                   onInput={(value) => {
                     const current = editing()
                     if (current) setEditing({ ...current, text: String(value ?? "") })

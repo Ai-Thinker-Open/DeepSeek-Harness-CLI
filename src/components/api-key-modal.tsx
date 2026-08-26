@@ -101,6 +101,8 @@ export function ApiKeyModal(props: {
               placeholder="请输入DeepSeek API Key"
               placeholderColor={theme.textMuted}
               maxLength={256}
+              cursorColor={theme.text}
+              cursorStyle={{ style: "default" }}
               onInput={handleInput}
               onSubmit={() => void confirm()}
             />

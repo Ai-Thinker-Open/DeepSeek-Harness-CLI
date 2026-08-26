@@ -156,23 +156,26 @@ export function Prompt(props: {
 
   type MenuRow = { type: "header"; text: string } | { type: "command"; index: number; item: CommandItem }
   /** Build the visible rows starting at command `start`, interleaving group
-   *  headers (muted, not selectable). Headers do NOT consume the command-row
-   *  budget: the window is exactly MAX_MENU_ROWS commands, so scrolling steps
-   *  one command at a time and the list never jumps when a section header
-   *  enters or leaves the window (the header renders as one extra row above
-   *  the window only when the window starts on a category boundary). */
+   *  headers (muted, not selectable). Headers consume the row budget so the
+   *  panel is always exactly MAX_MENU_ROWS rows tall — a mid-window header
+   *  appearing or disappearing would otherwise change the panel height and
+   *  make scrolling look jumpy. */
   const buildRowsFrom = (start: number): MenuRow[] => {
     const rows: MenuRow[] = []
-    let commandCount = 0
-    for (let i = start; i < matches().length && commandCount < MAX_MENU_ROWS; i++) {
+    let rowCount = 0
+    for (let i = start; i < matches().length && rowCount < MAX_MENU_ROWS; i++) {
       const item = matches()[i] as CommandItem
       const cat = categoryOf(item)
       const isCategoryStart = i === 0 || categoryOf(matches()[i - 1] as CommandItem) !== cat
       if (isCategoryStart) {
+        // A header + its first command need two slots; if only one slot
+        // remains, stop before the boundary instead of overflowing.
+        if (rowCount + 1 >= MAX_MENU_ROWS) break
         rows.push({ type: "header", text: cat })
+        rowCount++
       }
       rows.push({ type: "command", index: i, item })
-      commandCount++
+      rowCount++
     }
     return rows
   }
@@ -260,8 +263,10 @@ export function Prompt(props: {
   })
 
   const setDraft = (text: string) => {
-    ref?.editBuffer.setText(text)
-    if (ref) ref.cursorOffset = text.length
+    ref?.setText(text)
+    // Native cursor move: `cursorOffset` uses visual offsets and lands wrong
+    // for CJK text; gotoBufferEnd puts the caret at the true end of the draft.
+    ref?.gotoBufferEnd()
     setValue(text)
     setSelected(0)
   }
@@ -529,47 +534,49 @@ export function Prompt(props: {
           <Show when={visibleRows().length === 0}>
             <text fg={theme.textMuted}>加载命令…</text>
           </Show>
-          <For each={visibleRows()}>
-            {(row) => {
-              if (row.type === "header") {
-                return <text fg={theme.textMuted}>{row.text}</text>
-              }
-              return (
-                <box
-                  flexDirection="row"
-                  width="100%"
-                  paddingLeft={1}
-                  paddingRight={1}
-                  backgroundColor={selected() === row.index ? theme.primary : RGBA.fromInts(0, 0, 0, 0)}
-                  onMouse={(evt) => {
-                    // Hover follows the pointer (MiMo style); a click behaves
-                    // exactly like Enter on the selected row.
-                    if (evt.type === "over") selectAt(row.index)
-                    if (evt.type === "down" && evt.button === 0) {
-                      selectAt(row.index)
-                      chooseSelected()
-                      evt.preventDefault()
-                    }
-                  }}
-                >
-                  <text fg={theme.text} wrapMode="none" truncate>
-                    <Show
-                      when={selected() === row.index}
-                      fallback={<span>{padTo(`/${row.item.name}`, nameColumn())}</span>}
-                    >
-                      <b>{padTo(`/${row.item.name}`, nameColumn())}</b>
-                    </Show>
-                    <span style={{ fg: selected() === row.index ? theme.text : theme.textMuted }}>
-                      {row.item.description}
-                    </span>
-                  </text>
-                </box>
-              )
-            }}
-          </For>
-          <Show when={matches().length > MAX_MENU_ROWS}>
+          <box flexDirection="column" minHeight={MAX_MENU_ROWS}>
+            <For each={visibleRows()}>
+              {(row) => {
+                if (row.type === "header") {
+                  return <text fg={theme.textMuted}>{row.text}</text>
+                }
+                return (
+                  <box
+                    flexDirection="row"
+                    width="100%"
+                    paddingLeft={1}
+                    paddingRight={1}
+                    backgroundColor={selected() === row.index ? theme.primary : RGBA.fromInts(0, 0, 0, 0)}
+                    onMouse={(evt) => {
+                      // Hover follows the pointer (MiMo style); a click behaves
+                      // exactly like Enter on the selected row.
+                      if (evt.type === "over") selectAt(row.index)
+                      if (evt.type === "down" && evt.button === 0) {
+                        selectAt(row.index)
+                        chooseSelected()
+                        evt.preventDefault()
+                      }
+                    }}
+                  >
+                    <text fg={theme.text} wrapMode="none" truncate>
+                      <Show
+                        when={selected() === row.index}
+                        fallback={<span>{padTo(`/${row.item.name}`, nameColumn())}</span>}
+                      >
+                        <b>{padTo(`/${row.item.name}`, nameColumn())}</b>
+                      </Show>
+                      <span style={{ fg: selected() === row.index ? theme.text : theme.textMuted }}>
+                        {row.item.description}
+                      </span>
+                    </text>
+                  </box>
+                )
+              }}
+            </For>
+          </box>
+          <Show when={scroll() + visibleCommandCount(scroll()) < matches().length}>
             <text fg={theme.textMuted}>
-              … ↑/↓ 滚动 · Enter 填入 · 还有 {matches().length - MAX_MENU_ROWS} 项
+              … ↑/↓ 滚动 · Enter 填入 · 还有 {matches().length - scroll() - visibleCommandCount(scroll())} 项
             </text>
           </Show>
         </box>
@@ -598,7 +605,8 @@ export function Prompt(props: {
             ]}
             textColor={theme.text}
             placeholderColor={theme.textMuted}
-            cursorColor={theme.primary}
+            cursorColor={theme.text}
+            cursorStyle={{ style: "default" }}
             onSubmit={submitDraft}
           />
           <box flexDirection="row" justifyContent="space-between" marginTop={1}>

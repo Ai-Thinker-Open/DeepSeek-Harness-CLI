@@ -954,8 +954,8 @@ test("slash menu scrolls one command at a time across category headers", async (
   await new Promise((resolve) => setTimeout(resolve, 80))
   await app.renderOnce()
 
-  // Nine downs select cmd10; the 10-command window has not scrolled yet, so
-  // cmd1 is still visible (the section header does not steal a row).
+  // Nine downs select cmd10; the header consumes a row, so the window has
+  // already scrolled to cmd2..cmd10 and cmd1 is gone.
   for (let i = 0; i < 9; i++) {
     app.mockInput.pressArrow("down")
     await new Promise((resolve) => setTimeout(resolve, 20))
@@ -963,19 +963,19 @@ test("slash menu scrolls one command at a time across category headers", async (
   await new Promise((resolve) => setTimeout(resolve, 80))
   await app.renderOnce()
   let frame = app.captureCharFrame()
-  expect(frame).toContain("/cmd1 ")
+  expect(frame).not.toContain("/cmd1 ")
   expect(frame).toContain("/cmd10")
 
-  // One more down crosses into the skill section: the window advances by a
-  // single command instead of jumping two rows at the category boundary.
+  // One more down crosses into the skill section: the 技能 header appears and
+  // the window advances by a single command (cmd3..cmd10 + 技能 + skill1).
   app.mockInput.pressArrow("down")
   await new Promise((resolve) => setTimeout(resolve, 80))
   await app.renderOnce()
   frame = app.captureCharFrame()
-  expect(frame).not.toContain("/cmd1 ")
-  expect(frame).toContain("/cmd2 ")
+  expect(frame).not.toContain("/cmd2 ")
   expect(frame).toContain("/cmd10")
   expect(frame).toContain("/skill1 ")
+  expect(frame).toContain("技能")
 })
 
 test("slash menu shows 技能 and MCP category headers above their groups", async () => {
@@ -1020,10 +1020,14 @@ test("up/down arrows recall sent-message history like a shell", async () => {
   expect(sent).toEqual(["第一条消息", "第二条消息"])
 
   // ↑ recalls the newest, then the previous one.
+  const emptyCursor = app.captureSpans().cursor[0]
   app.mockInput.pressArrow("up")
   await new Promise((resolve) => setTimeout(resolve, 80))
   await app.renderOnce()
   expect(app.captureCharFrame()).toContain("第二条消息")
+  // The caret must land at the end of the recalled draft: exactly the width
+  // of the recalled text (5 CJK chars = 10 cells) past the empty caret.
+  expect(app.captureSpans().cursor[0]).toBe(emptyCursor + 10)
   app.mockInput.pressArrow("up")
   await new Promise((resolve) => setTimeout(resolve, 80))
   await app.renderOnce()
