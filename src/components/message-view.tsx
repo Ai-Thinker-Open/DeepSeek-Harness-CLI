@@ -58,7 +58,7 @@ function BashCard({ model }: { model: ToolRowModel }) {
     <box flexDirection="column" border={["left"]} borderColor={theme.borderSubtle} paddingLeft={1}>
       <Show when={model.body}>
         <text fg={theme.text} wrapMode="char">
-          <b>❯ </b>
+          <span style={{ fg: theme.primary, bold: true }}>❯ </span>
           {model.body}
         </text>
       </Show>
@@ -343,7 +343,7 @@ export function ToolCard({ call, result }: { call: ToolCallRecord; result?: Tool
          * two rows, making adjacent tool cards look far apart. */}
         <text fg={theme.textMuted} wrapMode="none" truncate>
           <Show when={call.status !== "running"}>
-            <b> {model().title}</b>
+            <span style={{ fg: theme.primary, bold: true }}> {model().title}</span>
           </Show>
           <Show when={call.status === "running"}>
             <span> </span>
@@ -357,6 +357,17 @@ export function ToolCard({ call, result }: { call: ToolCallRecord; result?: Tool
           </Show>
           <Show when={dur}>
             <span>{dur}</span>
+          </Show>
+          {/* Codex-style settled marker for command/terminal executions. */}
+          <Show
+            when={
+              call.status !== "running" &&
+              (model().variant === "bash" || model().variant === "terminal")
+            }
+          >
+            <span style={{ fg: call.status === "error" ? theme.error : "#22c55e" }}>
+              {call.status === "error" ? " ✗" : " ✓"}
+            </span>
           </Show>
           <Show when={call.status === "running"}>
             <span> …</span>

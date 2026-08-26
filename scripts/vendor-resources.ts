@@ -15,7 +15,7 @@
  * resources, so first launch works offline.
  */
 import { $ } from "bun"
-import { mkdirSync, readdirSync } from "node:fs"
+import { existsSync, mkdirSync, readdirSync } from "node:fs"
 import { mkdir, rm } from "node:fs/promises"
 import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
@@ -68,10 +68,17 @@ const sources = [
 ] satisfies Array<{ dir: string; url: string; keep: string[] }>
 
 for (const { dir, url, keep } of sources) {
+  // Never destroy an already-vendored copy on a transient network failure:
+  // only refresh when the kept files are actually missing.
+  const keepSet = new Set(keep)
+  const complete = keep.every((entry) => existsSync(join(dir, entry)))
+  if (complete) {
+    console.log(`vendor-resources: ${dir} already present; skipping refresh`)
+    continue
+  }
   await rm(dir, { recursive: true, force: true })
   await runWithRetry(() => $`git clone --depth 1 ${url} ${dir}`, `clone ${url}`)
   await rm(join(dir, ".git"), { recursive: true, force: true })
-  const keepSet = new Set(keep)
   for (const entry of readdirSync(dir)) {
     if (!keepSet.has(entry)) {
       await rm(join(dir, entry), { recursive: true, force: true })

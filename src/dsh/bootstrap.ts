@@ -16,7 +16,18 @@
  * - `FLASHKEY_SSE_PORT` overrides the SSE port (default 8100).
  */
 import { spawn, spawnSync, type ChildProcess } from "node:child_process"
-import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, symlinkSync, writeFileSync } from "node:fs"
+import {
+  existsSync,
+  lstatSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  realpathSync,
+  statSync,
+  symlinkSync,
+  unlinkSync,
+  writeFileSync,
+} from "node:fs"
 import { homedir } from "node:os"
 import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
@@ -75,7 +86,33 @@ export function linkSkillBundles(skillsRoot: string, repoRoot: string): number {
     const source = join(bundlesDir, name)
     if (!statSync(source).isDirectory() || !existsSync(join(source, "SKILL.md"))) continue
     const target = join(skillsRoot, name)
-    if (existsSync(target)) continue
+    // The target may already exist as a symlink whose destination no longer
+    // resolves (e.g. after the vendored skills repo moved). `existsSync`
+    // follows links and reports false, but creating the link then fails with
+    // EEXIST on every launch. Repair stale symlinks; leave real files or
+    // directories at the target untouched.
+    let existing: ReturnType<typeof lstatSync> | undefined
+    try {
+      existing = lstatSync(target)
+    } catch {
+      // absent — create below
+    }
+    if (existing) {
+      if (!existing.isSymbolicLink()) continue
+      // A symlink that still resolves to the current source is already right:
+      // keep it (idempotent). Only repair links whose destination is gone or
+      // stale.
+      try {
+        if (realpathSync(target) === realpathSync(source)) continue
+      } catch {
+        // broken link — fall through to repair
+      }
+      try {
+        unlinkSync(target)
+      } catch {
+        continue
+      }
+    }
     try {
       symlinkSync(source, target, "dir")
       linked += 1

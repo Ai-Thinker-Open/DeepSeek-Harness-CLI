@@ -37,6 +37,7 @@ async function renderSession(opts: {
   onCommand?: (line: string) => Promise<CommandResultView | null>
   queue?: () => QueueItem[]
   onQueueAction?: (itemId: string, action: QueueAction) => void
+  kittyKeyboard?: boolean
 } = {}) {
   const app = await testRender(
     () => (
@@ -64,7 +65,7 @@ async function renderSession(opts: {
         onQueueAction={opts.onQueueAction}
       />
     ),
-    { width: 80, height: opts.height ?? 32 },
+    { width: 80, height: opts.height ?? 32, ...(opts.kittyKeyboard ? { kittyKeyboard: true } : {}) },
   )
   return app
 }
@@ -175,6 +176,11 @@ test("hovering the stats bar shows real stats without flickering", async () => {
   const x = lines[y]?.indexOf("3 轮") ?? 0
 
   await app.mockMouse.moveTo(x + 1, y)
+  await app.renderOnce()
+  // Not instant: still hidden before the hover delay elapses.
+  expect(app.captureCharFrame()).not.toContain("轮次 3")
+  // The popup appears after a hover delay, not instantly.
+  await new Promise((resolve) => setTimeout(resolve, 650))
   await app.renderOnce()
   expect(app.captureCharFrame()).toContain("轮次 3")
   expect(app.captureCharFrame()).toContain("输入 1.2k tokens")
@@ -993,6 +999,79 @@ test("slash menu shows 技能 and MCP category headers above their groups", asyn
   expect(frame).toContain("/flashkey:status")
 })
 
+test("up/down arrows recall sent-message history like a shell", async () => {
+  const sent: string[] = []
+  const app = await renderSession({
+    messages: [userMsg("你好")],
+    onSend: (text) => sent.push(text),
+  })
+  await app.renderOnce()
+
+  app.mockInput.typeText("第一条消息")
+  await new Promise((resolve) => setTimeout(resolve, 80))
+  app.mockInput.pressEnter()
+  await new Promise((resolve) => setTimeout(resolve, 80))
+  await app.renderOnce()
+  app.mockInput.typeText("第二条消息")
+  await new Promise((resolve) => setTimeout(resolve, 80))
+  app.mockInput.pressEnter()
+  await new Promise((resolve) => setTimeout(resolve, 80))
+  await app.renderOnce()
+  expect(sent).toEqual(["第一条消息", "第二条消息"])
+
+  // ↑ recalls the newest, then the previous one.
+  app.mockInput.pressArrow("up")
+  await new Promise((resolve) => setTimeout(resolve, 80))
+  await app.renderOnce()
+  expect(app.captureCharFrame()).toContain("第二条消息")
+  app.mockInput.pressArrow("up")
+  await new Promise((resolve) => setTimeout(resolve, 80))
+  await app.renderOnce()
+  expect(app.captureCharFrame()).toContain("第一条消息")
+
+  // ↓ walks forward, then restores the empty draft.
+  app.mockInput.pressArrow("down")
+  await new Promise((resolve) => setTimeout(resolve, 80))
+  await app.renderOnce()
+  expect(app.captureCharFrame()).toContain("第二条消息")
+  app.mockInput.pressArrow("down")
+  await new Promise((resolve) => setTimeout(resolve, 80))
+  await app.renderOnce()
+  expect(app.captureCharFrame()).not.toContain("第一条消息")
+  expect(app.captureCharFrame()).not.toContain("第二条消息")
+})
+
+test("ctrl+enter inserts a newline instead of submitting", async () => {
+  const sent: string[] = []
+  const app = await renderSession({
+    messages: [userMsg("你好")],
+    onSend: (text) => sent.push(text),
+    kittyKeyboard: true,
+  })
+  await app.renderOnce()
+
+  app.mockInput.typeText("第一行")
+  await new Promise((resolve) => setTimeout(resolve, 80))
+  app.mockInput.pressEnter({ ctrl: true })
+  await new Promise((resolve) => setTimeout(resolve, 80))
+  await app.renderOnce()
+  app.mockInput.typeText("第二行")
+  await new Promise((resolve) => setTimeout(resolve, 80))
+  await app.renderOnce()
+
+  // Ctrl+Enter must not submit; the draft holds both lines.
+  expect(sent).toEqual([])
+  const frame = app.captureCharFrame()
+  expect(frame).toContain("第一行")
+  expect(frame).toContain("第二行")
+
+  // A plain Enter submits the multi-line draft.
+  app.mockInput.pressEnter()
+  await new Promise((resolve) => setTimeout(resolve, 80))
+  await app.renderOnce()
+  expect(sent).toEqual(["第一行\n第二行"])
+})
+
 test("slash menu mouse click runs no-argument commands immediately", async () => {
   let ran = ""
   const app = await renderSession({
@@ -1537,6 +1616,50 @@ test("plan review modal renders the harness options and answers them", async () 
   await new Promise((resolve) => setTimeout(resolve, 100))
   await app.renderOnce()
   expect(answered).toEqual(["Approve", "Keep planning"])
+})
+
+test("composer draft survives a plan review question", async () => {
+  const [current, setCurrent] = createSignal<HarnessQuestion | null>(null)
+  const answered: string[] = []
+  const app = await renderSession({
+    messages: [userMsg("你好")],
+    question: current,
+    onQuestion: (choice) => {
+      answered.push(choice)
+      setCurrent(null)
+    },
+  })
+  await app.renderOnce()
+
+  app.mockInput.typeText("草稿保留测试")
+  await new Promise((resolve) => setTimeout(resolve, 80))
+  await app.renderOnce()
+  expect(app.captureCharFrame()).toContain("草稿保留测试")
+
+  // A plan review interrupts the composer; the draft must survive it.
+  setCurrent({
+    rpcId: "rpc-plan",
+    id: "plan-review",
+    title: "Approve this plan and leave plan mode?",
+    options: ["Approve", "Keep planning"],
+    kind: "plan-approval",
+  })
+  await app.renderOnce()
+  expect(app.captureCharFrame()).toContain("Plan review")
+
+  // Press Enter while the review is open: the modal answers; the composer's
+  // buffer must be untouched.
+  app.mockInput.pressEnter()
+  await new Promise((resolve) => setTimeout(resolve, 30))
+  await app.renderOnce()
+  expect(answered).toEqual(["Approve"])
+
+  setCurrent(null)
+  // The teardown rebuilds the native editor view a frame later, so the draft
+  // restore retries shortly after; wait for it to settle.
+  await new Promise((resolve) => setTimeout(resolve, 350))
+  await app.renderOnce()
+  expect(app.captureCharFrame()).toContain("草稿保留测试")
 })
 
 test("escape while busy cancels the running turn instead of going home", async () => {

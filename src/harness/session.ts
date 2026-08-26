@@ -131,6 +131,9 @@ export function createHarnessSession(
   let messageSeq = 0
   let turnStartAt: number | null = null
   let stepStartAt: number | null = null
+  /** User messages moved to the pending dock while queued (harness id → text);
+   *  they re-enter the conversation when the harness echoes them. */
+  const pendingUserMessages = new Map<string, string>()
   let turnStepEnds = 0
   let streamTurn: string | null = null
   let promptSentAt = 0
@@ -298,9 +301,10 @@ export function createHarnessSession(
       }
       case "user/message": {
         const data = ev.data as unknown as { id?: string; content?: Block[]; source?: UserMessageSource }
+        const echoText = blockText(data.content)
         if (isInjectedSource(data.source)) {
           const title = injectSourceTitle(data.source)
-          const { text, truncated } = truncateText(blockText(data.content), MAX_INJECT_CHARS)
+          const { text, truncated } = truncateText(echoText, MAX_INJECT_CHARS)
           const id = `msg-${data.id ?? ev.seq}`
           if (!model.some((m) => m.inject && m.id === id)) {
             model.push({
@@ -316,6 +320,13 @@ export function createHarnessSession(
             })
             syncAll()
           }
+        } else if (data.id && pendingUserMessages.has(data.id)) {
+          // This message was pending in the dock; the agent has claimed it, so
+          // it moves back into the conversation.
+          pendingUserMessages.delete(data.id)
+          model.push({ id: `user-${++messageSeq}`, role: "user", content: echoText, createdAt: ev.time })
+          syncAll()
+          syncStats()
         }
         // Direct user messages are appended locally on send; skip live echoes.
         break
@@ -697,23 +708,36 @@ export function createHarnessSession(
         break
       case "session/queue": {
         const items = (payload.items as Array<Record<string, unknown>> | undefined) ?? []
-        setQueue(
-          items.map((item) => {
-            const message = (item.message ?? {}) as Record<string, unknown>
-            const content = (message.content ?? []) as Array<{ type?: string; text?: string }>
-            const text = content.every((b) => b.type === "text")
-              ? content.map((b) => b.text ?? "").join("")
-              : null
-            const preview = text ?? content.map((b) => (b.type === "text" ? b.text ?? "" : `[${b.type}]`)).join(" ").trim()
-            return {
-              id: String(item.id ?? ""),
-              messageId: String(message.id ?? ""),
-              placement: (item.placement as QueueItem["placement"]) ?? "queued",
-              text: text ?? null,
-              preview: preview.slice(0, 200),
-            }
-          }),
-        )
+        const queueItems = items.map((item) => {
+          const message = (item.message ?? {}) as Record<string, unknown>
+          const content = (message.content ?? []) as Array<{ type?: string; text?: string }>
+          const text = content.every((b) => b.type === "text")
+            ? content.map((b) => b.text ?? "").join("")
+            : null
+          const preview = text ?? content.map((b) => (b.type === "text" ? b.text ?? "" : `[${b.type}]`)).join(" ").trim()
+          return {
+            id: String(item.id ?? ""),
+            messageId: String(message.id ?? ""),
+            placement: (item.placement as QueueItem["placement"]) ?? "queued",
+            text: text ?? null,
+            preview: preview.slice(0, 200),
+          }
+        })
+        setQueue(queueItems)
+        // Pending messages live in the dock above the composer, not in the
+        // conversation: drop the locally-appended copy (the harness's
+        // user/message echo re-adds it once the agent claims it).
+        for (const item of queueItems) {
+          if (item.placement === "context" || item.text === null || !item.messageId) continue
+          const idx = [...model].reverse().findIndex((m) => m.role === "user" && !m.inject && m.content === item.text)
+          if (idx !== -1) {
+            const real = model.length - 1 - idx
+            model.splice(real, 1)
+            pendingUserMessages.set(item.messageId, item.text)
+            syncAll()
+            syncStats()
+          }
+        }
         break
       }
     }

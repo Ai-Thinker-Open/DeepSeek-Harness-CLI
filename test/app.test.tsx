@@ -1,8 +1,18 @@
 /** @jsxImportSource @opentui/solid */
-import { expect, test } from "bun:test"
+// Existing App-level tests exercise the startup flow after the risk gate;
+// the gate itself is covered in test/directory-risk.test.tsx.
+// Set the bypass in beforeEach (not at module top) so a shared test process
+// never leaks it into sibling files mid-test.
+
+import { beforeEach, expect, test } from "bun:test"
 import { testRender } from "@opentui/solid"
 import { App } from "../src/app"
 import type { HarnessClientLike, HostDescribe, ServerRequest, SessionEvent, SessionSummary } from "../src/harness/client"
+
+beforeEach(() => {
+  process.env.DSH_SKIP_RISK_CONFIRM = "1"
+  process.env.DSH_NO_UPDATE_CHECK = "1"
+})
 
 type SpanLike = { text: string; fg: { r: number; g: number; b: number } }
 type FrameLike = { captureSpans: () => { lines: Array<{ spans: SpanLike[] }> } }

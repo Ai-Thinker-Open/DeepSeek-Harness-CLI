@@ -23,6 +23,7 @@
     "cordis.patch.yml",
     "dist",
     "scripts/ensure-runtime.mjs",
+    "scripts/self-update.mjs",
     "vendor"
   ],
   "dsh": {

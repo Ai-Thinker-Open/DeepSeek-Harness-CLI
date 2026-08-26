@@ -12,6 +12,10 @@ import { ACCENT_BORDER, theme } from "../theme"
 const PROMPT_PLACEHOLDER = "给智能体发消息"
 const MAX_MENU_ROWS = 10
 const MAX_RESULT_ROWS = 12
+const HISTORY_LIMIT = 100
+
+/** Sent plain-text messages, for ↑/↓ recall like a shell history. */
+const SEND_HISTORY: string[] = []
 
 /**
  * Reject edit-buffer pollution that is not real typing. On Windows some
@@ -20,8 +24,16 @@ const MAX_RESULT_ROWS = 12
  * real drafts are plain printable text plus ordinary whitespace. C0/C1
  * control ranges cover ESC and friends (tab/newline/CR are kept).
  */
-function isUsableDraft(text: string): boolean {
-  return text.length === 0 || !/[\u0000-\u0008\u000e-\u001f\u007f-\u009f]/.test(text)
+/** Git Bash subprocess stderr (e.g. `ssh (pid) C:\Program Files\Git\usr\bin\
+ *  ssh.exe: *** fatal error - couldn't create signal pipe…`) leaking into the
+ *  terminal. These markers are specific enough that real drafts never match. */
+export const SUBPROCESS_NOISE_RE = /(?:couldn't create signal pipe|\*\*\* fatal error|Program Files[\\/]Git[\\/]usr[\\/]bin)/i
+
+export function isUsableDraft(text: string): boolean {
+  return (
+    text.length === 0 ||
+    (!/[\u0000-\u0008\u000e-\u001f\u007f-\u009f]/.test(text) && !SUBPROCESS_NOISE_RE.test(text))
+  )
 }
 
 /** Category label for a command item; group titles render muted above rows. */
@@ -73,14 +85,48 @@ export function Prompt(props: {
   const [result, setResult] = createSignal<CommandResultView | null>(null)
   const [resultScroll, setResultScroll] = createSignal(0)
   const [resultSelected, setResultSelected] = createSignal(0)
+  const [historyIndex, setHistoryIndex] = createSignal(-1)
   const mode = props.mode ?? (() => "workspace-write" as PermissionMode)
   const model = props.model ?? (() => "DeepSeek-V4-Flash")
   const active = props.active ?? (() => true)
   const terminal = useTerminalDimensions()
   let ref: TextareaRenderable | undefined
+  /** Draft captured before ↑ started walking the history, restored on ↓ end. */
+  let historyDraft = ""
+  /** Draft captured before an interruption (question modal), restored after. */
+  let savedDraft: string | null = null
+  let restoreTimer: ReturnType<typeof setTimeout> | undefined
 
   createEffect(() => {
-    if (active()) ref?.focus()
+    if (active()) {
+      ref?.focus()
+      // The interruption is over: put the draft back. The modal teardown can
+      // rebuild the native editor view a frame later, so retry once after the
+      // renderer settles instead of restoring into a buffer that is about to
+      // be cleared again.
+      if (savedDraft !== null) {
+        const draft = savedDraft
+        const restore = () => {
+          if (draft === "") return
+          if (ref && (ref.plainText ?? "") === "") {
+            // TextareaRenderable has no `value` setter (that is InputRenderable
+            // only); write through setText so the native buffer actually fills.
+            ref.setText(draft)
+          }
+          if (ref && (ref.plainText ?? "") === draft) savedDraft = null
+        }
+        restore()
+        if (restoreTimer) clearTimeout(restoreTimer)
+        restoreTimer = setTimeout(() => {
+          restoreTimer = undefined
+          restore()
+        }, 200)
+      }
+    } else {
+      // Deactivated (question modal open): snapshot before anything clears it.
+      savedDraft = (ref?.plainText ?? value()) || null
+      ref?.blur()
+    }
   })
 
   // An external refresh (e.g. the model picker re-rendering after a switch)
@@ -188,8 +234,23 @@ export function Prompt(props: {
   onMount(() => {
     const timer = setInterval(() => {
       const text = ref?.plainText ?? ""
+      // Git Bash subprocess errors (ssh etc.) can be surfaced in the focused
+      // input on Windows. They are never real typing: drop them from the
+      // buffer instead of letting them become part of the draft.
+      if (text && SUBPROCESS_NOISE_RE.test(text)) {
+        ref?.setText("")
+        return
+      }
+      // A pending restore (question modal closed) may race the native editor
+      // rebuild; the poll catches the frame where the buffer is empty again.
+      if (savedDraft !== null && ref && text === "" && savedDraft !== "") {
+        ref.setText(savedDraft)
+        savedDraft = null
+      }
       if (text !== value() && isUsableDraft(text)) {
         setValue(text)
+        // The user typed something: leave history navigation.
+        if (historyIndex() !== -1) setHistoryIndex(-1)
         if (result() !== null) setResult(null)
         setSelected(0)
         setScroll(0)
@@ -221,14 +282,45 @@ export function Prompt(props: {
   }
 
   const submitDraft = () => {
+    // While a question modal is open the composer is deactivated: the
+    // textarea still receives Enter through OpenTUI's key routing, but it
+    // must neither send the draft nor clear it (the draft survives the
+    // plan-review interruption).
+    if (!active()) return
     const text = (ref?.plainText ?? value()).trim()
     setDraft("")
     if (!text) return
+    setHistoryIndex(-1)
     if (text.startsWith("/")) {
       void runCommandLine(text)
       return
     }
+    if (SEND_HISTORY[SEND_HISTORY.length - 1] !== text) {
+      SEND_HISTORY.push(text)
+      if (SEND_HISTORY.length > HISTORY_LIMIT) SEND_HISTORY.shift()
+    }
     props.onSubmit?.(text)
+  }
+
+  /** Shell-style history recall: ↑ older, ↓ newer, ending at the draft. */
+  const recallHistory = (delta: -1 | 1) => {
+    if (SEND_HISTORY.length === 0) return
+    const current = historyIndex()
+    if (current === -1) {
+      historyDraft = ref?.plainText ?? value()
+      const next = SEND_HISTORY.length - 1
+      setHistoryIndex(next)
+      setDraft(SEND_HISTORY[next] as string)
+      return
+    }
+    const next = current + delta
+    if (next < 0 || next >= SEND_HISTORY.length) {
+      setHistoryIndex(-1)
+      setDraft(historyDraft)
+    } else {
+      setHistoryIndex(next)
+      setDraft(SEND_HISTORY[next] as string)
+    }
   }
 
   /** Select `index` and keep it inside the visible window. */
@@ -302,7 +394,17 @@ export function Prompt(props: {
       }
       return
     }
-    if (!menuOpen()) return
+    if (!menuOpen()) {
+      // Plain draft: ↑/↓ walk the sent-message history (terminal style).
+      if (isUp(key)) {
+        recallHistory(-1)
+        key.preventDefault()
+      } else if (isDown(key)) {
+        recallHistory(1)
+        key.preventDefault()
+      }
+      return
+    }
     if (isUp(key)) {
       moveSelection(-1)
       key.preventDefault()
@@ -491,6 +593,8 @@ export function Prompt(props: {
               { name: "return", action: "submit" },
               { name: "linefeed", action: "submit" },
               { name: "return", meta: true, action: "newline" },
+              { name: "return", ctrl: true, action: "newline" },
+              { name: "kpenter", ctrl: true, action: "newline" },
             ]}
             textColor={theme.text}
             placeholderColor={theme.textMuted}

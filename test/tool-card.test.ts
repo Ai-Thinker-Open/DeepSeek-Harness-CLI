@@ -35,7 +35,7 @@ test("classifyTool maps the harness action vocabulary to variants", () => {
 
 test("titles refine variants without replacing the family", () => {
   expect(toolTitle("bash")).toBe("Bash")
-  expect(toolTitle("pwsh")).toBe("Pwsh")
+  expect(toolTitle("pwsh")).toBe("Shell")
   expect(toolTitle("grep")).toBe("Grep")
   expect(toolTitle("web_search")).toBe("Search")
   expect(toolTitle("read")).toBe("Read")

@@ -1,4 +1,4 @@
-import { For, Show, createSignal } from "solid-js"
+import { For, Show, createMemo, createSignal } from "solid-js"
 import { useKeyboard } from "@opentui/solid"
 import { Footer } from "../components/footer"
 import { MessageView } from "../components/message-view"
@@ -44,6 +44,33 @@ export function SessionScreen(props: {
   active?: () => boolean
 }) {
   const [commandOpen, setCommandOpen] = createSignal(false)
+  /**
+   * The composer must survive any SessionScreen re-render (question opens or
+   * closes, busy flips, status changes): those re-renders would otherwise hand
+   * the Prompt fresh closures, Solid would re-run it, and OpenTUI would
+   * recreate the textarea — silently dropping the user's draft. Memoizing the
+   * whole subtree keeps the same node unless its real inputs change; `active`
+   * still reads the question lazily so blur/focus react without re-rendering.
+   */
+  const promptNode = createMemo(() => {
+    return (
+      <Prompt
+        mode={props.mode}
+        model={props.model}
+        onSubmit={(text) => props.onSend(text)}
+        commandItems={props.commandItems}
+        onCommand={props.onCommand}
+        onPopupOpenChange={(open) => {
+          setCommandOpen(open)
+          props.onCommandPopupOpen?.(open)
+        }}
+        commandsLoading={props.commandsLoading}
+        resultOverride={props.resultOverride}
+        active={() => (props.active?.() ?? true) && !props.question()}
+        inputId="session-prompt-input"
+      />
+    )
+  })
   useKeyboard((key) => {
     if (props.question()) return
     if (commandOpen()) return
@@ -93,50 +120,40 @@ export function SessionScreen(props: {
         </Show>
       </scrollbox>
 
-      <Show when={!props.question()}>
-        <box width="100%" paddingLeft={2} paddingRight={2} paddingTop={1} flexShrink={0}>
-          <Show when={props.statusText() || props.planMode() || props.planPending() || props.busy()}>
-            <box flexDirection="row" width="100%" paddingBottom={1} alignItems="center">
-              <box flexGrow={1} minWidth={0}>
-                <Show when={props.statusText()}>
-                  <StatusMarquee
-                    text={props.statusText()}
-                    animated={props.statusText() === DEEP_DIVING_STATUS}
-                  />
-                </Show>
-              </box>
-              <Show when={props.busy()}>
-                <text fg={theme.textMuted}>Esc 取消</text>
+      <box
+        width="100%"
+        paddingLeft={2}
+        paddingRight={2}
+        paddingTop={1}
+        flexShrink={0}
+      >
+        <Show when={props.statusText() || props.planMode() || props.planPending() || props.busy()}>
+          <box flexDirection="row" width="100%" paddingBottom={1} alignItems="center">
+            <box flexGrow={1} minWidth={0}>
+              <Show when={props.statusText()}>
+                <StatusMarquee
+                  text={props.statusText()}
+                  animated={props.statusText() === DEEP_DIVING_STATUS}
+                />
               </Show>
-              <Show when={props.planMode() && !props.busy()}>
-                <text fg={theme.textMuted}>Esc 退出计划模式</text>
-              </Show>
-              <PlanModeBadge active={props.planMode} pending={props.planPending} />
             </box>
-          </Show>
-          <Show when={(props.queue?.().length ?? 0) > 0}>
-            <box paddingBottom={1}>
-              <QueueDock queue={props.queue ?? (() => [])} onAction={props.onQueueAction ?? (() => {})} />
-            </box>
-          </Show>
-          <Prompt
-            mode={props.mode}
-            model={props.model}
-            onSubmit={(text) => props.onSend(text)}
-            commandItems={props.commandItems}
-            onCommand={props.onCommand}
-            onPopupOpenChange={(open) => {
-              setCommandOpen(open)
-              props.onCommandPopupOpen?.(open)
-            }}
-            commandsLoading={props.commandsLoading}
-            resultOverride={props.resultOverride}
-            active={props.active}
-            inputId="session-prompt-input"
-          />
-          <StatsBar stats={props.stats} />
-        </box>
-      </Show>
+            <Show when={props.busy()}>
+              <text fg={theme.textMuted}>Esc 取消</text>
+            </Show>
+            <Show when={props.planMode() && !props.busy()}>
+              <text fg={theme.textMuted}>Esc 退出计划模式</text>
+            </Show>
+            <PlanModeBadge active={props.planMode} pending={props.planPending} />
+          </box>
+        </Show>
+        <Show when={(props.queue?.().length ?? 0) > 0}>
+          <box paddingBottom={1}>
+            <QueueDock queue={props.queue ?? (() => [])} onAction={props.onQueueAction ?? (() => {})} />
+          </box>
+        </Show>
+        {promptNode()}
+        <StatsBar stats={props.stats} />
+      </box>
 
       <Footer />
       <Toast toast={props.toast} />

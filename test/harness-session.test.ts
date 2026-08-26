@@ -745,6 +745,49 @@ test("session/queue frames fold into the pending-message dock", async () => {
   expect(queue[1]?.preview).toContain("image")
 })
 
+test("queued messages live in the dock, not the conversation, until claimed", async () => {
+  const client = new FakeClient()
+  const session = createHarnessSession(client, "/tmp")
+  await session.start("hello")
+  expect(session.messages().filter((m) => m.role === "user").map((m) => m.content)).toEqual(["hello"])
+
+  // The harness queues the message: it leaves the conversation and becomes a
+  // pending row above the composer.
+  client.push({
+    type: "server-request",
+    rpcId: "q",
+    method: "session/queue",
+    payload: {
+      sessionId: "s-1",
+      items: [
+        { id: "item-1", message: { id: "m-1", content: [{ type: "text", text: "hello" }] }, placement: "queued" },
+      ],
+    },
+  })
+  await tick()
+  expect(session.messages().filter((m) => m.role === "user")).toEqual([])
+  expect(session.queue().map((q) => q.preview)).toEqual(["hello"])
+
+  // Once the agent claims the message, the echo moves it back into the
+  // conversation and the harness clears the pending row.
+  client.push(
+    frame("session/event", {
+      sessionId: "s-1",
+      event: ev("user/message", { id: "m-1", content: [{ type: "text", text: "hello" }], source: { kind: "user" } }, 3),
+    }),
+  )
+  await tick()
+  client.push({
+    type: "server-request",
+    rpcId: "q2",
+    method: "session/queue",
+    payload: { sessionId: "s-1", items: [] },
+  })
+  await tick()
+  expect(session.messages().filter((m) => m.role === "user").map((m) => m.content)).toEqual(["hello"])
+  expect(session.queue()).toEqual([])
+})
+
 test("queue actions dispatch edit/remove/steer to the harness", async () => {
   const client = new FakeClient()
   const calls: Array<{ itemId: string; action: unknown }> = []

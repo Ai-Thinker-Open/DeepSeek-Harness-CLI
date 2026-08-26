@@ -151,7 +151,9 @@ function Segs({ segs, base }: { segs: InlineSeg[]; base?: Partial<InlineSeg> }) 
         return (
           <span
             style={{
-              fg: merged.fg,
+              // Inline code (commands, filenames, paths) gets an emphasis
+              // color instead of blending into the surrounding text.
+              fg: merged.code ? theme.warning : merged.fg,
               bg: merged.code ? theme.backgroundElement : undefined,
               bold: merged.bold,
               italic: merged.italic,
@@ -193,7 +195,7 @@ function CodeBlock({ text }: { text: string }) {
     >
       <For each={lines()}>
         {(line) => (
-          <text fg={theme.textMuted} wrapMode="char">
+          <text fg={theme.text} wrapMode="char">
             {line}
           </text>
         )}

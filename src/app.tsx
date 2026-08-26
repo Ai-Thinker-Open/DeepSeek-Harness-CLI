@@ -1,11 +1,19 @@
 import { Show, createEffect, createSignal, onCleanup, onMount } from "solid-js"
+import { spawn } from "node:child_process"
+import { dirname, join } from "node:path"
+import { fileURLToPath } from "node:url"
 import { useKeyboard, useRenderer, useSelectionHandler } from "@opentui/solid"
 import { copySelection } from "./clipboard"
 import { Toast, type ToastMessage } from "./components/toast"
 import { ApiKeyModal } from "./components/api-key-modal"
+import { DirectoryRiskModal } from "./components/directory-risk-modal"
+import { UpdateModal } from "./components/update-modal"
 import { createHarnessSession } from "./harness/session"
 import type { HarnessClientLike, ModelCatalog } from "./harness/client"
 import { listMcpTools, refreshMcpStatus, type McpToolEntry } from "./mcp"
+import { effectiveWorkspace, isHighRiskDirectory, markWorkspaceConfirmed, workspaceConfirmed } from "./directory-risk"
+import { UPDATE_PKG, checkForUpdate } from "./update"
+import pkg from "../package.json"
 import { nextMode, type PermissionMode } from "./permission"
 import { Home } from "./screens/home"
 import { SessionScreen } from "./screens/session"
@@ -49,7 +57,17 @@ function planTaskMessage(line: string, name: string): string | undefined {
   return args
 }
 
-export function App(props: { client?: HarnessClientLike; continueLast?: boolean; minToolRunningMs?: number } = {}) {
+export function App(
+  props: {
+    client?: HarnessClientLike
+    continueLast?: boolean
+    minToolRunningMs?: number
+    /** Clean-exit hook (renderer destroy in cli.tsx); defaults to process.exit. */
+    onExit?: () => void
+    /** Update runner; defaults to the detached self-updater. */
+    onUpdate?: (latest: string) => void
+  } = {},
+) {
   const renderer = useRenderer()
   const [mode, setMode] = createSignal<PermissionMode>("workspace-write")
   const [toast, setToast] = createSignal<ToastMessage | null>(null)
@@ -61,6 +79,11 @@ export function App(props: { client?: HarnessClientLike; continueLast?: boolean;
   const [skills, setSkills] = createSignal<SkillEntry[]>([])
   const [mcpTools, setMcpTools] = createSignal<McpToolEntry[]>([])
   const [apiKeyOpen, setApiKeyOpen] = createSignal(false)
+  const [riskOpen, setRiskOpen] = createSignal(false)
+  const [riskDir, setRiskDir] = createSignal("")
+  const [riskHigh, setRiskHigh] = createSignal(false)
+  const [updateOpen, setUpdateOpen] = createSignal(false)
+  const [updateInfo, setUpdateInfo] = createSignal("")
   const session = createHarnessSession(props.client, undefined, { minToolRunningMs: props.minToolRunningMs })
   let toastTimer: ReturnType<typeof setTimeout> | undefined
   let startupRan = false
@@ -106,7 +129,8 @@ export function App(props: { client?: HarnessClientLike; continueLast?: boolean;
     void runStartup()
   }
 
-  onMount(() => {
+  /** API-key gate, then the real startup (home or `-c` resume). */
+  const continueStartup = () => {
     void (async () => {
       const state = await session.checkApiKey()
       if (state === "missing") {
@@ -115,10 +139,74 @@ export function App(props: { client?: HarnessClientLike; continueLast?: boolean;
       }
       void runStartup()
     })()
+  }
+
+  /** Risk gate: every launch asks about the current workspace. */
+  const openRiskGate = () => {
+    if (process.env.DSH_SKIP_RISK_CONFIRM === "1") {
+      continueStartup()
+      return
+    }
+    const dir = effectiveWorkspace()
+    const high = isHighRiskDirectory(dir)
+    setRiskDir(dir)
+    setRiskHigh(high)
+    // Home/root warn on every launch; other directories only the first time.
+    if (high || !workspaceConfirmed(dir)) setRiskOpen(true)
+    else continueStartup()
+  }
+
+  const handleRiskProceed = () => {
+    if (!riskHigh()) markWorkspaceConfirmed(riskDir())
+    setRiskOpen(false)
+    continueStartup()
+  }
+
+  const exit = props.onExit ?? (() => process.exit(0))
+
+  /** Spawn the detached updater, then tear the TUI down so the install can
+   *  replace the running package (Windows locks opentui.dll while alive). */
+  const runSelfUpdate = (latest: string) => {
+    try {
+      const script = join(dirname(fileURLToPath(import.meta.url)), "..", "scripts", "self-update.mjs")
+      spawn(process.execPath, [script, `${UPDATE_PKG}@${latest}`, "dsh-cli"], {
+        detached: true,
+        stdio: "inherit",
+      }).unref()
+    } catch {
+      // The updater could not start; the user can run npm install manually.
+    }
+    exit()
+  }
+
+  const update = props.onUpdate ?? runSelfUpdate
+
+  const handleUpdateDone = (approved: boolean) => {
+    setUpdateOpen(false)
+    if (approved) {
+      update(updateInfo())
+      return
+    }
+    openRiskGate()
+  }
+
+  onMount(() => {
+    void (async () => {
+      // Update gate first: if a newer version exists, ask before starting.
+      if (process.env.DSH_NO_UPDATE_CHECK !== "1") {
+        const latest = await checkForUpdate()
+        if (latest) {
+          setUpdateInfo(latest)
+          setUpdateOpen(true)
+          return
+        }
+      }
+      openRiskGate()
+    })()
   })
 
   useKeyboard((key) => {
-    if (session.question() || apiKeyOpen()) return
+    if (session.question() || apiKeyOpen() || riskOpen()) return
     // The slash menu owns Tab while a command draft is live.
     if (commandOpen()) return
     if (key.name === "tab") {
@@ -440,6 +528,20 @@ export function App(props: { client?: HarnessClientLike; continueLast?: boolean;
         open={apiKeyOpen}
         onSave={(value) => session.saveApiKey(value)}
         onDone={handleApiKeyDone}
+      />
+      <DirectoryRiskModal
+        open={riskOpen}
+        dir={riskDir()}
+        highRisk={riskHigh()}
+        onExit={exit}
+        onProceed={handleRiskProceed}
+      />
+      <UpdateModal
+        open={updateOpen}
+        current={pkg.version}
+        latest={updateInfo()}
+        onUpdate={() => handleUpdateDone(true)}
+        onSkip={() => handleUpdateDone(false)}
       />
     </box>
   )

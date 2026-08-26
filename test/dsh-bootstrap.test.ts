@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, test } from "bun:test"
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { applyMcpPatch, bootstrapAll, internals, linkSkillBundles } from "../src/dsh/bootstrap"
@@ -48,6 +48,21 @@ test("linkSkillBundles links SKILL.md bundles and is idempotent", () => {
   expect(existsSync(join(root, "alpha", "SKILL.md"))).toBe(true)
   expect(existsSync(join(root, "beta", "SKILL.md"))).toBe(true)
   expect(existsSync(join(root, "not-a-skill"))).toBe(false)
+  expect(linkSkillBundles(root, repo)).toBe(0)
+})
+
+test("linkSkillBundles repairs broken skill symlinks instead of failing", () => {
+  const repo = join(temp, "repo2")
+  const root = join(temp, "skills2")
+  mkdirSync(join(repo, "skills", "gamma"), { recursive: true })
+  writeFileSync(join(repo, "skills", "gamma", "SKILL.md"), "---\nname: gamma\n---\n")
+  mkdirSync(root, { recursive: true })
+  // A stale symlink whose destination no longer exists (the pre-vendoring
+  // layout): `existsSync` reports false but creating the link throws EEXIST.
+  symlinkSync(join(root, "gone", "skills", "gamma"), join(root, "gamma"), "dir")
+
+  expect(linkSkillBundles(root, repo)).toBe(1)
+  expect(realpathSync(join(root, "gamma"))).toBe(realpathSync(join(repo, "skills", "gamma")))
   expect(linkSkillBundles(root, repo)).toBe(0)
 })
 

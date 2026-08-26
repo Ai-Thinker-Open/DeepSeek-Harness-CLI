@@ -1,7 +1,10 @@
 // @ts-nocheck
-import { For, Show, createSignal } from "solid-js"
+import { For, Show, createSignal, onCleanup } from "solid-js"
 import { EMPTY_STATS, type SessionStats } from "../session"
 import { theme } from "../theme"
+
+/** Hover delay before the stats detail popup appears (tooltip-like). */
+const HOVER_DELAY_MS = 500
 
 function formatDuration(ms: number): string {
   if (ms <= 0) return "—"
@@ -45,6 +48,10 @@ function cacheHitPct(s: SessionStats): number | null {
 
 export function StatsBar(props: { stats?: () => SessionStats } = {}) {
   const [hover, setHover] = createSignal(false)
+  let hoverTimer: ReturnType<typeof setTimeout> | undefined
+  onCleanup(() => {
+    if (hoverTimer) clearTimeout(hoverTimer)
+  })
   const stats = props.stats ?? (() => EMPTY_STATS)
 
   const short = () => {
@@ -72,8 +79,15 @@ export function StatsBar(props: { stats?: () => SessionStats } = {}) {
     <box width="100%" position="relative" flexShrink={0}>
       <box
         onMouse={(evt) => {
-          if (evt.type === "over") setHover(true)
-          else if (evt.type === "out") setHover(false)
+          if (evt.type === "over") {
+            // Tooltip-style delay: only show details after hovering steadily.
+            if (hoverTimer) clearTimeout(hoverTimer)
+            hoverTimer = setTimeout(() => setHover(true), HOVER_DELAY_MS)
+          } else if (evt.type === "out") {
+            if (hoverTimer) clearTimeout(hoverTimer)
+            hoverTimer = undefined
+            setHover(false)
+          }
         }}
       >
         <text fg={theme.textMuted}>{short()}</text>

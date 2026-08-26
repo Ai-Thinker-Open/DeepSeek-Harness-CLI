@@ -73,7 +73,7 @@ const VARIANT_TITLES: Record<ToolVariant, string> = {
 
 /** Tool-owned titles that refine a generic variant without replacing it. */
 const TOOL_TITLES: Record<string, string> = {
-  pwsh: "Pwsh",
+  pwsh: "Shell",
   web_search: "Search",
   web_fetch: "Fetch",
   grep: "Grep",

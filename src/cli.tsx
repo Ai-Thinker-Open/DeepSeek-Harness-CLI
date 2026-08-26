@@ -58,4 +58,4 @@ process.on("unhandledRejection", fatal)
 // (`dsh --profile tui -c`), so scan the whole argv for it.
 const continueLast = process.argv.includes("-c") || process.argv.includes("--continue")
 
-await render(() => <App continueLast={continueLast} />, renderer)
+await render(() => <App continueLast={continueLast} onExit={() => renderer.destroy()} />, renderer)
