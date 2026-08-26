@@ -209,7 +209,7 @@ export async function listServerTools(config: McpServerConfig, signal?: AbortSig
   await mcpRpc<{ protocolVersion?: string }>(
     endpoint,
     "initialize",
-    { protocolVersion: "2025-03-26", capabilities: {}, clientInfo: { name: "dsh-cli", version: "0.2.13" } },
+    { protocolVersion: "2025-03-26", capabilities: {}, clientInfo: { name: "dsh-cli", version: "0.2.14" } },
     1,
     timeout,
   )
