@@ -102,6 +102,18 @@ npx 临时运行不会触发安装时的 bootstrap，缺失的部分会在首次
 
 然后运行 `dsh-cli`（或 `dsh-cli -c`）。首次启动若 `dist/` 缺失会自动构建，没有运行中的 harness 时也会自动拉起。
 
+### 安装时会安装 / 检查哪些包（知情说明）
+
+安装或首次启动时，`dsh-cli` 会自动检查/安装以下依赖（均为常规 npm 生态包，缺失或版本不符才安装，已有正确版本不会重复安装）：
+
+- `@ai-thinker/deepseek-harness-cli` 本体：内置 Ai-Thinker 技能、FlashKey MCP 源码、OpenTUI 各平台原生库等 vendored 资源（随 npm 包分发，离线可用）。
+- `bun@1.3.14`：终端客户端运行时。Windows 上 bun 1.4+ 会触发 OpenTUI 段错误，因此固定为 1.3.14，版本不符时自动重装。
+- `@deepseek-ai/dsh`：DeepSeek Harness 服务端（缺失时通过 npm 自动安装）。
+- `pnpm`：harness 构建 tui profile 所需（缺失时自动安装）。
+- 首次启动的 bootstrap（可跳过）：把内置技能链接到 `~/.dsh/skills`、向 tui profile 注册 FlashKey MCP、并尝试安装 `flashkey-mcp`（Python 包；失败只提示、不影响启动）。
+
+以上行为均可用环境变量控制：`DSH_SKIP_BOOTSTRAP=1` 跳过全部 bootstrap，`DSH_NO_SKILLS=1` / `DSH_NO_FLASHKEY=1` 只跳过对应资源，`DSH_NO_UPDATE_CHECK=1` 关闭启动更新检查，`DSH_SKIP_RISK_CONFIRM=1` 关闭目录风险确认。完整列表见 `CHANGELOG.md`。
+
 ## 快速开始
 
 ```sh

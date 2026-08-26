@@ -116,6 +116,31 @@ Prefer to install the pieces yourself?
 Then run `dsh-cli` (or `dsh-cli -c`). The first launch auto-builds `dist/` if
 it is missing and boots a harness when none is running.
 
+### What gets installed / checked at install time (for transparency)
+
+Installing or first-launching `dsh-cli` may auto-install or verify the
+following dependencies (regular npm packages; only installed when missing or
+the version is wrong — never re-installed when already correct):
+
+- `@ai-thinker/deepseek-harness-cli` itself, shipping vendored resources:
+  the Ai-Thinker skills, FlashKey MCP sources, and OpenTUI native libraries
+  for every platform (distributed in the npm tarball, usable offline).
+- `bun@1.3.14`: the terminal client runtime. Bun 1.4+ segfaults OpenTUI on
+  Windows, so the version is pinned and re-installed when it mismatches.
+- `@deepseek-ai/dsh`: the DeepSeek Harness server (auto-installed via npm
+  when missing).
+- `pnpm`: required by the harness to build the tui profile (auto-installed
+  when missing).
+- First-launch bootstrap (skippable): links the bundled skills into
+  `~/.dsh/skills`, registers FlashKey MCP in the tui profile, and tries to
+  install `flashkey-mcp` (Python; failure only prints a hint, never blocks).
+
+All of the above can be controlled with environment variables:
+`DSH_SKIP_BOOTSTRAP=1` skips all bootstrap, `DSH_NO_SKILLS=1` /
+`DSH_NO_FLASHKEY=1` skip the corresponding resource, `DSH_NO_UPDATE_CHECK=1`
+disables the startup update check, and `DSH_SKIP_RISK_CONFIRM=1` disables the
+directory risk confirmation. See `CHANGELOG.md` for the full list.
+
 ## Quick start
 
 ```sh
