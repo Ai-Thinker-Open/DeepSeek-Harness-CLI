@@ -5,7 +5,7 @@ export interface CommandItem {
   name: string
   description: string
   input?: { hint: string }
-  kind: "local" | "host" | "skill"
+  kind: "local" | "host" | "skill" | "mcp"
   /**
    * How the palette treats the command once picked, by its actual function:
    * `run` commands are display/action commands that execute immediately
@@ -26,6 +26,7 @@ export interface CommandResultView {
 
 /** TUI-local commands that run inside the client, no host session needed. */
 export const LOCAL_COMMANDS: CommandItem[] = [
+  { name: "mcp", description: "显示 MCP 服务器列表与状态", kind: "local", behavior: "run" },
   { name: "sessions", description: "列出主机上的全部会话", kind: "local", behavior: "run" },
   { name: "resume", description: "浏览已保存的会话（只读列表）", kind: "local", behavior: "run" },
   { name: "model", description: "切换当前会话的 LLM 模型", kind: "local", behavior: "run" },

@@ -21,6 +21,7 @@ import {
   type SkillEntry,
   type SessionSummary,
 } from "./client"
+import { harnessCwdFor, isWin32Absolute } from "./cwd"
 import {
   assistantBlocksToMessage,
   blockText,
@@ -95,7 +96,12 @@ const RECONNECT_DELAY_MS = 1500
 
 export function describeHarnessError(e: unknown): string {
   const message = e instanceof Error ? e.message : String(e)
-  return `无法连接 DeepSeek Harness：${message}`
+  const rejectedWindowsCwd =
+    /cwd must be an absolute path/.test(message) && isWin32Absolute(process.env.DSH_CWD ?? process.cwd())
+  const hint = rejectedWindowsCwd
+    ? "；Windows 路径被 Linux/WSL 侧的 harness 拒绝——请把 DSH_CWD 设为 WSL 可见的绝对路径（如 /mnt/d/...，可用 wslpath -u 'D:\\...' 转换）"
+    : ""
+  return `无法连接 DeepSeek Harness：${message}${hint}`
 }
 
 export function createHarnessSession(
@@ -889,6 +895,7 @@ export function createHarnessSession(
       const info = await client.describe()
       setConnected(true)
       if (info.model) setModelName(info.model)
+      cwd = harnessCwdFor(cwd, info.cwd)
       const created = await client.createSession(cwd)
       sessionId = created.sessionId
       startListening()
@@ -925,10 +932,13 @@ export function createHarnessSession(
           syncAll()
         }
       }
+      // Probe the harness platform so a Windows client can translate its
+      // workspace cwd to the WSL-visible form before attaching.
       if (!sessionId) {
         const info = await client.describe()
         setConnected(true)
         if (info.model) setModelName(info.model)
+        cwd = harnessCwdFor(cwd, info.cwd)
       }
       const created = await client.createSession(cwd, undefined, target)
       sessionId = created.sessionId
@@ -950,6 +960,10 @@ export function createHarnessSession(
   async function resumeLastSession(): Promise<ResumeResult> {
     try {
       const res = await client.listSessions()
+      // Stored session cwds are harness-side paths; use one as a platform
+      // probe so a Windows client matches sessions created in WSL.
+      const hostProbe = res.items.find((s) => s.cwd)?.cwd
+      cwd = harnessCwdFor(cwd, hostProbe)
       const last = [...res.items]
         .filter((s) => !s.blank && (s.cwd === undefined || s.cwd === cwd))
         .sort((a, b) => b.updatedAt - a.updatedAt)[0]
@@ -1292,6 +1306,10 @@ export function createHarnessSession(
   async function listSessions(): Promise<SessionSummary[]> {
     try {
       const res = await client.listSessions()
+      // Same probe as resumeLastSession: align the client workspace with the
+      // harness path style before the workspace-scoped filter runs.
+      const hostProbe = res.items.find((s) => s.cwd)?.cwd
+      cwd = harnessCwdFor(cwd, hostProbe)
       // Blank sessions have no conversation to show; skip them entirely.
       // Sessions are workspace-scoped: the harness refuses to attach to a
       // session whose stored cwd differs from the one passed to session.create

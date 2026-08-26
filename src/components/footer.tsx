@@ -1,8 +1,8 @@
 import fs from "node:fs"
 import path from "node:path"
-import { createSignal, onMount } from "solid-js"
+import { createSignal, onCleanup, onMount } from "solid-js"
 import pkg from "../../package.json"
-import { getMcpServers, type McpServerStatus } from "../mcp"
+import { refreshMcpStatus, type McpServerStatus } from "../mcp"
 import { theme } from "../theme"
 
 function abbreviate(dir: string) {
@@ -29,7 +29,17 @@ function McpStatus() {
   const [servers, setServers] = createSignal<McpServerStatus[]>([])
 
   onMount(() => {
-    setServers(getMcpServers())
+    let alive = true
+    const refresh = async () => {
+      const list = await refreshMcpStatus()
+      if (alive) setServers(list)
+    }
+    void refresh()
+    const timer = setInterval(refresh, 3000)
+    onCleanup(() => {
+      alive = false
+      clearInterval(timer)
+    })
   })
 
   const count = () => servers().filter((item) => item.status === "connected").length
@@ -37,12 +47,11 @@ function McpStatus() {
   const dot = () => (hasError() ? theme.error : count() > 0 ? theme.success : theme.textMuted)
 
   return (
-    <box flexDirection="row" gap={2} flexShrink={0}>
+    <box flexDirection="row" gap={1} flexShrink={0}>
       <text fg={theme.text}>
         <span style={{ fg: dot() }}>⊙ </span>
-        {count()} MCP
+        {count()} MCP /mcp
       </text>
-      <text fg={theme.textMuted}>/status</text>
     </box>
   )
 }

@@ -90,6 +90,11 @@ Prefer to install the pieces yourself?
 
    > Windows 下建议在 WSL 中运行本项目——终端体验一致，USB 类工具（如 FlashKey FK-01）也需要通过 WSL 的 `usbip` 附加。
 
+   > When a Windows client talks directly to a harness running inside WSL, the
+   > client translates the `D:\...` workspace to the WSL-visible form
+   > (`/mnt/d/...`) before creating a session. To pin the workspace manually,
+   > set `DSH_CWD` (e.g. the output of `wslpath -u 'D:\Users\Seahi\Desktop'`).
+
 2. **Install the DeepSeek Harness CLI (optional)** — `dsh-cli` can boot the
    harness automatically through npx, but a global install makes startup
    faster:

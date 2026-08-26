@@ -80,6 +80,10 @@ npx 临时运行不会触发安装时的 bootstrap，缺失的部分会在首次
 
    > Windows 下建议在 WSL 中运行本项目——终端体验一致，USB 类工具（如 FlashKey FK-01）也需要通过 WSL 的 `usbip` 附加。
 
+   > Windows 客户端直连 WSL 里的 harness 时，客户端会自动把 `D:\...` 工作目录
+   > 翻译成 WSL 可见路径（`/mnt/d/...`）再创建会话；如需手动指定，可设置
+   > `DSH_CWD`（例如 `wslpath -u 'D:\Users\Seahi\Desktop'` 的输出）。
+
 2. **安装 DeepSeek Harness CLI（可选）**——`dsh-cli` 也可以通过 npx 自动拉起 harness，但全局安装能让启动更快：
 
    ```sh

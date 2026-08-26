@@ -12,7 +12,7 @@ import { homedir } from "node:os"
 import { dirname, join } from "node:path"
 import { fileURLToPath, pathToFileURL } from "node:url"
 import { applyBundledOpentuiAssets } from "./native-assets"
-import { nodeVersionProblem } from "./node-version"
+import { bunVersionProblemFor, nodeVersionProblem } from "./node-version"
 import { portableSpawnOptions, portableSpawnSyncOptions, resolveBun } from "./portable"
 export { bootstrapAll } from "./bootstrap"
 
@@ -219,11 +219,16 @@ export async function run(args: readonly string[]): Promise<number> {
   // The terminal client always runs under bun; fail loudly instead of exiting
   // silently when it is missing from PATH.
   const bunBin = resolveBun()
-  const bunProbe = internals.spawnSync(bunBin, ["--version"], portableSpawnSyncOptions({ stdio: "ignore" }))
+  const bunProbe = internals.spawnSync(bunBin, ["--version"], portableSpawnSyncOptions({ stdio: ["ignore", "pipe", "ignore"] }))
   if (bunProbe.status !== 0) {
     process.stderr.write(
       '[dsh-cli] bun is required to run the terminal client. Install it with "npm install -g bun" (or from https://bun.sh).\n',
     )
+    return 1
+  }
+  const bunProblem = bunVersionProblemFor(String(bunProbe.stdout ?? "").trim(), process.platform === "win32")
+  if (bunProblem) {
+    process.stderr.write(`[dsh-cli] ${bunProblem}\n`)
     return 1
   }
 

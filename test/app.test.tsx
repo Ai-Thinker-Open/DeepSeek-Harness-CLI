@@ -308,6 +308,9 @@ test("slash commands dispatch to the harness and render the command card", async
 
   expect(client.commandCalls).toContain("/goal")
   expect(app.captureCharFrame()).toContain("No goal set.")
+  // /goal is transient like /plan: the summary arrives as a toast, not a
+  // persistent "/goal" result panel above the composer.
+  expect(app.captureCharFrame().split("\n").some((l) => l.trim() === "/goal")).toBe(false)
 
   // The harness emits the lifecycle events, which render the durable card.
   client.push({
@@ -351,7 +354,7 @@ test("host slash command from home auto-creates a session and reaches the harnes
   expect(client.commandCalls).toContain("/plan")
 })
 
-test("host /plan from home reports via toast and stays on home", async () => {
+test("host /plan <task> from home switches into the session with the task", async () => {
   const client = new FakeClient()
   client.commandExecute = (async (_sessionId: string, line: string) => {
     client.commandCalls.push(line)
@@ -372,14 +375,68 @@ test("host /plan from home reports via toast and stays on home", async () => {
 
   expect(client.created).toBe(1)
   expect(client.commandCalls).toContain("/plan 帮我看看这个项目")
-  // No session switch happens until the user actually sends a message; the
-  // plan-mode notice arrives as a transient toast instead of a persistent
-  // "/plan" result panel above the composer.
+  // The task is steered to the agent, so the app jumps into the session and
+  // the mirrored task becomes the first visible message; the plan-mode notice
+  // stays a transient toast (no "/plan" result panel above the composer).
   const frame = app.captureCharFrame()
   expect(frame).toContain("Plan mode on")
-  expect(frame).toContain("给智能体发消息")
+  expect(frame).toContain("帮我看看这个项目")
+  expect(frame).not.toContain("DeepSeek Harness CLI")
   expect(frame).not.toContain("发送消息开始对话")
   expect(frame.split("\n").some((l) => l.trim() === "/plan")).toBe(false)
+})
+
+test("bare host /plan from home reports the mode toast and stays on home", async () => {
+  const client = new FakeClient()
+  client.commandExecute = (async (_sessionId: string, line: string) => {
+    client.commandCalls.push(line)
+    return { commandId: "cmd-plan", result: { kind: "success" as const, text: "Plan mode on. Use /plan off to leave." } }
+  }) as typeof client.commandExecute
+  const app = await testRender(() => <App client={client} />, { width: 80, height: 32 })
+  await app.renderOnce()
+
+  app.mockInput.typeText("/")
+  await new Promise((r) => setTimeout(r, 80))
+  await app.renderOnce()
+  app.mockInput.typeText("plan")
+  await new Promise((r) => setTimeout(r, 80))
+  await app.renderOnce()
+  app.mockInput.pressEnter() // fills "/plan "
+  await new Promise((r) => setTimeout(r, 80))
+  await app.renderOnce()
+  app.mockInput.pressEnter() // submits "/plan"
+  await new Promise((r) => setTimeout(r, 80))
+  await app.renderOnce()
+
+  expect(client.commandCalls).toContain("/plan")
+  const frame = app.captureCharFrame()
+  expect(frame).toContain("Plan mode on")
+  expect(frame).toContain("DeepSeek Harness CLI")
+})
+
+test("generic host command result arrives as a toast instead of a panel", async () => {
+  const client = new FakeClient()
+  client.commandExecute = (async (_sessionId: string, line: string) => {
+    client.commandCalls.push(line)
+    return { commandId: "cmd-compact", result: { kind: "success" as const, text: "已压缩历史，释放 12 条消息" } }
+  }) as typeof client.commandExecute
+  const app = await testRender(() => <App client={client} />, { width: 80, height: 32 })
+  await app.renderOnce()
+
+  app.mockInput.typeText("/")
+  await new Promise((r) => setTimeout(r, 80))
+  await app.renderOnce()
+  app.mockInput.typeText("compact")
+  await new Promise((r) => setTimeout(r, 80))
+  await app.renderOnce()
+  app.mockInput.pressEnter() // runs /compact immediately
+  await new Promise((r) => setTimeout(r, 80))
+  await app.renderOnce()
+
+  expect(client.commandCalls).toContain("/compact")
+  const frame = app.captureCharFrame()
+  expect(frame).toContain("已压缩历史，释放 12 条消息")
+  expect(frame.split("\n").some((l) => l.trim() === "/compact")).toBe(false)
 })
 
 test("/sessions lists first message, time and short id", async () => {

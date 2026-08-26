@@ -2,5 +2,6 @@ node_modules/
 dist/
 vendor/
 *.log
+*.tgz
 .DS_Store
 .env

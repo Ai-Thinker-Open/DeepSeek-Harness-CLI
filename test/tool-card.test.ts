@@ -129,6 +129,18 @@ test("buildDiffText caps content lines and reports the real count", () => {
   expect(built!.totalLines).toBe(8)
 })
 
+test("buildDiffText keeps truncated hunk counts consistent so the diff parses", () => {
+  const content = Array.from({ length: 87 }, (_, i) => `line ${i + 1}`).join("\n")
+  const built = buildDiffText([{ path: "long.md", newText: content }], { newFile: true, maxLines: 20 })
+  const diff = built!.diff.trimEnd().split("\n")
+  // The @@ header must promise exactly the emitted lines, not the full file.
+  expect(diff[2]).toBe("@@ -0,0 +1,20 @@")
+  expect(diff.slice(3).filter((l) => l.startsWith("+")).length).toBe(20)
+  expect(diff.some((l) => l.startsWith("+line 21"))).toBe(false)
+  // The real count is still reported for the "(N more lines)" note.
+  expect(built!.totalLines).toBe(87)
+})
+
 test("buildDiffText returns null when hunks carry no content", () => {
   expect(buildDiffText([])).toBeNull()
   expect(buildDiffText([{ path: "a.ts" }])).toBeNull()

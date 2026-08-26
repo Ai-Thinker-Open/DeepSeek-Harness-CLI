@@ -12,7 +12,7 @@ test("home screen renders brand and version", async () => {
   expect(frame).toContain("DeepSeek Harness")
   expect(frame).toContain(`v${pkg.version}`)
   expect(frame).toContain("tab 切换权限")
-  expect(frame).toContain("/status")
+  expect(frame).toContain("/mcp")
   expect(frame).toContain("MCP")
   expect(frame).toContain("● 提示")
   expect(frame).toContain("DeepSeek-V4-Flash")

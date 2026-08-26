@@ -48,10 +48,14 @@ export function SessionScreen(props: {
     if (props.question()) return
     if (commandOpen()) return
     if (!(props.active?.() ?? true) || key.name !== "escape") return
-    // While a turn is running, Esc cancels the current execution instead of
-    // navigating back home (question/menu Esc still win above).
+    // While a turn is running, Esc cancels the current execution; in plan
+    // mode (idle) Esc leaves plan mode; otherwise Esc navigates back home.
+    // Question/menu Esc still win above.
     if (props.busy()) {
       props.onCancel()
+      key.preventDefault()
+    } else if (props.planMode()) {
+      void props.onCommand?.("/plan off")
       key.preventDefault()
     } else {
       props.onBack()
@@ -103,6 +107,9 @@ export function SessionScreen(props: {
               </box>
               <Show when={props.busy()}>
                 <text fg={theme.textMuted}>Esc 取消</text>
+              </Show>
+              <Show when={props.planMode() && !props.busy()}>
+                <text fg={theme.textMuted}>Esc 退出计划模式</text>
               </Show>
               <PlanModeBadge active={props.planMode} pending={props.planPending} />
             </box>

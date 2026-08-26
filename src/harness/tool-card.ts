@@ -667,25 +667,29 @@ export function buildDiffText(
       const newCount = newLines.length
       if (oldCount === 0 && newCount === 0) continue
       if (remaining <= 0) break
+      // The `@@` counts must match the lines actually emitted: the OpenTUI
+      // diff parser rejects a truncated patch whose header still promises the
+      // full line count (e.g. a 87-line new file capped at MAX_OUTPUT_LINES).
+      const emittedOld = Math.min(oldCount, remaining)
+      const emittedNew = Math.min(newCount, Math.max(0, remaining - emittedOld))
+      if (emittedOld + emittedNew === 0) break
       if (!emittedHeader) {
         parts.push(options.newFile ? `--- /dev/null\n+++ b/${path}` : `--- a/${path}\n+++ b/${path}`)
         emittedHeader = true
       }
-      parts.push(`@@ -${oldCount > 0 ? 1 : 0},${oldCount} +${newCount > 0 ? 1 : 0},${newCount} @@`)
-      for (const line of oldLines) {
+      parts.push(`@@ -${oldCount > 0 ? 1 : 0},${emittedOld} +${newCount > 0 ? 1 : 0},${emittedNew} @@`)
+      for (let k = 0; k < emittedOld; k++) {
         totalLines++
-        if (remaining > 0) {
-          parts.push(`-${line}`)
-          remaining--
-        }
+        parts.push(`-${oldLines[k]}`)
+        remaining--
       }
-      for (const line of newLines) {
+      for (let k = 0; k < emittedNew; k++) {
         totalLines++
-        if (remaining > 0) {
-          parts.push(`+${line}`)
-          remaining--
-        }
+        parts.push(`+${newLines[k]}`)
+        remaining--
       }
+      // Lines dropped by the cap still count toward the truncation note.
+      totalLines += oldCount - emittedOld + (newCount - emittedNew)
     }
   }
   if (parts.length === 0) return null

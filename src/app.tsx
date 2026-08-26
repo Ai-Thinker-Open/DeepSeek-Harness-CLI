@@ -5,6 +5,7 @@ import { Toast, type ToastMessage } from "./components/toast"
 import { ApiKeyModal } from "./components/api-key-modal"
 import { createHarnessSession } from "./harness/session"
 import type { HarnessClientLike, ModelCatalog } from "./harness/client"
+import { listMcpTools, refreshMcpStatus, type McpToolEntry } from "./mcp"
 import { nextMode, type PermissionMode } from "./permission"
 import { Home } from "./screens/home"
 import { SessionScreen } from "./screens/session"
@@ -58,6 +59,7 @@ export function App(props: { client?: HarnessClientLike; continueLast?: boolean;
   const [commandOpen, setCommandOpen] = createSignal(false)
   const [resultOverride, setResultOverride] = createSignal<CommandResultView | null>(null)
   const [skills, setSkills] = createSignal<SkillEntry[]>([])
+  const [mcpTools, setMcpTools] = createSignal<McpToolEntry[]>([])
   const [apiKeyOpen, setApiKeyOpen] = createSignal(false)
   const session = createHarnessSession(props.client, undefined, { minToolRunningMs: props.minToolRunningMs })
   let toastTimer: ReturnType<typeof setTimeout> | undefined
@@ -66,7 +68,9 @@ export function App(props: { client?: HarnessClientLike; continueLast?: boolean;
   const showToast = (text: string, kind: ToastMessage["kind"] = "success") => {
     setToast({ text, kind })
     if (toastTimer) clearTimeout(toastTimer)
-    toastTimer = setTimeout(() => setToast(null), 1800)
+    // Longer summaries (e.g. the multi-line /goal status) need more reading
+    // time than a one-liner, but no result should linger forever.
+    toastTimer = setTimeout(() => setToast(null), Math.max(1800, Math.min(6000, text.length * 40)))
   }
 
   onCleanup(() => {
@@ -157,8 +161,14 @@ export function App(props: { client?: HarnessClientLike; continueLast?: boolean;
       kind: "skill" as const,
       behavior: "run" as const,
     }))
+    const mcpItems: CommandItem[] = mcpTools().map((t) => ({
+      name: `${t.server}:${t.name}`,
+      description: `MCP ${t.server}：${t.description ?? t.name}`,
+      kind: "mcp" as const,
+      behavior: "run" as const,
+    }))
     // Hardcoded harness commands win over stale/partial dynamic discovery.
-    return mergeCommands(LOCAL_COMMANDS, dynamic, HARNESS_COMMANDS, skillItems)
+    return mergeCommands(LOCAL_COMMANDS, dynamic, HARNESS_COMMANDS, skillItems, mcpItems)
   }
 
   const handleCommandOpen = (open: boolean) => {
@@ -166,6 +176,7 @@ export function App(props: { client?: HarnessClientLike; continueLast?: boolean;
     if (open) {
       void session.refreshCommands()
       void refreshSkills()
+      void refreshMcpTools()
     }
   }
 
@@ -173,6 +184,11 @@ export function App(props: { client?: HarnessClientLike; continueLast?: boolean;
   const refreshSkills = async () => {
     if (!session.hasSession()) return
     setSkills(await session.listSkills())
+  }
+
+  /** Discover tools from configured MCP servers (cached server-side). */
+  const refreshMcpTools = async () => {
+    setMcpTools(await listMcpTools())
   }
 
   const runCommand = async (line: string): Promise<CommandResultView | null> => {
@@ -229,6 +245,16 @@ export function App(props: { client?: HarnessClientLike; continueLast?: boolean;
       const rows = commandItems().map((i) => `/${i.name}  ${i.description}`)
       return { title: "快捷命令", rows }
     }
+    if (name === "mcp") {
+      const servers = await refreshMcpStatus()
+      const rows = servers.length
+        ? servers.map((s) => {
+            const glyph = s.status === "connected" ? "●" : s.status === "failed" ? "○" : "…"
+            return `${glyph} ${s.name}  ${s.status}${s.url ? `  ${s.url}` : ""}`
+          })
+        : ["（未配置 MCP 服务器）"]
+      return { title: `MCP 服务器（${servers.length}）`, rows }
+    }
     if (name === "model") {
       if (!session.hasSession()) {
         const ok = await session.ensureSession()
@@ -270,33 +296,39 @@ export function App(props: { client?: HarnessClientLike; continueLast?: boolean;
     }
     if (name === "rename") {
       const title = line.trim().slice("/rename".length).trim()
-      if (!title) return { title: "重命名", rows: ["用法：/rename <标题>"] }
+      if (!title) {
+        showToast("用法：/rename <标题>", "error")
+        return null
+      }
       if (!session.hasSession()) {
         const ok = await session.ensureSession()
-        if (!ok) return { title: "重命名", rows: ["无法创建会话，请检查 harness 连接"] }
+        if (!ok) {
+          showToast("无法创建会话，请检查 harness 连接", "error")
+          return null
+        }
         void session.refreshCommands()
       }
       const ok = await session.renameSession(title)
-      const view = { title: "重命名", rows: [ok ? `已重命名为：${title}` : "重命名失败"] }
-      setResultOverride(view)
-      return view
+      showToast(ok ? `已重命名为：${title}` : "重命名失败", ok ? "success" : "error")
+      return null
     }
     if (name === "fork") {
       if (!session.hasSession()) {
         const ok = await session.ensureSession()
-        if (!ok) return { title: "分叉", rows: ["无法创建会话，请检查 harness 连接"] }
+        if (!ok) {
+          showToast("无法创建会话，请检查 harness 连接", "error")
+          return null
+        }
         void session.refreshCommands()
       }
       const childId = await session.forkSession()
       if (!childId) {
-        const view = { title: "分叉", rows: ["分叉失败"] }
-        setResultOverride(view)
-        return view
+        showToast("分叉失败", "error")
+        return null
       }
       void session.refreshCommands()
-      const view = { title: "分叉", rows: [`已创建新会话 ${childId.replace(/^s-/, "").slice(0, 8)}`] }
-      setResultOverride(view)
-      return view
+      showToast(`已创建新会话 ${childId.replace(/^s-/, "").slice(0, 8)}`)
+      return null
     }
     // Host commands need a live session: create one on demand so commands
     // still reach the harness when issued from the home screen.
@@ -318,17 +350,30 @@ export function App(props: { client?: HarnessClientLike; continueLast?: boolean;
       // no "/plan" result container lingers above the composer.
       if (name === "plan") {
         if (res.text) showToast(res.text)
+        // `/plan <任务>` steers the task to the agent on the harness: jump
+        // into the session so the planning work is visible instead of leaving
+        // the user on home with only the mode toast. Bare `/plan` and
+        // `/plan off` stay put (a pure state change).
+        if (task) setScreen("session")
         return null
       }
-      return { title: `/${bare ?? name}`, rows: [res.text ?? "已执行（完整结果见消息窗口）"] }
+      // `/goal` is state feedback like `/plan`: the goal lives in the harness
+      // session, so a transient toast suffices instead of a panel that stays
+      // above the composer until Esc.
+      if (name === "goal") {
+        if (res.text) showToast(res.text)
+        return null
+      }
+      // Remaining host results (compact / feedback / permission / export …)
+      // are informational state feedback: show them as a transient toast
+      // instead of a panel that lingers above the composer until Esc.
+      showToast(res.text ?? "已执行")
+      return null
     }
     // Unknown lines are a typing slip, not a failure worth a panel: toast and
     // let the input breathe (dsh-cli shows the same as a transient notice).
-    if (res.text?.startsWith("未知或无法解析的命令")) {
-      showToast(res.text, "error")
-      return null
-    }
-    return { title: "命令", rows: [res.text ?? "执行失败"] }
+    showToast(res.text ?? "执行失败", "error")
+    return null
   }
 
   return (

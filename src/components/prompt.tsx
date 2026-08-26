@@ -13,6 +13,17 @@ const PROMPT_PLACEHOLDER = "给智能体发消息"
 const MAX_MENU_ROWS = 10
 const MAX_RESULT_ROWS = 12
 
+/**
+ * Reject edit-buffer pollution that is not real typing. On Windows some
+ * terminals send unsolicited OSC/CSI sequences (focus queries, shell
+ * integration, color probes) whose fragments can land in the focused input;
+ * real drafts are plain printable text plus ordinary whitespace. C0/C1
+ * control ranges cover ESC and friends (tab/newline/CR are kept).
+ */
+function isUsableDraft(text: string): boolean {
+  return text.length === 0 || !/[\u0000-\u0008\u000e-\u001f\u007f-\u009f]/.test(text)
+}
+
 /** Category label for a command item; group titles render muted above rows. */
 function categoryOf(item: { kind: string }): string {
   if (item.kind === "skill") return "技能"
@@ -111,7 +122,7 @@ export function Prompt(props: {
       const item = matches()[i] as CommandItem
       const cat = categoryOf(item)
       const isCategoryStart = i === 0 || categoryOf(matches()[i - 1] as CommandItem) !== cat
-      if (isCategoryStart && i === start) {
+      if (isCategoryStart) {
         rows.push({ type: "header", text: cat })
       }
       rows.push({ type: "command", index: i, item })
@@ -177,7 +188,7 @@ export function Prompt(props: {
   onMount(() => {
     const timer = setInterval(() => {
       const text = ref?.plainText ?? ""
-      if (text !== value()) {
+      if (text !== value() && isUsableDraft(text)) {
         setValue(text)
         if (result() !== null) setResult(null)
         setSelected(0)

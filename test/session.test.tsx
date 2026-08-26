@@ -122,6 +122,33 @@ test("escape in the session returns home", async () => {
   expect(backed).toBe(true)
 })
 
+test("escape in plan mode exits plan mode instead of going home", async () => {
+  const commands: string[] = []
+  let backed = false
+  const app = await renderSession({
+    messages: [userMsg("任务")],
+    planMode: () => true,
+    onBack: () => {
+      backed = true
+    },
+    onCommand: async (line) => {
+      commands.push(line)
+      return null
+    },
+  })
+  await app.renderOnce()
+
+  // The idle plan-mode row hints the affordance next to the badge.
+  expect(app.captureCharFrame()).toContain("Esc 退出计划模式")
+
+  app.mockInput.pressEscape()
+  await new Promise((resolve) => setTimeout(resolve, 100))
+  await app.renderOnce()
+
+  expect(commands).toEqual(["/plan off"])
+  expect(backed).toBe(false)
+})
+
 test("hovering the stats bar shows real stats without flickering", async () => {
   const stats: SessionStats = {
     turns: 3,
@@ -943,6 +970,27 @@ test("slash menu scrolls one command at a time across category headers", async (
   expect(frame).toContain("/cmd2 ")
   expect(frame).toContain("/cmd10")
   expect(frame).toContain("/skill1 ")
+})
+
+test("slash menu shows 技能 and MCP category headers above their groups", async () => {
+  const app = await renderSession({
+    commandItems: () => [
+      { name: "sessions", description: "列出会话", kind: "local" as const, behavior: "run" as const },
+      { name: "wb2-tutorial", description: "技能：WB2 教程", kind: "skill" as const, behavior: "run" as const },
+      { name: "flashkey:status", description: "MCP flashkey：设备状态", kind: "mcp" as const, behavior: "run" as const },
+    ],
+  })
+  await app.renderOnce()
+
+  app.mockInput.typeText("/")
+  await new Promise((resolve) => setTimeout(resolve, 80))
+  await app.renderOnce()
+
+  const frame = app.captureCharFrame()
+  expect(frame).toContain("快捷")
+  expect(frame).toContain("技能")
+  expect(frame).toContain("MCP")
+  expect(frame).toContain("/flashkey:status")
 })
 
 test("slash menu mouse click runs no-argument commands immediately", async () => {

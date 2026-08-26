@@ -5,14 +5,15 @@
  * Runs inside the official dsh process, so it imports no Bun APIs.
  */
 
-import { spawn, type ChildProcess } from "node:child_process"
+import { spawn, spawnSync, type ChildProcess } from "node:child_process"
 import { existsSync } from "node:fs"
 import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
 import type { AppExitLike, DshContext } from "./types"
 import type { TuiStartupValues } from "./startup"
 import { applyBundledOpentuiAssets } from "./native-assets"
-import { portableSpawnOptions, resolveBun } from "./portable"
+import { bunVersionProblemFor } from "./node-version"
+import { portableSpawnOptions, portableSpawnSyncOptions, resolveBun } from "./portable"
 
 // The spawned client inherits this so it uses the bundled OpenTUI native
 // library for the current platform (see native-assets.ts).
@@ -34,7 +35,7 @@ export interface WebServerLike {
 }
 
 /** Process spawn seam; tests substitute a fake child process. */
-export const internals: { spawn: typeof spawn } = { spawn }
+export const internals: { spawn: typeof spawn; spawnSync: typeof spawnSync } = { spawn, spawnSync }
 
 /** Locate the package root regardless of which copy the loader imported. */
 function packageRoot(start: string): string {
@@ -72,7 +73,22 @@ export function apply(ctx: DshContext, config: TuiRunnerConfig = {}): void {
 
   // Forward the continue flag so the client attaches to the last session.
   const cliArgs = startup?.continueLast ? ["--continue"] : []
-  const child = internals.spawn(resolveBun(), [cliPath, ...cliArgs], {
+  const bunBin = resolveBun()
+  // Refuse known-bad bun binaries up front instead of crashing the terminal
+  // client mid-session (bun 1.4+ segfaults the OpenTUI renderer on Windows).
+  const bunProbe = internals.spawnSync(bunBin, ["--version"], portableSpawnSyncOptions({ stdio: ["ignore", "pipe", "ignore"] }))
+  if (bunProbe.status !== 0) {
+    process.stderr.write("tui-runner: bun is required to run the terminal client (dist/cli.js). Install bun and re-run dsh --profile tui.\n")
+    exit(1)
+    return
+  }
+  const bunProblem = bunVersionProblemFor(String(bunProbe.stdout ?? "").trim(), process.platform === "win32")
+  if (bunProblem) {
+    process.stderr.write(`[dsh-cli] ${bunProblem}\n`)
+    exit(1)
+    return
+  }
+  const child = internals.spawn(bunBin, [cliPath, ...cliArgs], {
     stdio: "inherit",
     env: { ...process.env, DSH_URL: url, DSH_CWD: cwd },
     ...portableSpawnOptions({}),

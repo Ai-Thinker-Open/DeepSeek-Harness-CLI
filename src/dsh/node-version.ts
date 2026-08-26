@@ -27,3 +27,25 @@ export function nodeVersionProblemFor(
 export function nodeVersionProblem(): string | null {
   return nodeVersionProblemFor(process.versions?.node, process.isBun)
 }
+
+/**
+ * Bun versions that segfault the OpenTUI client on Windows. The client is
+ * pinned to 1.3.14 (see ensure-runtime.mjs); releases after 1.3.x crash with
+ * a main-thread segfault (bun.report/1.4.0), so any 1.4+ binary found for the
+ * client runtime is rejected up front instead of crashing mid-session.
+ */
+export function bunVersionProblemFor(version: string | undefined, isWin32: boolean): string | null {
+  if (!isWin32) return null
+  if (!version) return null
+  const match = /^(\d+)\.(\d+)/.exec(version)
+  if (!match) return null
+  const major = Number(match[1])
+  const minor = Number(match[2])
+  if (major < 1 || (major === 1 && minor < 4)) return null
+  return (
+    `bun ${version} is incompatible with the OpenTUI terminal client on Windows (bun 1.4+ ` +
+    "segfaults the renderer; the client is pinned to 1.3.14). " +
+    "Restore bun 1.3.14 by replacing %USERPROFILE%\\.bun\\bin\\bun.exe with the binary from " +
+    "https://github.com/oven-sh/bun/releases/download/bun-v1.3.14/bun-windows-x64.zip, then retry."
+  )
+}

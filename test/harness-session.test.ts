@@ -7,6 +7,7 @@ class FakeClient implements HarnessClientLike {
   describeResult: HostDescribe = { version: "mock", cwd: "/tmp", attachedSessions: 0, canOpenPath: true }
   failDescribe = false
   created = 0
+  createdCwds: Array<string | undefined> = []
   prompts: Array<{ sessionId: string; text: string }> = []
   responded: Array<{ rpcId: string; sessionId: string; answers: Array<{ id: string; selected: string[] }> }> = []
   respondedApprovals: Array<{ rpcId: string; sessionId: string; approvalId: string; outcome: "allowed-once" | "rejected" }> = []
@@ -21,8 +22,9 @@ class FakeClient implements HarnessClientLike {
     return this.describeResult
   }
 
-  async createSession() {
+  async createSession(cwd?: string) {
     this.created += 1
+    this.createdCwds.push(cwd)
     this.currentSessionId = `s-${this.created}`
     return { sessionId: `s-${this.created}` }
   }
@@ -1203,5 +1205,40 @@ test("saveApiKey trims, persists via the harness and reports failures", async ()
 
   client.credentialsFail = true
   expect(await session.saveApiKey("sk-other")).toBe(false)
+  session.dispose()
+})
+
+test("windows client cwd is translated to the WSL form before session.create", async () => {
+  const client = new FakeClient()
+  client.describeResult = {
+    version: "mock",
+    cwd: "/mnt/d/Users/Seahi/Desktop/serial-debbuger-tauri",
+    attachedSessions: 0,
+    canOpenPath: true,
+  }
+  const session = createHarnessSession(client, `D:\\Users\\Seahi\\Desktop\\serial-debbuger-tauri`)
+
+  expect(await session.start("hello")).toBe(true)
+  expect(client.createdCwds).toEqual(["/mnt/d/Users/Seahi/Desktop/serial-debbuger-tauri"])
+  session.dispose()
+})
+
+test("wsl client cwd is translated back to a drive path for a Windows harness", async () => {
+  const client = new FakeClient()
+  client.describeResult = { version: "mock", cwd: `D:\\Users\\Seahi`, attachedSessions: 0, canOpenPath: true }
+  const session = createHarnessSession(client, "/mnt/d/Users/Seahi/Desktop")
+
+  expect(await session.start("hello")).toBe(true)
+  expect(client.createdCwds).toEqual([`D:\\Users\\Seahi\\Desktop`])
+  session.dispose()
+})
+
+test("same-platform cwd is passed to session.create unchanged", async () => {
+  const client = new FakeClient()
+  client.describeResult = { version: "mock", cwd: "/home/seahi/proj", attachedSessions: 0, canOpenPath: true }
+  const session = createHarnessSession(client, "/home/seahi/proj")
+
+  expect(await session.start("hello")).toBe(true)
+  expect(client.createdCwds).toEqual(["/home/seahi/proj"])
   session.dispose()
 })
