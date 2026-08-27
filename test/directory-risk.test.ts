@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, expect, test } from "bun:test"
 import { mkdtempSync, rmSync } from "node:fs"
-import { tmpdir } from "node:os"
+import { homedir, tmpdir } from "node:os"
 import { join } from "node:path"
 import { effectiveWorkspace, isHighRiskDirectory, markWorkspaceConfirmed, workspaceConfirmed } from "../src/directory-risk"
 
@@ -61,6 +61,7 @@ test("workspaceConfirmed starts false and markWorkspaceConfirmed records it", ()
 })
 
 test("high-risk directories are never persisted", () => {
-  markWorkspaceConfirmed("/home/seahi")
-  expect(workspaceConfirmed("/home/seahi")).toBe(false)
+  const home = homedir()
+  markWorkspaceConfirmed(home)
+  expect(workspaceConfirmed(home)).toBe(false)
 })
