@@ -107,6 +107,7 @@ test("dispatcher initializes the tui profile before booting it", async () => {
   const { calls, children } = installSpawn()
   const { calls: syncCalls } = installSpawnSync({ "--help": { status: 0 }, plugin: { status: 0 } })
   dispatcherInternals.probe = async () => false
+  process.env.DSH_PROFILE_RETRY_DELAY_MS = "10"
   profileHome = mkdtempSync(join(tmpdir(), "dsh-cli-test-"))
   process.env.DSH_HOME = profileHome
 
@@ -124,6 +125,51 @@ test("dispatcher initializes the tui profile before booting it", async () => {
   expect(calls[0]?.command).toBe("dsh")
   expect(calls[0]?.args).toEqual(["--profile", "tui"])
 })
+
+test("profile setup writes the pnpm build allowlist", async () => {
+  const { calls, children } = installSpawn()
+  const { calls: syncCalls } = installSpawnSync({ "--help": { status: 0 }, plugin: { status: 0 } })
+  dispatcherInternals.probe = async () => false
+  profileHome = mkdtempSync(join(tmpdir(), "dsh-cli-test-"))
+  process.env.DSH_HOME = profileHome
+
+  const pending = run([])
+  await settle()
+  children[0]?.emit("exit", 0)
+  await expect(pending).resolves.toBe(0)
+
+  expect(syncCalls.some((c) => c.args.includes("plugin"))).toBe(true)
+  const yaml = readFileSync(join(profileHome!, "profiles", PROFILE_NAME, "pnpm-workspace.yaml"), "utf8")
+  expect(yaml).toContain("onlyBuiltDependencies:")
+  expect(yaml).toContain("- \"@ai-thinker/deepseek-harness-cli\"")
+})
+
+test("profile setup retries a transient pnpm failure", async () => {
+  const { calls, children } = installSpawn()
+  const syncCalls: Array<{ command: string; args: string[] }> = []
+  let pluginAttempts = 0
+  dispatcherInternals.spawnSync = ((_command: string, args: string[]) => {
+    syncCalls.push({ command: _command, args })
+    if (args[0] === "plugin") {
+      pluginAttempts++
+      return { status: pluginAttempts === 1 ? 1 : 0, stderr: "" }
+    }
+    return { status: 0, stderr: "" }
+  }) as unknown as typeof dispatcherInternals.spawnSync
+  dispatcherInternals.probe = async () => false
+  profileHome = mkdtempSync(join(tmpdir(), "dsh-cli-test-"))
+  process.env.DSH_HOME = profileHome
+
+  const pending = run([])
+  const deadline = Date.now() + 8000
+  while (!children[0] && Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, 20))
+  }
+  children[0]?.emit("exit", 0)
+  await expect(pending).resolves.toBe(0)
+
+  expect(pluginAttempts).toBe(2)
+}, 10_000)
 
 test("dispatcher falls back to npx when dsh is not installed and no cache exists", async () => {
   const { calls, children } = installSpawn()

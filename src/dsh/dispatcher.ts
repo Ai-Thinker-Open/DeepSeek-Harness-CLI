@@ -6,7 +6,7 @@
  */
 
 import { spawn, spawnSync } from "node:child_process"
-import { existsSync, readFileSync, readdirSync, writeFileSync } from "node:fs"
+import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs"
 import { Socket } from "node:net"
 import { homedir } from "node:os"
 import { dirname, join } from "node:path"
@@ -55,6 +55,31 @@ const LEGACY_BUNDLE_NAMES = new Set(["deepseek-harness-cli"])
 function profileDir(): string {
   const home = process.env.DSH_HOME ?? join(homedir(), ".dsh")
   return join(home, "profiles", PROFILE_NAME)
+}
+
+/**
+ * pnpm 10 blocks dependency build scripts unless they are allowlisted.
+ * Without this the bundle's postinstall is skipped and `dsh plugin add` can
+ * fail with ERR_PNPM_IGNORED_BUILDS. Write the allowlist into the profile's
+ * pnpm-workspace.yaml before the harness installs the bundle.
+ */
+function allowProfileBuilds(): void {
+  const dir = profileDir()
+  try {
+    mkdirSync(dir, { recursive: true })
+    const file = join(dir, "pnpm-workspace.yaml")
+    const marker = `  - ${JSON.stringify(PKG_NAME)}`
+    let text = existsSync(file) ? readFileSync(file, "utf8") : ""
+    if (text.includes(marker)) return
+    if (/^onlyBuiltDependencies:\s*$/m.test(text)) {
+      text = text.replace(/^onlyBuiltDependencies:\s*$/m, `onlyBuiltDependencies:\n${marker}`)
+    } else {
+      text = `${text.trimEnd()}\nonlyBuiltDependencies:\n${marker}\n`
+    }
+    writeFileSync(file, text)
+  } catch {
+    // Best-effort: pnpm may still succeed without the allowlist.
+  }
 }
 
 /** True when a profile bundle refers to this package under any (old or new) name. */
@@ -269,11 +294,35 @@ export async function run(args: readonly string[]): Promise<number> {
         return pnpmInstall.status ?? 1
       }
     }
-    const setup = internals.spawnSync(
+    // pnpm 10 blocks dependency build scripts unless allowlisted; write the
+    // bundle into the profile's pnpm-workspace.yaml so its postinstall runs
+    // (ERR_PNPM_IGNORED_BUILDS would otherwise fail the setup).
+    allowProfileBuilds()
+    // First-time profile installs download @opentui/core platform packages;
+    // on flaky networks those fetches drop (UND_ERR_DESTROYED). Harden pnpm's
+    // fetch retries, lower download concurrency, and retry the whole setup.
+    const setupEnv = {
+      ...process.env,
+      npm_config_fetch_retries: "5",
+      npm_config_fetch_retry_mintimeout: "2000",
+      npm_config_fetch_retry_maxtimeout: "60000",
+      npm_config_network_concurrency: "4",
+    }
+    let setup = internals.spawnSync(
       dsh.bin,
       [...dsh.prefix, "plugin", "--profile", PROFILE_NAME, "add", pathToFileURL(PKG_ROOT).href],
-      portableSpawnSyncOptions({ stdio: ["ignore", "inherit", "pipe"] }),
+      portableSpawnSyncOptions({ stdio: ["ignore", "inherit", "pipe"], env: setupEnv }),
     )
+    for (let attempt = 2; setup.status !== 0 && attempt <= 3; attempt++) {
+      process.stderr.write(`[dsh-cli] profile setup attempt ${attempt - 1} failed; retrying…\n`)
+      const retryDelay = Number(process.env.DSH_PROFILE_RETRY_DELAY_MS ?? 1500)
+      await new Promise((resolve) => setTimeout(resolve, Number.isFinite(retryDelay) ? retryDelay : 1500))
+      setup = internals.spawnSync(
+        dsh.bin,
+        [...dsh.prefix, "plugin", "--profile", PROFILE_NAME, "add", pathToFileURL(PKG_ROOT).href],
+        portableSpawnSyncOptions({ stdio: ["ignore", "inherit", "pipe"], env: setupEnv }),
+      )
+    }
     if (setup.status !== 0) {
       const stderrText = setup.stderr == null ? "" : String(setup.stderr)
       if (stderrText.trim()) process.stderr.write(`${stderrText.trim()}\n`)
