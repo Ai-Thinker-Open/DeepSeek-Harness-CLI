@@ -1,8 +1,11 @@
 #!/usr/bin/env node
 /**
- * Detached self-updater: waits for the running TUI to exit, reinstalls the
- * package globally, then relaunches dsh-cli. Spawned by the update approval
- * flow so the new version takes effect without a manual install.
+ * In-place self-updater: waits for the running TUI to exit, reinstalls the
+ * package globally, then relaunches dsh-cli in the same terminal. Spawned by
+ * the update approval flow so the new version takes effect without a manual
+ * install. The process is intentionally NOT detached: on Windows a detached
+ * child opens a new console window, and the whole point is to keep the npm
+ * output and the restarted TUI in the terminal the user already has open.
  *
  * Usage: node self-update.mjs <pkg@version> [bin]
  */
@@ -22,5 +25,5 @@ try {
   console.error(`[dsh-cli] update failed: ${error instanceof Error ? error.message : String(error)}`)
 }
 
-const child = spawn(bin, [], { stdio: "inherit", shell: process.platform === "win32", detached: true })
+const child = spawn(bin, [], { stdio: "inherit", shell: process.platform === "win32" })
 child.unref()

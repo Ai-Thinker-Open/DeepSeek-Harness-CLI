@@ -167,7 +167,6 @@ export function App(
     try {
       const script = join(dirname(fileURLToPath(import.meta.url)), "..", "scripts", "self-update.mjs")
       spawn(process.execPath, [script, `${UPDATE_PKG}@${latest}`, "dsh-cli"], {
-        detached: true,
         stdio: "inherit",
       }).unref()
     } catch {
