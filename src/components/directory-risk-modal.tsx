@@ -17,8 +17,9 @@ export function DirectoryRiskModal(props: {
   onExit: () => void
   onProceed: () => void
 }) {
-  // 0 = 退出（推荐）, 1 = 我了解风险，仅本次信任
-  const [selected, setSelected] = createSignal(0)
+  // 0 = 退出, 1 = 信任并继续。普通目录默认「信任并继续」（知情即可运行）；
+  // 主目录/根目录这类敏感目录默认「退出（推荐）」。
+  const [selected, setSelected] = createSignal(props.highRisk ? 0 : 1)
 
   useKeyboard((key) => {
     if (!props.open()) return
@@ -50,7 +51,8 @@ export function DirectoryRiskModal(props: {
       </text>
     </box>
   )
-  const trustLabel = props.highRisk ? "我了解风险，仅本次信任" : "信任此工作目录（记住）"
+  const exitLabel = props.highRisk ? "退出（推荐）" : "退出"
+  const trustLabel = props.highRisk ? "我了解风险，仅本次信任" : "信任此工作目录（记住）（推荐）"
 
   return (
     <Show when={props.open()}>
@@ -103,7 +105,7 @@ export function DirectoryRiskModal(props: {
             </text>
           </Show>
           <box marginTop={1} marginBottom={1} flexDirection="column">
-            {option(0, "退出（推荐）")}
+            {option(0, exitLabel)}
             {option(1, trustLabel)}
           </box>
           <text fg={theme.textMuted}>↑/↓ 选择 · Enter 确认 · Esc 退出</text>

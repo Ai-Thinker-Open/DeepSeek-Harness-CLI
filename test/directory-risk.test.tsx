@@ -49,15 +49,15 @@ test("startup shows the directory confirmation before the home screen", async ()
   const frame = app.captureCharFrame()
   expect(frame).toContain("目录确认")
   expect(frame).toContain("/tmp/risk-ws-start")
-  expect(frame).toContain("退出（推荐）")
+  expect(frame).toContain("退出")
   expect(frame).toContain("信任此工作目录（记住）")
+  // The trust option is the recommended default for non-sensitive dirs.
+  expect(frame).toContain("信任此工作目录（记住）（推荐）")
   // The gate blocks the home screen: it must not render underneath.
   expect(frame).not.toContain("DeepSeek Harness CLI")
 
-  // Select "我了解风险，仅本次信任" and confirm: the gate closes and the
-  // normal startup (home screen) takes over.
-  app.mockInput.pressArrow("down")
-  await new Promise((resolve) => setTimeout(resolve, 30))
+  // Non-sensitive directories default to the trust option: Enter proceeds
+  // straight into the normal startup (home screen).
   app.mockInput.pressEnter()
   await new Promise((resolve) => setTimeout(resolve, 120))
   await app.renderOnce()
@@ -90,13 +90,15 @@ test("escape exits instead of proceeding", async () => {
   expect(exited).toBe(1)
 })
 
-test("enter on the recommended exit option exits", async () => {
+test("sensitive directories default to the exit option", async () => {
   gateActive()
-  process.env.DSH_CWD = "/tmp/risk-ws-enter"
+  process.env.DSH_CWD = homedir()
   let exited = 0
   const app = await testRender(() => <App client={stubClient} onExit={() => exited++} />, { width: 90, height: 34 })
   await app.renderOnce()
 
+  expect(app.captureCharFrame()).toContain("退出（推荐）")
+  // The default selection is "exit": a bare Enter leaves without proceeding.
   app.mockInput.pressEnter()
   await new Promise((resolve) => setTimeout(resolve, 100))
   await app.renderOnce()
