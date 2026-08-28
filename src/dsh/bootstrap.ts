@@ -251,7 +251,11 @@ async function ensureSseDaemon(port: number): Promise<void> {
     const child: ChildProcess = internals.spawn(
       command,
       args,
-      portableSpawnOptions({ stdio: "ignore", detached: true, env }),
+      // `detached` keeps the daemon alive after the launcher exits; on Windows
+      // a detached console child opens a new terminal window unless the
+      // console is explicitly hidden, so `windowsHide` keeps it a silent
+      // background server (no-op on POSIX).
+      portableSpawnOptions({ stdio: "ignore", detached: true, windowsHide: true, env }),
     )
     child.unref()
   } catch (error) {
