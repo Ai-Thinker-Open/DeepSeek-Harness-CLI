@@ -30,7 +30,6 @@ async function renderSession(opts: {
   onQuestionMany?: (ids: string[]) => void
   onApproval?: (outcome: "allowed-once" | "rejected") => void
   onApprovalAllowSession?: () => void
-  onBack?: () => void
   onCancel?: () => void
   onSend?: (text: string) => void
   commandItems?: () => CommandItem[]
@@ -53,7 +52,6 @@ async function renderSession(opts: {
         planPending={opts.planPending ?? (() => false)}
         question={opts.question ?? (() => null)}
         onSend={opts.onSend ?? (() => {})}
-        onBack={opts.onBack ?? (() => {})}
         onCancel={opts.onCancel ?? (() => {})}
         onQuestion={opts.onQuestion ?? (() => {})}
         onQuestionMany={opts.onQuestionMany}
@@ -105,13 +103,9 @@ test("pending plan transition renders the muted Plan mode… badge", async () =>
   expect(frame).toContain("Plan mode…")
 })
 
-test("escape in the session returns home", async () => {
-  let backed = false
+test("escape in the session is a no-op once a session is open", async () => {
   const app = await renderSession({
     messages: [userMsg("你好")],
-    onBack: () => {
-      backed = true
-    },
   })
   await app.renderOnce()
 
@@ -120,18 +114,16 @@ test("escape in the session returns home", async () => {
   await new Promise((resolve) => setTimeout(resolve, 100))
   await app.renderOnce()
 
-  expect(backed).toBe(true)
+  // There is no home screen behind a session; the harness keeps running and
+  // ESC must not navigate anywhere.
+  expect(app.captureCharFrame()).toContain("你好")
 })
 
 test("escape in plan mode exits plan mode instead of going home", async () => {
   const commands: string[] = []
-  let backed = false
   const app = await renderSession({
     messages: [userMsg("任务")],
     planMode: () => true,
-    onBack: () => {
-      backed = true
-    },
     onCommand: async (line) => {
       commands.push(line)
       return null
@@ -147,7 +139,6 @@ test("escape in plan mode exits plan mode instead of going home", async () => {
   await app.renderOnce()
 
   expect(commands).toEqual(["/plan off"])
-  expect(backed).toBe(false)
 })
 
 test("hovering the stats bar shows real stats without flickering", async () => {
@@ -760,8 +751,11 @@ test("pending message dock renders queued rows with action icons", async () => {
 
 test("pending message preview collapses to one line and expands on click", async () => {
   const longPreview =
-    "这是一条很长的排队消息，用来验证预览在默认状态下只显示一行，点击之后才会展开显示完整内容，尾部文字：结尾标记"
+    "这是一条很长的排队消息，用来验证预览在默认状态下只显示一行，点击之后才会展开显示完整内容。" +
+    "为了在 OpenTUI 0.5.9 更精确的列宽测量下仍然超出单行可显示宽度，这里再补一段足够长的文字，" +
+    "确保折叠状态必然发生截断，尾部文字：结尾标记"
   const tail = "尾部文字：结尾标记"
+  const middle = "更精确的列宽测量"
   const app = await renderSession({
     messages: [userMsg("hi")],
     queue: () => [
@@ -772,7 +766,10 @@ test("pending message preview collapses to one line and expands on click", async
 
   const collapsed = app.captureCharFrame()
   expect(collapsed).toContain("这是一条很长的排队消息")
-  expect(collapsed).not.toContain(tail)
+  // OpenTUI 0.5.9 truncates with a middle ellipsis (head + "..." + tail), so
+  // the collapsed row hides the middle of the preview instead of the tail.
+  expect(collapsed).toContain("...")
+  expect(collapsed).not.toContain(middle)
 
   const lines = collapsed.split("\n")
   const y = lines.findIndex((line) => line.includes("这是一条很长的排队消息"))
@@ -781,6 +778,7 @@ test("pending message preview collapses to one line and expands on click", async
   await app.renderOnce()
 
   const expanded = app.captureCharFrame()
+  expect(expanded).toContain(middle)
   expect(expanded).toContain(tail)
   expect(expanded).toContain("▾")
 
@@ -791,7 +789,7 @@ test("pending message preview collapses to one line and expands on click", async
   await app.renderOnce()
 
   const collapsedAgain = app.captureCharFrame()
-  expect(collapsedAgain).not.toContain(tail)
+  expect(collapsedAgain).not.toContain(middle)
   expect(collapsedAgain).toContain("▸")
 })
 
@@ -1070,6 +1068,37 @@ test("ctrl+enter inserts a newline instead of submitting", async () => {
   expect(frame).toContain("第二行")
 
   // A plain Enter submits the multi-line draft.
+  app.mockInput.pressEnter()
+  await new Promise((resolve) => setTimeout(resolve, 80))
+  await app.renderOnce()
+  expect(sent).toEqual(["第一行\n第二行"])
+})
+
+test("windows ctrl+enter arrives as linefeed and still inserts a newline", async () => {
+  const sent: string[] = []
+  const app = await renderSession({
+    messages: [userMsg("你好")],
+    onSend: (text) => sent.push(text),
+  })
+  await app.renderOnce()
+
+  app.mockInput.typeText("第一行")
+  await new Promise((resolve) => setTimeout(resolve, 80))
+  // Windows Terminal / conhost deliver Ctrl+Enter as LF (`\n`), which OpenTUI
+  // parses as a plain "linefeed" key. It must insert a newline, not submit.
+  await app.mockInput.pressKeys(["\n"])
+  await new Promise((resolve) => setTimeout(resolve, 80))
+  await app.renderOnce()
+  app.mockInput.typeText("第二行")
+  await new Promise((resolve) => setTimeout(resolve, 80))
+  await app.renderOnce()
+
+  expect(sent).toEqual([])
+  const frame = app.captureCharFrame()
+  expect(frame).toContain("第一行")
+  expect(frame).toContain("第二行")
+
+  // A plain Enter (CR) still submits the multi-line draft.
   app.mockInput.pressEnter()
   await new Promise((resolve) => setTimeout(resolve, 80))
   await app.renderOnce()
@@ -1668,16 +1697,12 @@ test("composer draft survives a plan review question", async () => {
 
 test("escape while busy cancels the running turn instead of going home", async () => {
   let cancelled = 0
-  let backed = 0
   const app = await renderSession({
     messages: [userMsg("你好")],
     busy: () => true,
     statusText: "Deep diving",
     onCancel: () => {
       cancelled++
-    },
-    onBack: () => {
-      backed++
     },
   })
   await app.renderOnce()
@@ -1687,7 +1712,6 @@ test("escape while busy cancels the running turn instead of going home", async (
   await new Promise((resolve) => setTimeout(resolve, 100))
   await app.renderOnce()
   expect(cancelled).toBe(1)
-  expect(backed).toBe(0)
 })
 
 test("escape while busy still rejects an open question first", async () => {

@@ -1,5 +1,29 @@
 # Changelog
 
+## v0.3.0 — 2026-08-28
+
+标准 DeepSeek Harness 插件化重构：依赖走官方 npm 平台包、插件补齐 Config schema、安装期不再改动全局环境、harness 保持自动最新。
+
+### 插件与依赖（标准 DeepSeek Harness 插件形态）
+
+- `@opentui/core` / `@opentui/solid` 升级并精确锁定 `0.5.9`（官方 npm 包；0.5.7–0.5.9 无破坏性变更），`solid-js` 与官方 peer 精确对齐 `1.9.12`。
+- OpenTUI 原生库不再随包体 vendored（移除 `vendor/opentui-native` 与 `OTUI_ASSET_ROOT` 注入），改由官方平台包 `@opentui/core-<平台>-<arch>` 在安装时按当前平台解析；npm 包体积 48.8MB → 12MB。
+- Bun 不再要求全局安装：`@oven/bun-<平台>-<arch>@1.3.14` 作为 optionalDependencies 随包分发，`resolveBun()` 优先使用包内二进制（Linux musl 自动选 musl 包），保留 `~/.bun` 与 PATH 回退。
+- `tui-runner` 补齐标准 `Config` 接口 + 同名 Schemastery schema（host/port/cwd/continueLast 默认值进 schema），满足 Cordis 插件配置约定。
+- 新增依赖 `@deepseek-ai/schemastery@3.18.1`（构建时打进 `dist/runner.js`）。
+
+### 安装语义与 harness 自动更新
+
+- **移除 postinstall 全局副作用**：不再自动安装 dsh / pnpm / bun、不再在安装时创建 profile；改由首次启动时补齐并注册（`bin/dsh-cli` 运行时可自动兜底）。
+- **harness 保持最新**：每次由 `dsh-cli` 拉起 harness 前查询 npm registry 的 `@deepseek-ai/dsh` 最新版，发现新版自动 `npm install -g @deepseek-ai/dsh@<最新版>`（复用已有 harness 或 `DSH_NO_UPDATE_CHECK=1` 时跳过；更新失败仅提示、不阻塞启动）。
+- pnpm 11 `allowBuilds` 残留占位符（`set this to true or false`）改为每次启动前幂等修复，升级用户无需手动 `pnpm approve-builds`。
+
+### 其他
+
+- `scripts/ensure-runtime.mjs`、`scripts/vendor-resources.ts`、`src/dsh/native-assets.ts` 删除；`prepack` 只执行构建。
+- 中英文 README 更新安装方式、内置资源说明与 `dsh plugin --profile tui add @ai-thinker/deepseek-harness-cli` 标准插件安装路径。
+- 测试新增：harness 自动更新、`resolveBun` @oven 优先、runner Config schema、打包清单不含安装期脚本；OpenTUI 0.5.9 下全套 249 个测试通过。
+
 ## v0.2.15 — 2026-08-26
 
 首个包含启动更新检查、目录风险确认与完整交互打磨的发布。安装方式：

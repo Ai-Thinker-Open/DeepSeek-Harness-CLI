@@ -26,7 +26,7 @@
 
 ## 环境要求
 
-需要 [Node.js](https://nodejs.org) 22+（推荐 LTS）：harness 的 MCP 客户端用到了 `Promise.withResolvers()`，该 API 从 Node 22 起才可用。下面的一条命令会自动补齐 Bun、harness 与 pnpm。从源码构建才额外需要 [Bun](https://bun.sh)。本地 DeepSeek Harness 实例在所有安装方式下都是可选的：`dsh-cli` 会自动探测并拉起。
+需要 [Node.js](https://nodejs.org) 22+（推荐 LTS）：harness 的 MCP 客户端用到了 `Promise.withResolvers()`，该 API 从 Node 22 起才可用。安装包自带固定版本 Bun 1.3.14（作为 `@oven/bun-*` 平台包随 npm 安装），harness 与 pnpm 在首次启动时自动补齐；只有从源码构建才额外需要 [Bun](https://bun.sh)。本地 DeepSeek Harness 实例在所有安装方式下都是可选的：`dsh-cli` 会自动探测并拉起。
 
 ## 安装
 
@@ -36,7 +36,7 @@
 npm install -g @ai-thinker/deepseek-harness-cli
 ```
 
-这一条命令会一次性完成整个环境配置：自动检测并安装缺失的 `@deepseek-ai/dsh`（harness）、`pnpm`（harness 搭建 profile 需要）与 `bun`（终端客户端运行时），然后创建 `tui` profile。装完即可直接运行，首次启动无需任何手动配置：
+这一条命令安装插件本体，并随依赖带上固定版本 Bun 1.3.14 与 OpenTUI 各平台原生库。`@deepseek-ai/dsh`（harness）、`pnpm`（harness 搭建 profile 需要）与 `tui` profile 会在首次启动时自动补齐/注册。装完即可直接运行，无需任何手动配置：
 
 ```sh
 dsh-cli              # 自动探测 http://127.0.0.1:3080 上的 harness
@@ -50,13 +50,13 @@ dsh-cli -c           # 恢复最近一次会话并直接进入
 npx @ai-thinker/deepseek-harness-cli
 ```
 
-npx 临时运行不会触发安装时的 bootstrap，缺失的部分会在首次启动时自动补齐（包括 Bun——终端客户端仍由它执行）。
+npx 临时运行同样在首次启动时自动补齐缺失部分；Bun 已随包分发，无需单独安装。
 
 ### 手动安装（可选）
 
 想自己逐个安装？
 
-1. **安装 Bun**（构建与运行必需）：
+1. **安装 Bun**（仅源码构建需要；安装版已随包自带 Bun 1.3.14）：
 
    Linux / macOS：
 
@@ -104,15 +104,16 @@ npx 临时运行不会触发安装时的 bootstrap，缺失的部分会在首次
 
 ### 安装时会安装 / 检查哪些包（知情说明）
 
-安装或首次启动时，`dsh-cli` 会自动检查/安装以下依赖（均为常规 npm 生态包，缺失或版本不符才安装，已有正确版本不会重复安装）：
+`dsh-cli` 在首次启动时会自动检查/补齐以下依赖（均为常规 npm 生态包，缺失时才安装，已有正确版本不会重复安装）：
 
-- `@ai-thinker/deepseek-harness-cli` 本体：内置 Ai-Thinker 技能、FlashKey MCP 源码、OpenTUI 各平台原生库等 vendored 资源（随 npm 包分发，离线可用）。
-- `bun@1.3.14`：终端客户端运行时。Windows 上 bun 1.4+ 会触发 OpenTUI 段错误，因此固定为 1.3.14，版本不符时自动重装。
+- `@ai-thinker/deepseek-harness-cli` 本体：内置 Ai-Thinker 技能与 FlashKey MCP 源码（随 npm 包分发，离线可用）。
+- Bun 1.3.14：终端客户端运行时，作为 `@oven/bun-<平台>-<arch>` 平台包随依赖安装。Windows 上 bun 1.4+ 会触发 OpenTUI 段错误，因此运行时优先使用包内 1.3.14 并拒绝 1.4+。
 - `@deepseek-ai/dsh`：DeepSeek Harness 服务端（缺失时通过 npm 自动安装）。
 - `pnpm`：harness 构建 tui profile 所需（缺失时自动安装）。
+- `@deepseek-ai/dsh` 版本保持最新：每次由 `dsh-cli` 拉起 harness 前会查询 npm registry，发现新版自动执行 `npm install -g @deepseek-ai/dsh@<最新版>`（可用 `DSH_NO_UPDATE_CHECK=1` 关闭）。
 - 首次启动的 bootstrap（可跳过）：把内置技能链接到 `~/.dsh/skills`、向 tui profile 注册 FlashKey MCP、并尝试安装 `flashkey-mcp`（Python 包；失败只提示、不影响启动）。
 
-以上行为均可用环境变量控制：`DSH_SKIP_BOOTSTRAP=1` 跳过全部 bootstrap，`DSH_NO_SKILLS=1` / `DSH_NO_FLASHKEY=1` 只跳过对应资源，`DSH_NO_UPDATE_CHECK=1` 关闭启动更新检查，`DSH_SKIP_RISK_CONFIRM=1` 关闭目录风险确认。完整列表见 `CHANGELOG.md`。
+以上行为均可用环境变量控制：`DSH_SKIP_BOOTSTRAP=1` 跳过全部 bootstrap，`DSH_NO_SKILLS=1` / `DSH_NO_FLASHKEY=1` 只跳过对应资源，`DSH_NO_UPDATE_CHECK=1` 关闭启动时对 dsh-cli 自身与 harness 的更新检查，`DSH_SKIP_RISK_CONFIRM=1` 关闭目录风险确认。完整列表见 `CHANGELOG.md`。
 
 ## 快速开始
 
@@ -135,6 +136,14 @@ dsh-cli -c           # 恢复最近一次会话并直接进入
 ### 作为 DeepSeek Harness 组件运行
 
 本包同时是一个 Cordis 插件（通过 `package.json` 的 `dsh.bundle.patch` 挂载 `cordis.patch.yml`），可以像其它 harness 界面一样启动：
+
+标准安装方式是把本包作为 bundle 注册进 harness：
+
+```sh
+dsh plugin --profile tui add @ai-thinker/deepseek-harness-cli
+```
+
+注册后即可用任意 dsh 界面方式启动：
 
 ```sh
 dsh --profile tui                        # 以 TUI 模式启动 harness + 终端客户端
@@ -182,15 +191,16 @@ dsh --profile tui -c                     # 恢复最近会话
 
 - `vendor/ai-thinker-src`：Ai-Thinker skills 仓库，首次启动把 `skills/` 下的技能包链接进 `~/.dsh/skills/`；
 - `vendor/flashkey-mcp`：FlashKey MCP 服务器 Python 源码，启动时与 harness 同步拉起 SSE 常驻服务（默认 `127.0.0.1:8100`）；
-- `vendor/opentui-native`：OpenTUI 各平台原生库（linux x64/arm64、win32 x64/arm64、darwin x64/arm64，含 musl）。终端客户端通过 `OTUI_ASSET_ROOT` 使用包内库，不依赖安装时的平台——Windows 上安装的包在 WSL/Linux 里也能直接跑。
+
+OpenTUI 原生库与 Bun 运行时不再随包体打包，而是通过官方 npm 平台包（`@opentui/core-<平台>-<arch>`、`@oven/bun-<平台>-<arch>`）在安装时按当前平台解析；换平台使用需要重新安装（例如 Windows 上装的包不能直接在 WSL 里运行）。
 
 MCP 服务端依赖 `pyserial`、`mcp`、`starlette`、`uvicorn`。若本机 Python 已具备这些依赖，启动会直接从内置源码运行（完全离线）；否则首次启动会用 pip/uv 从内置源码安装，依赖需从 PyPI 获取一次。skills 与 MCP 都可用环境变量跳过或换源（见上表）。
 
 正常启动时不输出 bootstrap/启动进度信息，只有错误会打印到终端；需要详细日志时设置 `DSH_DEBUG=1`。harness（`dsh`）本身也支持全平台，但必须使用与运行平台一致的安装：WSL 里请用 WSL 的 npm 安装 `@deepseek-ai/dsh`，不要在 WSL 里运行 Windows 侧安装的 `dsh`。
 
-全局安装还会自动补齐 harness、`pnpm` 与 `bun` 并创建 `tui` profile（见上文「安装」）；非全局安装不触发。
+首次启动（无论全局还是 npx 临时运行）都会自动补齐 harness 与 `pnpm`、注册 `tui` profile；Bun 已随包分发，无需额外安装。
 
-即使安装阶段被跳过（`--ignore-scripts`、npx 临时运行等），运行时也会自动兜底：bun 不在 PATH 时会自动查找 `~/.bun/bin/bun(.exe)`，dsh 缺失走 npx，pnpm 缺失自动安装。Windows 下所有子进程调用都兼容 `.cmd` shim，全平台一致。
+运行时兜底依然保留：包内找不到 Bun 时会自动查找 `~/.bun/bin/bun(.exe)` 或 PATH，dsh 缺失走 npx，pnpm 缺失自动安装。Windows 下所有子进程调用都兼容 `.cmd` shim，全平台一致。
 
 ## 常用操作
 

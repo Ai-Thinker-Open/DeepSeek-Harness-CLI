@@ -1,6 +1,7 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs"
 import { homedir } from "node:os"
 import { join } from "node:path"
+import pkg from "../package.json"
 
 export type McpServerStatus = {
   name: string
@@ -209,7 +210,7 @@ export async function listServerTools(config: McpServerConfig, signal?: AbortSig
   await mcpRpc<{ protocolVersion?: string }>(
     endpoint,
     "initialize",
-    { protocolVersion: "2025-03-26", capabilities: {}, clientInfo: { name: "dsh-cli", version: "0.2.15" } },
+    { protocolVersion: "2025-03-26", capabilities: {}, clientInfo: { name: "dsh-cli", version: pkg.version } },
     1,
     timeout,
   )

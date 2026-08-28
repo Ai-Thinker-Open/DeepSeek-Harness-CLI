@@ -28,8 +28,9 @@ It drives a locally running DeepSeek Harness instance: sessions, tool calls, per
 
 [Node.js](https://nodejs.org) 22+ (LTS recommended) is required at runtime:
 the DeepSeek Harness's MCP client uses `Promise.withResolvers()`, an API only
-available since Node 22. The one-command install below auto-provisions Bun,
-the DeepSeek Harness and pnpm. Source builds additionally need
+available since Node 22. The package ships a pinned Bun 1.3.14 (installed as
+`@oven/bun-*` platform packages); the DeepSeek Harness and pnpm are
+auto-provisioned on first launch. Only source builds additionally need
 [Bun](https://bun.sh). A local DeepSeek Harness instance is optional
 everywhere: `dsh-cli` probes for one and boots it when missing.
 
@@ -41,11 +42,11 @@ everywhere: `dsh-cli` probes for one and boots it when missing.
 npm install -g @ai-thinker/deepseek-harness-cli
 ```
 
-That single command completes the whole setup: it detects and installs a
-missing `@deepseek-ai/dsh` (harness), `pnpm` (the harness needs it to build
-profiles) and `bun` (the terminal client runtime), then creates the `tui`
-profile. After install you can run `dsh-cli` directly — no manual setup on
-first launch:
+That single command installs the plugin itself, including the pinned Bun
+1.3.14 and the OpenTUI native libraries for your platform. A missing
+`@deepseek-ai/dsh` (harness), `pnpm` (needed to build profiles) and the `tui`
+profile are provisioned automatically on first launch. After install you can
+run `dsh-cli` directly — no manual setup needed:
 
 ```sh
 dsh-cli              # probes http://127.0.0.1:3080 for a running harness;
@@ -59,14 +60,15 @@ Prefer a quick try without installing?
 npx @ai-thinker/deepseek-harness-cli
 ```
 
-npx runs skip the install-time bootstrap, so the first launch fills in whatever
-is missing at runtime (Bun included — it still executes the terminal client).
+npx runs provision whatever is missing on first launch the same way; Bun is
+shipped with the package, so no separate install is needed.
 
 ### Manual setup (optional)
 
 Prefer to install the pieces yourself?
 
-1. **Install Bun** — required to build and run the client:
+1. **Install Bun** — only needed to build from source; installs already ship
+   Bun 1.3.14:
 
    Linux / macOS:
 
@@ -118,19 +120,24 @@ it is missing and boots a harness when none is running.
 
 ### What gets installed / checked at install time (for transparency)
 
-Installing or first-launching `dsh-cli` may auto-install or verify the
-following dependencies (regular npm packages; only installed when missing or
-the version is wrong — never re-installed when already correct):
+First-launching `dsh-cli` may auto-install or verify the following
+dependencies (regular npm packages; only installed when missing — never
+re-installed when already correct):
 
-- `@ai-thinker/deepseek-harness-cli` itself, shipping vendored resources:
-  the Ai-Thinker skills, FlashKey MCP sources, and OpenTUI native libraries
-  for every platform (distributed in the npm tarball, usable offline).
-- `bun@1.3.14`: the terminal client runtime. Bun 1.4+ segfaults OpenTUI on
-  Windows, so the version is pinned and re-installed when it mismatches.
+- `@ai-thinker/deepseek-harness-cli` itself, shipping vendored resources: the
+  Ai-Thinker skills and FlashKey MCP sources (distributed in the npm tarball,
+  usable offline).
+- Bun 1.3.14: the terminal client runtime, installed as `@oven/bun-<platform>-<arch>`
+  platform packages. Bun 1.4+ segfaults OpenTUI on Windows, so the resolver
+  prefers the bundled 1.3.14 and rejects 1.4+ binaries.
 - `@deepseek-ai/dsh`: the DeepSeek Harness server (auto-installed via npm
   when missing).
 - `pnpm`: required by the harness to build the tui profile (auto-installed
   when missing).
+- Keeping `@deepseek-ai/dsh` current: before `dsh-cli` boots the harness it
+  queries the npm registry and auto-installs
+  `npm install -g @deepseek-ai/dsh@<latest>` when a newer version is
+  published (disable with `DSH_NO_UPDATE_CHECK=1`).
 - First-launch bootstrap (skippable): links the bundled skills into
   `~/.dsh/skills`, registers FlashKey MCP in the tui profile, and tries to
   install `flashkey-mcp` (Python; failure only prints a hint, never blocks).
@@ -138,8 +145,9 @@ the version is wrong — never re-installed when already correct):
 All of the above can be controlled with environment variables:
 `DSH_SKIP_BOOTSTRAP=1` skips all bootstrap, `DSH_NO_SKILLS=1` /
 `DSH_NO_FLASHKEY=1` skip the corresponding resource, `DSH_NO_UPDATE_CHECK=1`
-disables the startup update check, and `DSH_SKIP_RISK_CONFIRM=1` disables the
-directory risk confirmation. See `CHANGELOG.md` for the full list.
+disables the startup update checks for both dsh-cli itself and the harness,
+and `DSH_SKIP_RISK_CONFIRM=1` disables the directory risk confirmation. See
+`CHANGELOG.md` for the full list.
 
 ## Quick start
 
@@ -162,6 +170,15 @@ dsh-cli -c           # resume the most recent session and jump straight in
 ### Run as a DeepSeek Harness component
 
 This package is also a Cordis plugin (mounted via the `dsh.bundle.patch` field in `package.json`, pointing at `cordis.patch.yml`), so it can be started like any other harness surface:
+
+The standard way to install it as a plugin is to register the bundle with the
+harness:
+
+```sh
+dsh plugin --profile tui add @ai-thinker/deepseek-harness-cli
+```
+
+Then boot it like any other harness surface:
 
 ```sh
 dsh --profile tui                        # boot harness + terminal client in TUI mode
@@ -212,10 +229,12 @@ right after `npm install -g`:
   skill bundles under `skills/` are linked into `~/.dsh/skills/`;
 - `vendor/flashkey-mcp` — the FlashKey MCP server Python source; it starts as a
   local SSE daemon (default `127.0.0.1:8100`) alongside the harness;
-- `vendor/opentui-native` — OpenTUI native libraries for every supported
-  platform (linux x64/arm64, win32 x64/arm64, darwin x64/arm64, musl included).
-  The terminal client uses them via `OTUI_ASSET_ROOT`, so the package works on
-  any platform regardless of where it was installed.
+
+OpenTUI native libraries and the Bun runtime are no longer vendored; they come
+from official per-platform npm packages (`@opentui/core-<platform>-<arch>`,
+`@oven/bun-<platform>-<arch>`) resolved for the platform you install on. To run
+on a different platform (for example WSL after installing on Windows), install
+the package again for that platform.
 
 The MCP server depends on `pyserial`, `mcp`, `starlette` and `uvicorn`. If those
 are already importable by `python3`, the daemon runs straight from the bundled
@@ -229,16 +248,16 @@ cross-platform too, but it must be installed for the platform you run on: in
 WSL install `@deepseek-ai/dsh` with WSL's npm instead of running a
 Windows-installed `dsh` inside WSL.
 
-Global installs additionally auto-provision the harness, `pnpm` and `bun` and
-create the `tui` profile (see Installation above); non-global installs are
-untouched.
+First launch (global or transient `npx` run) auto-provisions the harness and
+`pnpm` and registers the `tui` profile; Bun ships with the package, so no
+separate install is needed.
 
 If the install stage is skipped (`--ignore-scripts`, transient `npx` runs,
-etc.), the runtime falls back automatically: bun is located under
-`~/.bun/bin/bun(.exe)` when it is not on PATH, `dsh` is provisioned through
-npx, and pnpm is installed on demand. On Windows every subprocess call goes
-through the shell so `.cmd` shims work, giving one consistent experience
-across platforms.
+etc.), the runtime still falls back automatically: Bun is located under the
+package's `node_modules` first, then `~/.bun/bin/bun(.exe)` and PATH; `dsh` is
+provisioned through npx; pnpm is installed on demand. On Windows every
+subprocess call goes through the shell so `.cmd` shims work, giving one
+consistent experience across platforms.
 
 ## Usage
 

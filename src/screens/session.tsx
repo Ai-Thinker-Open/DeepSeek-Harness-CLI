@@ -27,7 +27,6 @@ export function SessionScreen(props: {
   planPending: () => boolean
   question: () => HarnessQuestion | null
   onSend: (text: string) => void
-  onBack: () => void
   onCancel: () => void
   onQuestion: (choice: string) => void
   onQuestionMany?: (ids: string[]) => void
@@ -75,17 +74,16 @@ export function SessionScreen(props: {
     if (props.question()) return
     if (commandOpen()) return
     if (!(props.active?.() ?? true) || key.name !== "escape") return
-    // While a turn is running, Esc cancels the current execution; in plan
-    // mode (idle) Esc leaves plan mode; otherwise Esc navigates back home.
-    // Question/menu Esc still win above.
+    // Once a session is open there is deliberately no way back to the home
+    // screen: the harness session keeps running in the background, so Esc
+    // only cancels an active turn or leaves plan mode. Question/menu Esc
+    // still win above; an idle session Esc is a no-op.
     if (props.busy()) {
       props.onCancel()
       key.preventDefault()
     } else if (props.planMode()) {
       void props.onCommand?.("/plan off")
       key.preventDefault()
-    } else {
-      props.onBack()
     }
   })
 

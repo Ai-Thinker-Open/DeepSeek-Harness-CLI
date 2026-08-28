@@ -13,6 +13,7 @@ const savedEnv = { ...process.env }
 const savedProbe = dispatcherInternals.probe
 const savedSpawn = dispatcherInternals.spawn
 const savedSpawnSync = dispatcherInternals.spawnSync
+const savedHarnessUpdate = dispatcherInternals.harnessUpdate
 let profileHome: string | undefined
 
 afterEach(() => {
@@ -20,9 +21,14 @@ afterEach(() => {
   dispatcherInternals.probe = savedProbe
   dispatcherInternals.spawn = savedSpawn
   dispatcherInternals.spawnSync = savedSpawnSync
+  dispatcherInternals.harnessUpdate = savedHarnessUpdate
   if (profileHome) rmSync(profileHome, { recursive: true, force: true })
   profileHome = undefined
 })
+
+// Harness auto-update is exercised in harness-update.test.ts; keep dispatcher
+// tests free of real `npm root -g` / registry calls unless a test opts in.
+dispatcherInternals.harnessUpdate = async () => ({ before: undefined, after: undefined })
 
 function installSpawn() {
   const calls: SpawnCall[] = []
@@ -142,6 +148,69 @@ test("profile setup writes the pnpm build allowlist", async () => {
   const yaml = readFileSync(join(profileHome!, "profiles", PROFILE_NAME, "pnpm-workspace.yaml"), "utf8")
   expect(yaml).toContain("onlyBuiltDependencies:")
   expect(yaml).toContain("- \"@ai-thinker/deepseek-harness-cli\"")
+  expect(yaml).toContain("allowBuilds:")
+  expect(yaml).toContain("\"@ai-thinker/deepseek-harness-cli\": true")
+})
+
+test("profile setup flips a pnpm 11 allowBuilds placeholder to true", async () => {
+  const { calls, children } = installSpawn()
+  installSpawnSync({ "--help": { status: 0 }, plugin: { status: 0 } })
+  dispatcherInternals.probe = async () => false
+  profileHome = mkdtempSync(join(tmpdir(), "dsh-cli-test-"))
+  process.env.DSH_HOME = profileHome
+  const dir = join(profileHome, "profiles", PROFILE_NAME)
+  mkdirSync(dir, { recursive: true })
+  writeFileSync(
+    join(dir, "pnpm-workspace.yaml"),
+    [
+      "packages:",
+      "  - .",
+      "allowBuilds:",
+      "  '@ai-thinker/deepseek-harness-cli@file:../../../AppData/Roaming/npm/node_modules/@ai-thinker/deepseek-harness-cli': set this to true or false",
+      "",
+    ].join("\n"),
+  )
+
+  const pending = run([])
+  await settle()
+  children[0]?.emit("exit", 0)
+  await expect(pending).resolves.toBe(0)
+
+  const yaml = readFileSync(join(dir, "pnpm-workspace.yaml"), "utf8")
+  expect(yaml).toContain("'@ai-thinker/deepseek-harness-cli@file:../../../AppData/Roaming/npm/node_modules/@ai-thinker/deepseek-harness-cli': true")
+  expect(yaml).not.toContain("set this to true or false")
+  expect(yaml.match(/^allowBuilds:/gm)).toHaveLength(1)
+})
+
+test("an already-registered profile with a stale placeholder is repaired before boot", async () => {
+  const { calls, children } = installSpawn()
+  const { calls: syncCalls } = installSpawnSync({ "--help": { status: 0 }, plugin: { status: 0 } })
+  dispatcherInternals.probe = async () => false
+  writeProfile(["@ai-thinker/deepseek-harness-cli"])
+  const dir = join(profileHome!, "profiles", PROFILE_NAME)
+  writeFileSync(
+    join(dir, "pnpm-workspace.yaml"),
+    [
+      "packages:",
+      "  - .",
+      "allowBuilds:",
+      "  '@ai-thinker/deepseek-harness-cli@file:../../../AppData/Roaming/npm/node_modules/@ai-thinker/deepseek-harness-cli': set this to true or false",
+      "",
+    ].join("\n"),
+  )
+
+  const pending = run([])
+  await settle()
+  children[0]?.emit("exit", 0)
+  await expect(pending).resolves.toBe(0)
+
+  // No `dsh plugin add`: the profile is already registered.
+  expect(syncCalls.map((c) => c.args[0])).not.toContain("plugin")
+  const yaml = readFileSync(join(dir, "pnpm-workspace.yaml"), "utf8")
+  expect(yaml).toContain("'@ai-thinker/deepseek-harness-cli@file:../../../AppData/Roaming/npm/node_modules/@ai-thinker/deepseek-harness-cli': true")
+  expect(yaml).not.toContain("set this to true or false")
+  expect(calls[0]?.command).toBe("dsh")
+  expect(calls[0]?.args).toEqual(["--profile", "tui"])
 })
 
 test("profile setup retries a transient pnpm failure", async () => {
@@ -185,6 +254,58 @@ test("dispatcher falls back to npx when dsh is not installed and no cache exists
 
   expect(calls[0]?.command).toBe("npx")
   expect(calls[0]?.args).toEqual(["--yes", "@deepseek-ai/dsh", "--profile", "tui"])
+})
+
+test("dispatcher updates the harness before booting it", async () => {
+  // Parallel test files (app.test.tsx / directory-risk.test.tsx) set this
+  // globally; make sure the auto-update path is actually exercised.
+  delete process.env.DSH_NO_UPDATE_CHECK
+  const { calls, children } = installSpawn()
+  installSpawnSync({ "--help": { status: 0 } })
+  dispatcherInternals.probe = async () => false
+  writeProfile(["@ai-thinker/deepseek-harness-cli"])
+  let updateCalls = 0
+  dispatcherInternals.harnessUpdate = async () => {
+    updateCalls++
+    return { before: "1.0.0", after: "2.0.0" }
+  }
+
+  const pending = run([])
+  await settle()
+  children[0]?.emit("exit", 0)
+  await expect(pending).resolves.toBe(0)
+
+  expect(updateCalls).toBe(1)
+  expect(calls[0]?.command).toBe("dsh")
+})
+
+test("dispatcher skips the harness update when disabled or reusing a harness", async () => {
+  let updateCalls = 0
+  dispatcherInternals.harnessUpdate = async () => {
+    updateCalls++
+    return { before: "1.0.0", after: "2.0.0" }
+  }
+
+  const { calls: reuseCalls, children: reuseChildren } = installSpawn()
+  dispatcherInternals.probe = async () => true
+  process.env.DSH_URL = "http://127.0.0.1:3999"
+  const reuse = run([])
+  await settle()
+  reuseChildren[0]?.emit("exit", 0)
+  await expect(reuse).resolves.toBe(0)
+  expect(updateCalls).toBe(0)
+
+  process.env.DSH_NO_UPDATE_CHECK = "1"
+  const { calls: bootCalls, children: bootChildren } = installSpawn()
+  installSpawnSync({ "--help": { status: 0 } })
+  dispatcherInternals.probe = async () => false
+  writeProfile(["@ai-thinker/deepseek-harness-cli"])
+  const boot = run([])
+  await settle()
+  bootChildren[0]?.emit("exit", 0)
+  await expect(boot).resolves.toBe(0)
+  expect(updateCalls).toBe(0)
+  expect(bootCalls[0]?.command).toBe("dsh")
 })
 
 test("dispatcher reuses an installed npx cache entry instead of npx", async () => {

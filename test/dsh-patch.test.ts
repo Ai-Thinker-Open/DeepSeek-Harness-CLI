@@ -46,8 +46,31 @@ test("bundle manifest resolves the patch and exports", () => {
   const manifest = JSON.parse(readFileSync(join(root, "package.json"), "utf8")) as {
     dsh?: { bundle?: { patch?: string } }
     exports?: Record<string, string>
+    scripts?: Record<string, string>
+    files?: string[]
+    dependencies?: Record<string, string>
+    optionalDependencies?: Record<string, string>
   }
   expect(manifest.dsh?.bundle?.patch).toBe("./cordis.patch.yml")
   expect(manifest.exports?.["."]).toBe("./dist/runner.js")
   expect(manifest.exports?.["./startup"]).toBe("./dist/startup.js")
+})
+
+test("manifest declares standard npm dependencies and no install-time mutation", () => {
+  const manifest = JSON.parse(readFileSync(join(root, "package.json"), "utf8")) as {
+    version?: string
+    scripts?: Record<string, string>
+    files?: string[]
+    dependencies?: Record<string, string>
+    optionalDependencies?: Record<string, string>
+  }
+  expect(manifest.version).toBe("0.3.0")
+  expect(manifest.scripts?.postinstall).toBeUndefined()
+  expect(manifest.files ?? []).not.toContain("scripts/ensure-runtime.mjs")
+  expect(manifest.dependencies?.["@opentui/core"]).toBe("0.5.9")
+  expect(manifest.dependencies?.["@opentui/solid"]).toBe("0.5.9")
+  expect(manifest.dependencies?.["solid-js"]).toBe("1.9.12")
+  expect(manifest.dependencies?.["@deepseek-ai/schemastery"]).toBe("3.18.1")
+  expect(manifest.optionalDependencies?.["@oven/bun-windows-x64"]).toBe("1.3.14")
+  expect(manifest.optionalDependencies?.["@oven/bun-linux-x64-musl"]).toBe("1.3.14")
 })

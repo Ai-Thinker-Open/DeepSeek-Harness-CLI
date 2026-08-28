@@ -598,9 +598,10 @@ export function Prompt(props: {
             maxHeight={5}
             keyBindings={[
               { name: "return", action: "submit" },
-              { name: "linefeed", action: "submit" },
               { name: "return", meta: true, action: "newline" },
               { name: "return", ctrl: true, action: "newline" },
+              { name: "linefeed", action: "newline" },
+              { name: "linefeed", ctrl: true, action: "newline" },
               { name: "kpenter", ctrl: true, action: "newline" },
             ]}
             textColor={theme.text}

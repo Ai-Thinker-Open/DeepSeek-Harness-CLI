@@ -9,15 +9,11 @@ import { spawn, spawnSync, type ChildProcess } from "node:child_process"
 import { existsSync } from "node:fs"
 import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
+import Schema from "@deepseek-ai/schemastery"
 import type { AppExitLike, DshContext } from "./types"
 import type { TuiStartupValues } from "./startup"
-import { applyBundledOpentuiAssets } from "./native-assets"
 import { bunVersionProblemFor } from "./node-version"
 import { portableSpawnOptions, portableSpawnSyncOptions, resolveBun } from "./portable"
-
-// The spawned client inherits this so it uses the bundled OpenTUI native
-// library for the current platform (see native-assets.ts).
-applyBundledOpentuiAssets()
 
 export const name = "tui-runner"
 
@@ -27,6 +23,22 @@ export const inject = ["tuiStartup", "webServer"]
 export interface TuiRunnerConfig {
   startup?: TuiStartupValues
 }
+
+/**
+ * Schemastery schema for {@link TuiRunnerConfig}, following the Cordis
+ * convention of exporting a `Config` interface and same-named schema with
+ * defaults written into the schema. The `tui-runner` patch row resolves its
+ * `startup` from the `tuiStartup` service, so defaults here only matter when
+ * the row omits a key.
+ */
+export const Config: Schema<TuiRunnerConfig> = Schema.object({
+  startup: Schema.object({
+    host: Schema.string().default("127.0.0.1"),
+    port: Schema.number().default(3080),
+    cwd: Schema.string(),
+    continueLast: Schema.boolean().default(false),
+  }),
+})
 
 /** The webServer service surface the runner reads for the bound address. */
 export interface WebServerLike {

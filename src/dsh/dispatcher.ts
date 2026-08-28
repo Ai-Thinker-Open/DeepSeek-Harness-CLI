@@ -11,7 +11,7 @@ import { Socket } from "node:net"
 import { homedir } from "node:os"
 import { dirname, join } from "node:path"
 import { fileURLToPath, pathToFileURL } from "node:url"
-import { applyBundledOpentuiAssets } from "./native-assets"
+import { ensureHarnessUpToDate } from "./harness-update"
 import { bunVersionProblemFor, nodeVersionProblem } from "./node-version"
 import { portableSpawnOptions, portableSpawnSyncOptions, resolveBun } from "./portable"
 export { bootstrapAll } from "./bootstrap"
@@ -32,10 +32,6 @@ function findRoot(start: string): string {
 
 const PKG_ROOT = findRoot(dirname(fileURLToPath(import.meta.url)))
 const TUI_CLI = join(PKG_ROOT, "dist", "cli.js")
-
-// The terminal client and the harness inherit this: bundled OpenTUI native
-// libraries make the client run on any platform, independent of the install.
-applyBundledOpentuiAssets()
 
 function readManifest(): { name?: string } {
   return JSON.parse(readFileSync(join(PKG_ROOT, "package.json"), "utf8")) as { name?: string }
@@ -58,10 +54,12 @@ function profileDir(): string {
 }
 
 /**
- * pnpm 10 blocks dependency build scripts unless they are allowlisted.
- * Without this the bundle's postinstall is skipped and `dsh plugin add` can
- * fail with ERR_PNPM_IGNORED_BUILDS. Write the allowlist into the profile's
- * pnpm-workspace.yaml before the harness installs the bundle.
+ * pnpm blocks dependency build scripts unless they are allowlisted.
+ * pnpm 10 uses `onlyBuiltDependencies`; pnpm 11 replaces that with the
+ * `allowBuilds` map (and auto-fills unapproved packages with a placeholder,
+ * which also fails the install). Write both into the profile's
+ * pnpm-workspace.yaml before the harness installs the bundle, and flip any
+ * existing placeholder for this package to `true`.
  */
 function allowProfileBuilds(): void {
   const dir = profileDir()
@@ -70,11 +68,40 @@ function allowProfileBuilds(): void {
     const file = join(dir, "pnpm-workspace.yaml")
     const marker = `  - ${JSON.stringify(PKG_NAME)}`
     let text = existsSync(file) ? readFileSync(file, "utf8") : ""
-    if (text.includes(marker)) return
-    if (/^onlyBuiltDependencies:\s*$/m.test(text)) {
-      text = text.replace(/^onlyBuiltDependencies:\s*$/m, `onlyBuiltDependencies:\n${marker}`)
-    } else {
-      text = `${text.trimEnd()}\nonlyBuiltDependencies:\n${marker}\n`
+    const lines = text.split(/\r?\n/)
+    let allowBuildsHeader = -1
+    let hasAllowEntry = false
+    let changed = false
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i] ?? ""
+      if (/^allowBuilds:\s*(?:#.*)?$/.test(line)) {
+        allowBuildsHeader = i
+        continue
+      }
+      if (allowBuildsHeader >= 0 && i > allowBuildsHeader && /^\s+\S/.test(line) && line.includes(PKG_NAME)) {
+        hasAllowEntry = true
+        const colon = line.lastIndexOf(":")
+        if (colon >= 0 && line.slice(colon + 1).trim() !== "true") {
+          lines[i] = `${line.slice(0, colon + 1)} true`
+          changed = true
+        }
+      }
+    }
+    if (allowBuildsHeader >= 0 && !hasAllowEntry) {
+      lines.splice(allowBuildsHeader + 1, 0, `  ${JSON.stringify(PKG_NAME)}: true`)
+      changed = true
+    }
+    if (changed) text = lines.join("\n")
+    if (allowBuildsHeader < 0) {
+      text = `${text.trimEnd()}\nallowBuilds:\n  ${JSON.stringify(PKG_NAME)}: true\n`
+    }
+    // pnpm 10 compatibility (pnpm 11 ignores this field, so it is harmless).
+    if (!text.includes(marker)) {
+      if (/^onlyBuiltDependencies:\s*$/m.test(text)) {
+        text = text.replace(/^onlyBuiltDependencies:\s*$/m, `onlyBuiltDependencies:\n${marker}`)
+      } else {
+        text = `${text.trimEnd()}\nonlyBuiltDependencies:\n${marker}\n`
+      }
     }
     writeFileSync(file, text)
   } catch {
@@ -227,7 +254,8 @@ export const internals: {
   probe: typeof probe
   spawn: typeof spawn
   spawnSync: typeof spawnSync
-} = { probe, spawn, spawnSync }
+  harnessUpdate: typeof ensureHarnessUpToDate
+} = { probe, spawn, spawnSync, harnessUpdate: ensureHarnessUpToDate }
 
 /**
  * Run the dispatcher and resolve with the process exit code.
@@ -276,7 +304,14 @@ export async function run(args: readonly string[]): Promise<number> {
   }
 
   const dsh = resolveDsh()
-  if (!normalizeProfileBundles()) {
+  const profileRegistered = normalizeProfileBundles()
+  // Repair the pnpm build allowlist even when the profile is already
+  // registered: an upgraded dsh-cli must flip placeholders left behind by
+  // older versions (pnpm 11 fills unapproved packages with
+  // "set this to true or false", which fails the install with
+  // ERR_PNPM_IGNORED_BUILDS). Idempotent, so it is safe on every boot.
+  allowProfileBuilds()
+  if (!profileRegistered) {
     if (process.env.DSH_DEBUG === "1") process.stderr.write(`[dsh-cli] registering the tui profile bundle (${PKG_NAME})\n`)
     // Profile setup is forwarded to pnpm by dsh; auto-install it when missing
     // so first run works even if the package postinstall was skipped.
@@ -294,10 +329,6 @@ export async function run(args: readonly string[]): Promise<number> {
         return pnpmInstall.status ?? 1
       }
     }
-    // pnpm 10 blocks dependency build scripts unless allowlisted; write the
-    // bundle into the profile's pnpm-workspace.yaml so its postinstall runs
-    // (ERR_PNPM_IGNORED_BUILDS would otherwise fail the setup).
-    allowProfileBuilds()
     // First-time profile installs download @opentui/core platform packages;
     // on flaky networks those fetches drop (UND_ERR_DESTROYED). Harden pnpm's
     // fetch retries, lower download concurrency, and retry the whole setup.
@@ -307,6 +338,11 @@ export async function run(args: readonly string[]): Promise<number> {
       npm_config_fetch_retry_mintimeout: "2000",
       npm_config_fetch_retry_maxtimeout: "60000",
       npm_config_network_concurrency: "4",
+      // pnpm 11 reads pnpm_config_* (not npm_config_*) for install settings.
+      pnpm_config_fetch_retries: "5",
+      pnpm_config_fetch_retry_mintimeout: "2000",
+      pnpm_config_fetch_retry_maxtimeout: "60000",
+      pnpm_config_network_concurrency: "4",
     }
     let setup = internals.spawnSync(
       dsh.bin,
@@ -330,6 +366,13 @@ export async function run(args: readonly string[]): Promise<number> {
       process.stderr.write(`[dsh-cli] failed to register the tui profile (dsh plugin add exited with ${setup.status ?? "error"}).${pnpmHint}\n`)
       return setup.status ?? 1
     }
+  }
+
+  // Keep the official harness (`@deepseek-ai/dsh`) up to date before we boot
+  // it ourselves. Skipped when reusing a running harness (probe returned
+  // true above) and when disabled with DSH_NO_UPDATE_CHECK=1.
+  if (process.env.DSH_NO_UPDATE_CHECK !== "1") {
+    await internals.harnessUpdate()
   }
 
   if (process.env.DSH_DEBUG === "1") {

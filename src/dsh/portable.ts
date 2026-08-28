@@ -33,19 +33,57 @@ function packageRoot(start: string): string {
 
 /**
  * Locate the bun executable: prefer the pinned copy shipped with this
- * package's installation, then the standard `~/.bun/bin` install, then PATH.
- * (bun's Windows installer adds `~/.bun/bin` only to new shells, so the
- * fallback matters.)
+ * package's installation (`@oven/bun-<platform>-<arch>`, pinned to 1.3.14),
+ * then the standard `~/.bun/bin` install, then PATH. (bun's Windows
+ * installer adds `~/.bun/bin` only to new shells, so the fallback matters.)
  */
-export function resolveBun(): string {
-  const shim = process.platform === "win32" ? "bun.cmd" : "bun"
+export function resolveBun(root = packageRoot(dirname(fileURLToPath(import.meta.url)))): string {
   const binary = process.platform === "win32" ? "bun.exe" : "bun"
-  const candidates = [
-    join(packageRoot(dirname(fileURLToPath(import.meta.url))), "node_modules", ".bin", shim),
-    join(homedir(), ".bun", "bin", binary),
-  ]
-  for (const candidate of candidates) {
+  for (const candidate of bunCandidatePaths(root)) {
     if (existsSync(candidate)) return candidate
   }
   return "bun"
+}
+
+/**
+ * Ordered bun lookup candidates for a package root: the pinned `@oven/bun-*`
+ * platform package first, then a `.bin` shim, then `~/.bun/bin`, and finally
+ * the bare PATH lookup (`"bun"`).
+ */
+export function bunCandidatePaths(root: string): string[] {
+  const shim = process.platform === "win32" ? "bun.cmd" : "bun"
+  const binary = process.platform === "win32" ? "bun.exe" : "bun"
+  return [
+    ...ovenBunCandidates(root, binary),
+    join(root, "node_modules", ".bin", shim),
+    join(homedir(), ".bun", "bin", binary),
+    "bun",
+  ]
+}
+
+/**
+ * Candidate paths for the pinned `@oven/bun-*` binary inside this package's
+ * node_modules. The npm package names use `aarch64` for arm64, and Linux x64
+ * has a separate `-musl` package; on musl systems only the musl binary runs,
+ * so it is preferred there (npm installs optional deps regardless of libc).
+ */
+function ovenBunCandidates(root: string, binary: string): string[] {
+  const arch = process.arch === "arm64" ? "aarch64" : process.arch
+  const base = `@oven/bun-${process.platform}-${arch}`
+  if (process.platform === "linux" && arch === "x64") {
+    const plain = join(root, "node_modules", base, "bin", binary)
+    const musl = join(root, "node_modules", `${base}-musl`, "bin", binary)
+    return prefersMusl() ? [musl, plain] : [plain, musl]
+  }
+  return [join(root, "node_modules", base, "bin", binary)]
+}
+
+/** True when the current Linux is a musl distribution (Alpine etc.). */
+function prefersMusl(): boolean {
+  if (process.env.OPENTUI_LIBC === "musl") return true
+  try {
+    return existsSync("/etc/alpine-release")
+  } catch {
+    return false
+  }
 }

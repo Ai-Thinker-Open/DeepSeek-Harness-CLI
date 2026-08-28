@@ -505,7 +505,6 @@ export function App(
           planPending={session.planPending}
           question={session.question}
           onSend={handleSubmit}
-          onBack={() => setScreen("home")}
           onCancel={() => {
             void session.abort()
             showToast("已取消当前执行")

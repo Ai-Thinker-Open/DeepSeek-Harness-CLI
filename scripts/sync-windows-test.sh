@@ -21,7 +21,10 @@ rsync -a --delete --copy-links \
   --exclude '.codex' \
   --exclude '.mimocode' \
   --exclude 'test' \
-  --exclude 'scripts' \
+  --exclude 'scripts/build.ts' \
+  --exclude 'scripts/icons.mjs' \
+  --exclude 'scripts/mock-dsh-server.mjs' \
+  --exclude 'scripts/sync-windows-test.sh' \
   --exclude 'bun.lock' \
   "$ROOT/" "$DEST/"
 

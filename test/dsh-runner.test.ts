@@ -1,6 +1,6 @@
 import { EventEmitter } from "node:events"
 import { expect, test } from "bun:test"
-import { apply, internals as runnerInternals } from "../src/dsh/runner"
+import { apply, Config, internals as runnerInternals } from "../src/dsh/runner"
 import { resolveBun } from "../src/dsh/portable"
 
 type SpawnCall = { command: string; args: string[]; options: { env?: Record<string, string | undefined> } }
@@ -75,4 +75,23 @@ test("tui-runner exits 1 when bun cannot be spawned", () => {
 test("tui-runner fails loud without webServer or appExit", () => {
   expect(() => apply(fakeCtx({}).ctx)).toThrow("webServer")
   expect(() => apply(fakeCtx({ webServer: { host: "127.0.0.1", port: 3080 }, appExit: undefined }).ctx)).toThrow("appExit")
+})
+
+test("tui-runner Config schema accepts defaults and the tuiStartup shape", () => {
+  const empty = Config({})
+  expect(empty.startup?.host).toBe("127.0.0.1")
+  expect(empty.startup?.port).toBe(3080)
+  expect(empty.startup?.continueLast).toBe(false)
+  expect(empty.startup?.cwd).toBeUndefined()
+  expect(Config({ startup: { host: "127.0.0.1", port: 3080, cwd: undefined, continueLast: false } })).toEqual(empty)
+  const full = Config({
+    startup: { host: "127.0.0.1", port: 0, cwd: "/ws", continueLast: true },
+  })
+  expect(full.startup).toEqual({ host: "127.0.0.1", port: 0, cwd: "/ws", continueLast: true })
+})
+
+test("tui-runner Config schema rejects invalid types", () => {
+  const invalid = (value: unknown) => () => Config(value as Parameters<typeof Config>[0])
+  expect(invalid({ startup: { port: "not-a-number" } })).toThrow()
+  expect(invalid({ startup: { host: 7 } })).toThrow()
 })

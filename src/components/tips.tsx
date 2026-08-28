@@ -3,7 +3,7 @@ import { theme } from "../theme"
 
 const TIPS = [
   "输入 / 可以查看命令",
-  "支持多行输入，Enter 发送",
+  "Enter 发送，Ctrl+Enter 换行",
   "Ctrl+C 随时退出",
   "后续将接入会话、模型与工作区",
 ]
