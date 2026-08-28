@@ -152,9 +152,8 @@ function Segs({ segs, base }: { segs: InlineSeg[]; base?: Partial<InlineSeg> }) 
           <span
             style={{
               // Inline code (commands, filenames, paths) gets an emphasis
-              // color instead of blending into the surrounding text.
+              // color without a background block.
               fg: merged.code ? theme.warning : merged.fg,
-              bg: merged.code ? theme.backgroundElement : undefined,
               bold: merged.bold,
               italic: merged.italic,
               strikethrough: merged.strike,

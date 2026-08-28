@@ -1,5 +1,7 @@
 import { createEffect, createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js"
 import { appendFileSync } from "node:fs"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
 import { RGBA } from "@opentui/core"
 import type { TextareaRenderable } from "@opentui/core"
 import { useKeyboard, useTerminalDimensions } from "@opentui/solid"
@@ -13,6 +15,7 @@ const PROMPT_PLACEHOLDER = "给智能体发消息"
 const MAX_MENU_ROWS = 10
 const MAX_RESULT_ROWS = 12
 const HISTORY_LIMIT = 100
+const KEY_LOG = join(tmpdir(), "dsh-cli-keys.log")
 
 /** Sent plain-text messages, for ↑/↓ recall like a shell history. */
 const SEND_HISTORY: string[] = []
@@ -377,7 +380,7 @@ export function Prompt(props: {
       console.error(debugLine.trim())
     }
     try {
-      appendFileSync("/tmp/dsh-cli-keys.log", debugLine)
+      appendFileSync(KEY_LOG, debugLine)
     } catch {
       // debug aid only; never fail on logging
     }
