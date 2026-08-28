@@ -5,10 +5,10 @@ import { isDown, isEnter, isUp } from "./key-match"
 import { theme } from "../theme"
 
 /**
- * Startup gate shown before the home screen on every launch. The user is
- * reminded what DeepSeek Harness can do with the current workspace; the home
- * directory and filesystem roots get a red high-risk warning. Trust is
- * per-session only ("仅本次信任") — nothing is persisted.
+ * Startup gate shown before the home screen. Normal directories are remembered
+ * after the first confirmation (next launch in the same directory skips the
+ * gate); the home directory and filesystem roots get a red high-risk warning
+ * on every launch and trust is per-session only.
  */
 export function DirectoryRiskModal(props: {
   open: () => boolean
@@ -50,6 +50,7 @@ export function DirectoryRiskModal(props: {
       </text>
     </box>
   )
+  const trustLabel = props.highRisk ? "我了解风险，仅本次信任" : "信任此工作目录（记住）"
 
   return (
     <Show when={props.open()}>
@@ -85,6 +86,8 @@ export function DirectoryRiskModal(props: {
                 你即将在此目录中启动 DeepSeek Harness：{props.dir}
                 {"\n"}
                 Harness 将能够读取、修改该目录及其子目录中的文件，并执行命令。请确认你信任此工作目录。
+                {"\n"}
+                确认后，后续在本目录启动将不再提示风险。
               </text>
             }
           >
@@ -101,7 +104,7 @@ export function DirectoryRiskModal(props: {
           </Show>
           <box marginTop={1} marginBottom={1} flexDirection="column">
             {option(0, "退出（推荐）")}
-            {option(1, "我了解风险，仅本次信任")}
+            {option(1, trustLabel)}
           </box>
           <text fg={theme.textMuted}>↑/↓ 选择 · Enter 确认 · Esc 退出</text>
         </box>

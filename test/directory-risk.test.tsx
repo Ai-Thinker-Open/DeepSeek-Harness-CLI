@@ -50,7 +50,9 @@ test("startup shows the directory confirmation before the home screen", async ()
   expect(frame).toContain("目录确认")
   expect(frame).toContain("/tmp/risk-ws-start")
   expect(frame).toContain("退出（推荐）")
-  expect(frame).toContain("我了解风险，仅本次信任")
+  expect(frame).toContain("信任此工作目录（记住）")
+  // The gate blocks the home screen: it must not render underneath.
+  expect(frame).not.toContain("DeepSeek Harness CLI")
 
   // Select "我了解风险，仅本次信任" and confirm: the gate closes and the
   // normal startup (home screen) takes over.
@@ -72,6 +74,7 @@ test("home directory shows the red high-risk warning", async () => {
   expect(frame).toContain("目录风险警告")
   expect(frame).toContain("SSH 密钥")
   expect(frame).toContain("恶意插件")
+  expect(frame).not.toContain("DeepSeek Harness CLI")
 })
 
 test("escape exits instead of proceeding", async () => {

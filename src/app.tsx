@@ -79,9 +79,20 @@ export function App(
   const [skills, setSkills] = createSignal<SkillEntry[]>([])
   const [mcpTools, setMcpTools] = createSignal<McpToolEntry[]>([])
   const [apiKeyOpen, setApiKeyOpen] = createSignal(false)
-  const [riskOpen, setRiskOpen] = createSignal(false)
-  const [riskDir, setRiskDir] = createSignal("")
-  const [riskHigh, setRiskHigh] = createSignal(false)
+  // The risk decision is taken synchronously before the first frame: the
+  // directory confirmation blocks the home/session screens until the user
+  // decides, instead of appearing as an overlay on top of the home screen.
+  const initialRisk = (() => {
+    if (process.env.DSH_SKIP_RISK_CONFIRM === "1") return null
+    const dir = effectiveWorkspace()
+    const high = isHighRiskDirectory(dir)
+    return high || !workspaceConfirmed(dir) ? { dir, high } : null
+  })()
+  const [riskOpen, setRiskOpen] = createSignal(initialRisk !== null)
+  const [riskDir, setRiskDir] = createSignal(initialRisk?.dir ?? "")
+  const [riskHigh, setRiskHigh] = createSignal(initialRisk?.high ?? false)
+  /** Home/session screens render only after the risk gate closes. */
+  const [started, setStarted] = createSignal(initialRisk === null)
   const [updateOpen, setUpdateOpen] = createSignal(false)
   const [updateInfo, setUpdateInfo] = createSignal("")
   const session = createHarnessSession(props.client, undefined, { minToolRunningMs: props.minToolRunningMs })
@@ -141,24 +152,10 @@ export function App(
     })()
   }
 
-  /** Risk gate: every launch asks about the current workspace. */
-  const openRiskGate = () => {
-    if (process.env.DSH_SKIP_RISK_CONFIRM === "1") {
-      continueStartup()
-      return
-    }
-    const dir = effectiveWorkspace()
-    const high = isHighRiskDirectory(dir)
-    setRiskDir(dir)
-    setRiskHigh(high)
-    // Home/root warn on every launch; other directories only the first time.
-    if (high || !workspaceConfirmed(dir)) setRiskOpen(true)
-    else continueStartup()
-  }
-
   const handleRiskProceed = () => {
     if (!riskHigh()) markWorkspaceConfirmed(riskDir())
     setRiskOpen(false)
+    setStarted(true)
     continueStartup()
   }
 
@@ -187,7 +184,11 @@ export function App(
       update(updateInfo())
       return
     }
-    openRiskGate()
+    // The risk gate is already on screen (decided synchronously at startup):
+    // let the user answer it; the home screen follows afterwards.
+    if (riskOpen()) return
+    setStarted(true)
+    continueStartup()
   }
 
   onMount(() => {
@@ -201,7 +202,11 @@ export function App(
           return
         }
       }
-      openRiskGate()
+      // Risk gate first (computed synchronously at startup): home/session
+      // render only after the user confirms the workspace.
+      if (riskOpen()) return
+      setStarted(true)
+      continueStartup()
     })()
   })
 
@@ -466,63 +471,65 @@ export function App(
 
   return (
     <box position="relative" width="100%" height="100%">
-      <Show when={screen() === "home"}>
-        <box position="absolute" left={0} top={0} width="100%" height="100%">
-          <Home
+      <Show when={started()}>
+        <Show when={screen() === "home"}>
+          <box position="absolute" left={0} top={0} width="100%" height="100%">
+            <Home
+              mode={mode}
+              model={session.modelName}
+              toast={toast}
+              onSubmit={handleSubmit}
+              commandItems={commandItems}
+              onCommand={runCommand}
+              onCommandPopupOpen={handleCommandOpen}
+              commandsLoading={session.commandsLoading}
+              resultOverride={resultOverride}
+              planMode={session.planMode}
+              planPending={session.planPending}
+              motion
+              active={() => true}
+            />
+          </box>
+        </Show>
+        <box
+          position="absolute"
+          left={0}
+          top={0}
+          width="100%"
+          height="100%"
+          visible={screen() === "session"}
+        >
+          <SessionScreen
+            messages={session.messages}
             mode={mode}
             model={session.modelName}
             toast={toast}
-            onSubmit={handleSubmit}
+            stats={session.stats}
+            statusText={session.statusText}
+            busy={session.busy}
+            planMode={session.planMode}
+            planPending={session.planPending}
+            question={session.question}
+            onSend={handleSubmit}
+            onCancel={() => {
+              void session.abort()
+              showToast("已取消当前执行")
+            }}
+            onQuestion={session.answer}
+            onQuestionMany={(ids) => void session.answerPermission(ids)}
+            onApproval={(outcome) => void session.answerApproval(outcome)}
+            onApprovalAllowSession={() => void session.answerApprovalAllowSession()}
             commandItems={commandItems}
             onCommand={runCommand}
             onCommandPopupOpen={handleCommandOpen}
             commandsLoading={session.commandsLoading}
             resultOverride={resultOverride}
-            planMode={session.planMode}
-            planPending={session.planPending}
-            motion
-            active={() => true}
+            queue={session.queue}
+            onQueueAction={(itemId, action) => void session.updateQueueItem(itemId, action)}
+            active={() => screen() === "session"}
           />
         </box>
       </Show>
-      <box
-        position="absolute"
-        left={0}
-        top={0}
-        width="100%"
-        height="100%"
-        visible={screen() === "session"}
-      >
-        <SessionScreen
-          messages={session.messages}
-          mode={mode}
-          model={session.modelName}
-          toast={toast}
-          stats={session.stats}
-          statusText={session.statusText}
-          busy={session.busy}
-          planMode={session.planMode}
-          planPending={session.planPending}
-          question={session.question}
-          onSend={handleSubmit}
-          onCancel={() => {
-            void session.abort()
-            showToast("已取消当前执行")
-          }}
-          onQuestion={session.answer}
-          onQuestionMany={(ids) => void session.answerPermission(ids)}
-          onApproval={(outcome) => void session.answerApproval(outcome)}
-          onApprovalAllowSession={() => void session.answerApprovalAllowSession()}
-          commandItems={commandItems}
-          onCommand={runCommand}
-          onCommandPopupOpen={handleCommandOpen}
-          commandsLoading={session.commandsLoading}
-          resultOverride={resultOverride}
-          queue={session.queue}
-          onQueueAction={(itemId, action) => void session.updateQueueItem(itemId, action)}
-          active={() => screen() === "session"}
-        />
-      </box>
       <ApiKeyModal
         open={apiKeyOpen}
         onSave={(value) => session.saveApiKey(value)}
