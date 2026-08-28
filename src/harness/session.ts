@@ -1050,7 +1050,9 @@ export function createHarnessSession(
     setStatusText(DEEP_DIVING_STATUS)
     promptSentAt = Date.now()
     try {
-      const res = await client.prompt(sessionId as string, text)
+      // Deliver at the next step boundary (after the current action finishes),
+      // matching Codex: "queue" would wait for the whole turn to end.
+      const res = await client.prompt(sessionId as string, text, "steer")
       if (!res.accepted) {
         rollbackLastUserMessage()
         setBusy(false)
