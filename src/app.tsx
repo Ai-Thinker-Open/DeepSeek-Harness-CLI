@@ -1,5 +1,7 @@
 import { Show, createEffect, createSignal, onCleanup, onMount } from "solid-js"
 import { spawn } from "node:child_process"
+import { readFileSync, writeFileSync } from "node:fs"
+import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { useKeyboard, useRenderer, useSelectionHandler } from "@opentui/solid"
@@ -95,6 +97,8 @@ export function App(
   const [started, setStarted] = createSignal(initialRisk === null)
   const [updateOpen, setUpdateOpen] = createSignal(false)
   const [updateInfo, setUpdateInfo] = createSignal("")
+  const [updatePhase, setUpdatePhase] = createSignal<"ask" | "running" | "done" | "failed">("ask")
+  const [updateStatus, setUpdateStatus] = createSignal("")
   const session = createHarnessSession(props.client, undefined, { minToolRunningMs: props.minToolRunningMs })
   let toastTimer: ReturnType<typeof setTimeout> | undefined
   let startupRan = false
@@ -161,18 +165,69 @@ export function App(
 
   const exit = props.onExit ?? (() => process.exit(0))
 
-  /** Spawn the detached updater, then tear the TUI down so the install can
-   *  replace the running package (Windows locks opentui.dll while alive). */
+  /** Run the update in place: the updater stages the new package while the
+   *  TUI shows progress (read from a status file), then the TUI exits briefly
+   *  so npm can replace the locked native library, and the updater relaunches
+   *  dsh-cli in the same terminal. */
   const runSelfUpdate = (latest: string) => {
-    try {
-      const script = join(dirname(fileURLToPath(import.meta.url)), "..", "scripts", "self-update.mjs")
-      spawn(process.execPath, [script, `${UPDATE_PKG}@${latest}`, "dsh-cli"], {
-        stdio: "inherit",
-      }).unref()
-    } catch {
-      // The updater could not start; the user can run npm install manually.
+    const statusPath = join(tmpdir(), `dsh-cli-update-${process.pid}.json`)
+    const script = join(dirname(fileURLToPath(import.meta.url)), "..", "scripts", "self-update.mjs")
+    setUpdatePhase("running")
+    setUpdateStatus("正在准备更新…")
+    let polling: ReturnType<typeof setInterval> | undefined
+    const stopPolling = () => {
+      if (polling) clearInterval(polling)
+      polling = undefined
     }
-    exit()
+    const readStatus = (): { stage?: string; message?: string } | null => {
+      try {
+        return JSON.parse(readFileSync(statusPath, "utf8")) as { stage?: string; message?: string }
+      } catch {
+        return null
+      }
+    }
+    const finalize = (phase: "running" | "done" | "failed", message: string) => {
+      stopPolling()
+      setUpdatePhase(phase)
+      setUpdateStatus(message)
+    }
+    polling = setInterval(() => {
+      const status = readStatus()
+      if (!status?.stage) return
+      if (status.stage === "done") {
+        finalize("done", status.message ?? "更新完成，正在重启…")
+        // Let the user see the completion notice, then release the renderer
+        // so the updater can replace the locked native library and restart.
+        setTimeout(() => {
+          try {
+            writeFileSync(`${statusPath}.exit`, "1")
+          } catch {
+            // The updater falls back to a fixed wait.
+          }
+          exit()
+        }, 900)
+      } else if (status.stage === "failed") {
+        finalize("failed", status.message ?? "更新失败")
+      } else {
+        setUpdateStatus(status.message ?? status.stage)
+      }
+    }, 300)
+    try {
+      const child = spawn(process.execPath, [script, `${UPDATE_PKG}@${latest}`, "dsh-cli"], {
+        stdio: "inherit",
+        env: { ...process.env, DSH_UPDATE_STATUS: statusPath },
+      })
+      child.unref()
+      // A clean exit without a "done" status means staging failed; the
+      // updater already wrote the failure message for the polling loop.
+      child.on("exit", (code) => {
+        if (readStatus()?.stage !== "done" && updatePhase() === "running") {
+          finalize("failed", readStatus()?.message ?? `更新进程异常退出（${code ?? "?"}）`)
+        }
+      })
+    } catch {
+      finalize("failed", "无法启动更新进程")
+    }
   }
 
   const update = props.onUpdate ?? runSelfUpdate
@@ -545,6 +600,8 @@ export function App(
         open={updateOpen}
         current={pkg.version}
         latest={updateInfo()}
+        phase={updatePhase}
+        status={updateStatus}
         onUpdate={() => handleUpdateDone(true)}
         onSkip={() => handleUpdateDone(false)}
       />
