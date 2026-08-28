@@ -32,6 +32,10 @@ const pendingApprovals = new Map() // rpcId -> { resolve, sessionId, approvalId 
 const cancelledSessions = new Map() // sessionId -> true while the turn is being cancelled
 const credentials = new Map()
 if (process.env.MOCK_API_KEY) credentials.set("DEEPSEEK_API_KEY", process.env.MOCK_API_KEY)
+// The active session model, switched via `session.selectModel`; surfaced in
+// `host.describe` and in every assistant turn so /model switching is
+// observable end to end.
+const selectedModel = { provider: "deepseek", model: "deepseek-v4" }
 
 function emit(method, payload) {
   const frame = JSON.stringify({ type: "server-request", rpcId: `mux-${++seq}`, method, payload })
@@ -196,6 +200,7 @@ async function runTurn(sessionId, text, firstTurn) {
     })
   }
   emitEvent(sessionId, { type: "turn/start", seq: nextSeq(), time: now(), data: { turn } })
+  console.log(`[dsh-mock] turn ${turn} model=${selectedModel.provider}/${selectedModel.model}`)
   emitEvent(sessionId, {
     type: "user/message",
     seq: nextSeq(),
@@ -203,6 +208,12 @@ async function runTurn(sessionId, text, firstTurn) {
     data: { id: `um-${turn}`, content: [{ type: "text", text }], source: { kind: "user" } },
   })
   emitEvent(sessionId, { type: "step/start", seq: nextSeq(), time: now(), data: { turn, step: 1 } })
+  emitEvent(sessionId, {
+    type: "assistant/chunk",
+    seq: nextSeq(),
+    time: now(),
+    data: { turn, step: 1, chunk: { type: "text-delta", text: `[当前模型：${selectedModel.model}]\n` } },
+  })
 
   const reasoning = ["让我先分析一下这个问题，", "然后我会调用工具来确认结果。"]
   for (const part of reasoning) {
@@ -394,7 +405,16 @@ async function handleRpc(req) {
 
   switch (method) {
     case "host.describe":
-      return respond(ok({ version: "mock", cwd: process.cwd(), provider: "deepseek", model: MODEL, attachedSessions: sessions.size, canOpenPath: true }))
+      return respond(
+        ok({
+          version: "mock",
+          cwd: process.cwd(),
+          provider: selectedModel.provider,
+          model: selectedModel.model,
+          attachedSessions: sessions.size,
+          canOpenPath: true,
+        }),
+      )
     case "credentials.describe": {
       const refs = Array.isArray(payload.refs) ? payload.refs : []
       const views = Object.fromEntries(
@@ -479,7 +499,9 @@ async function handleRpc(req) {
         }),
       )
     case "session.selectModel":
-      console.log(`[dsh-mock] selectModel provider=${payload.provider} model=${payload.model}`)
+      selectedModel.provider = String(payload.provider ?? "deepseek")
+      selectedModel.model = String(payload.model ?? "deepseek-v4")
+      console.log(`[dsh-mock] selectModel provider=${selectedModel.provider} model=${selectedModel.model}`)
       return respond(ok({ selected: { provider: payload.provider, model: payload.model } }))
     case "skill.list":
       return respond(ok({ skills: [] }))
