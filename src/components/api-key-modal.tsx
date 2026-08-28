@@ -80,7 +80,7 @@ export function ApiKeyModal(props: {
         <box
           width={72}
           border
-          borderColor={theme.accent}
+          borderColor={theme.border}
           backgroundColor={theme.backgroundPanel}
           paddingLeft={2}
           paddingRight={2}
@@ -88,9 +88,7 @@ export function ApiKeyModal(props: {
           paddingBottom={1}
           flexDirection="column"
         >
-          <text fg={theme.accent}>
-            <b>🔑 DeepSeek API Key</b>
-          </text>
+          <text fg={theme.text}>DeepSeek API Key</text>
           <text fg={theme.text} wrapMode="char">
             未检测到 DEEPSEEK_API_KEY，请输入你的 DeepSeek API Key 以继续。
           </text>

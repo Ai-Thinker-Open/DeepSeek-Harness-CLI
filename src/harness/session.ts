@@ -1511,7 +1511,25 @@ export function createHarnessSession(
   async function abort(): Promise<void> {
     if (sessionId) {
       try {
+        const pending = [...pendingUserMessages.entries()]
         await client.cancel(sessionId)
+        // The harness's default cancel discards the inbox (pending/steering
+        // messages), which would leave the dock showing items that can no
+        // longer be sent. Re-deliver the user's queued messages after the
+        // cancel so pressing Esc stops the current action without losing
+        // what was typed; they are delivered as the next step/turn.
+        if (pending.length > 0) {
+          const delivered = new Set<string>()
+          for (const [id, text] of pending) {
+            try {
+              const res = await client.prompt(sessionId, text, "steer")
+              if (res.accepted) delivered.add(id)
+            } catch {
+              // Keep the dock entry; the user can still steer or remove it.
+            }
+          }
+          for (const id of delivered) pendingUserMessages.delete(id)
+        }
       } catch {
         /* best-effort */
       }
