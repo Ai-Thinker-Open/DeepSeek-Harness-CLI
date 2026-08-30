@@ -2,6 +2,7 @@ import { createSignal } from "solid-js"
 import {
   DEEP_DIVING_STATUS,
   EMPTY_STATS,
+  type ChatImage,
   type ChatMessage,
   type HarnessQuestion,
   type SessionStats,
@@ -9,11 +10,16 @@ import {
   type ToolResultRecord,
 } from "../session"
 import {
+  DEFAULT_IMAGE_LIMITS,
   HarnessClient,
   type CommandDescriptor,
   type HarnessClientLike,
   type HistoryEntry,
+  type ImageLimits,
+  type ImageCommandImage,
   type ModelCatalog,
+  parseImageLimits,
+  type PromptContentPart,
   type QueueAction,
   type QueueItem,
   type ServerRequest,
@@ -25,6 +31,9 @@ import { harnessCwdFor, isWin32Absolute } from "./cwd"
 import {
   assistantBlocksToMessage,
   blockText,
+  contentToImages,
+  contentToUserText,
+  extractImageBlocks,
   foldHistory,
   injectSourceTitle,
   isInjectedSource,
@@ -33,6 +42,7 @@ import {
   MAX_THINKING_CHARS,
   MAX_TOOL_OUTPUT_CHARS,
   summaryFor,
+  textBlockText,
   truncateText,
   tryParseArgs,
   type Block,
@@ -59,7 +69,7 @@ export interface HarnessSessionApi {
   queue: () => QueueItem[]
   updateQueueItem: (itemId: string, action: QueueAction) => Promise<boolean>
   refreshCommands: () => Promise<void>
-  runCommand: (line: string) => Promise<{ ok: boolean; text?: string }>
+  runCommand: (line: string, images?: ImageCommandImage[]) => Promise<{ ok: boolean; text?: string }>
   /** Mirror a task message the harness already received via a command (e.g. `/plan <任务>`). */
   mirrorUserMessage: (text: string) => void
   listSessions: () => Promise<SessionSummary[]>
@@ -75,7 +85,11 @@ export interface HarnessSessionApi {
   planMode: () => boolean
   planPending: () => boolean
   start: (text: string) => Promise<boolean>
+  startContent: (content: PromptContentPart[]) => Promise<boolean>
   send: (text: string) => Promise<boolean>
+  sendContent: (content: PromptContentPart[]) => Promise<boolean>
+  /** Harness-reported image upload limits (defaults when unknown). */
+  imageLimits: () => ImageLimits
   answer: (choice: string) => Promise<void>
   answerPermission: (checkedIds: string[]) => Promise<void>
   answerApproval: (outcome: "allowed-once" | "rejected") => Promise<void>
@@ -122,6 +136,7 @@ export function createHarnessSession(
   const [commands, setCommands] = createSignal<CommandDescriptor[]>([])
   const [commandsLoading, setCommandsLoading] = createSignal(false)
   const [queue, setQueue] = createSignal<QueueItem[]>([])
+  const [imageLimits, setImageLimits] = createSignal<ImageLimits>(DEFAULT_IMAGE_LIMITS)
 
   let sessionId: string | null = null
   let listening = false
@@ -133,7 +148,9 @@ export function createHarnessSession(
   let stepStartAt: number | null = null
   /** User messages moved to the pending dock while queued (harness id → text);
    *  they re-enter the conversation when the harness echoes them. */
-  const pendingUserMessages = new Map<string, string>()
+  const pendingUserMessages = new Map<string, PromptContentPart[]>()
+  /** Resolved historical image payloads, keyed by attachment id. */
+  const attachmentDataCache = new Map<string, string>()
   let turnStepEnds = 0
   let streamTurn: string | null = null
   let promptSentAt = 0
@@ -194,15 +211,45 @@ export function createHarnessSession(
   }
   const syncStats = () => setStats({ ...statsModel })
 
-  function appendUserMessage(text: string): void {
+  function appendUserMessage(text: string, images?: ChatImage[]): void {
     model.push({
       id: `user-${++messageSeq}`,
       role: "user",
       content: text,
+      ...(images && images.length > 0 ? { images } : {}),
       createdAt: Date.now(),
     })
     syncAll()
     syncStats()
+  }
+
+  /**
+   * Resolve durable image attachments (history replay / live echoes) through
+   * `session.attachment`, caching per attachment id. Failures degrade to a
+   * placeholder chip instead of blocking the conversation.
+   */
+  async function hydrateMessageImages(targets: ChatMessage[]): Promise<void> {
+    if (!sessionId) return
+    for (const m of targets) {
+      for (const img of m.images ?? []) {
+        if (img.data || img.error || !img.attachmentId) continue
+        const cached = attachmentDataCache.get(img.attachmentId)
+        if (cached !== undefined) {
+          img.data = cached
+          touch(m)
+          continue
+        }
+        try {
+          const { data } = await client.readAttachment(sessionId, img.attachmentId)
+          attachmentDataCache.set(img.attachmentId, data)
+          img.data = data
+          touch(m)
+        } catch {
+          img.error = true
+          touch(m)
+        }
+      }
+    }
   }
 
   function rollbackLastUserMessage(): void {
@@ -324,9 +371,18 @@ export function createHarnessSession(
           // This message was pending in the dock; the agent has claimed it, so
           // it moves back into the conversation.
           pendingUserMessages.delete(data.id)
-          model.push({ id: `user-${++messageSeq}`, role: "user", content: echoText, createdAt: ev.time })
+          const images = extractImageBlocks(data.content)
+          const echo: ChatMessage = {
+            id: `user-${++messageSeq}`,
+            role: "user",
+            content: textBlockText(data.content),
+            ...(images.length > 0 ? { images } : {}),
+            createdAt: ev.time,
+          }
+          model.push(echo)
           syncAll()
           syncStats()
+          void hydrateMessageImages([echo])
         }
         // Direct user messages are appended locally on send; skip live echoes.
         break
@@ -710,17 +766,23 @@ export function createHarnessSession(
         const items = (payload.items as Array<Record<string, unknown>> | undefined) ?? []
         const queueItems = items.map((item) => {
           const message = (item.message ?? {}) as Record<string, unknown>
-          const content = (message.content ?? []) as Array<{ type?: string; text?: string }>
-          const text = content.every((b) => b.type === "text")
-            ? content.map((b) => b.text ?? "").join("")
-            : null
-          const preview = text ?? content.map((b) => (b.type === "text" ? b.text ?? "" : `[${b.type}]`)).join(" ").trim()
+          const content = (message.content ?? []) as PromptContentPart[]
+          const blocks = content as Array<{ type?: string; text?: string; name?: string }>
+          const text = blocks.every((b) => b.type === "text") ? textBlockText(blocks) : null
+          const preview =
+            text ??
+            blocks
+              .map((b) => (b.type === "text" ? b.text ?? "" : `[图片${b.name ? `: ${b.name}` : ""}]`))
+              .join(" ")
+              .trim()
           return {
             id: String(item.id ?? ""),
             messageId: String(message.id ?? ""),
             placement: (item.placement as QueueItem["placement"]) ?? "queued",
             text: text ?? null,
             preview: preview.slice(0, 200),
+            signature: contentToUserText(content),
+            contentBlocks: content,
           }
         })
         setQueue(queueItems)
@@ -728,12 +790,14 @@ export function createHarnessSession(
         // conversation: drop the locally-appended copy (the harness's
         // user/message echo re-adds it once the agent claims it).
         for (const item of queueItems) {
-          if (item.placement === "context" || item.text === null || !item.messageId) continue
-          const idx = [...model].reverse().findIndex((m) => m.role === "user" && !m.inject && m.content === item.text)
+          if (item.placement === "context" || !item.messageId || !item.signature) continue
+          const idx = [...model].reverse().findIndex((m) => m.role === "user" && !m.inject && m.content === item.signature)
           if (idx !== -1) {
             const real = model.length - 1 - idx
             model.splice(real, 1)
-            pendingUserMessages.set(item.messageId, item.text)
+            if (item.contentBlocks && item.contentBlocks.length > 0) {
+              pendingUserMessages.set(item.messageId, item.contentBlocks)
+            }
             syncAll()
             syncStats()
           }
@@ -851,6 +915,7 @@ export function createHarnessSession(
     try {
       const { events, projections } = await client.history(sessionId)
       applyPlanProjection(projections)
+      applyImageLimitsProjection(projections)
       applyHistoryStats(projections, events)
       const fresh = foldHistory(events.map((e) => e.event))
       if (fresh.length === 0) return
@@ -863,6 +928,7 @@ export function createHarnessSession(
         setStatusText("")
       }
       syncAll()
+      void hydrateMessageImages(fresh)
     } catch {
       // Keep the live view; the reconnect loop keeps trying.
     }
@@ -907,9 +973,13 @@ export function createHarnessSession(
     listening = false
   }
 
-  async function start(text: string): Promise<boolean> {
+  function start(text: string): Promise<boolean> {
+    return startContent([{ type: "text", text }])
+  }
+
+  async function startContent(content: PromptContentPart[]): Promise<boolean> {
     if (!(await ensureSession())) return false
-    return sendToSession(text)
+    return sendToSession(content)
   }
 
   /** Create the session if it does not exist yet (no prompt is sent). */
@@ -946,6 +1016,7 @@ export function createHarnessSession(
         seededHistory.delete(target)
         applyHistoryStats(seed.projections, seed.events)
         applyPlanProjection(seed.projections)
+        applyImageLimitsProjection(seed.projections)
         const fresh = foldHistory(seed.events.map((e) => e.event))
         if (fresh.length > 0) {
           model = fresh
@@ -954,6 +1025,7 @@ export function createHarnessSession(
           setBusy(false)
           setStatusText("")
           syncAll()
+          void hydrateMessageImages(fresh)
         }
       }
       // Probe the harness platform so a Windows client can translate its
@@ -1039,20 +1111,25 @@ export function createHarnessSession(
     }
   }
 
-  async function send(text: string): Promise<boolean> {
+  function send(text: string): Promise<boolean> {
     if (!sessionId) return start(text)
-    return sendToSession(text)
+    return sendToSession([{ type: "text", text }])
   }
 
-  async function sendToSession(text: string): Promise<boolean> {
-    appendUserMessage(text)
+  function sendContent(content: PromptContentPart[]): Promise<boolean> {
+    if (!sessionId) return startContent(content)
+    return sendToSession(content)
+  }
+
+  async function sendToSession(content: PromptContentPart[]): Promise<boolean> {
+    appendUserMessage(contentToUserText(content), contentToImages(content))
     setBusy(true)
     setStatusText(DEEP_DIVING_STATUS)
     promptSentAt = Date.now()
     try {
       // Deliver at the next step boundary (after the current action finishes),
       // matching Codex: "queue" would wait for the whole turn to end.
-      const res = await client.prompt(sessionId as string, text, "steer")
+      const res = await client.prompt(sessionId as string, content, "steer")
       if (!res.accepted) {
         rollbackLastUserMessage()
         setBusy(false)
@@ -1093,10 +1170,10 @@ export function createHarnessSession(
   }
 
   /** Execute a host slash-command line; the lifecycle renders via events. */
-  async function runCommand(line: string): Promise<{ ok: boolean; text?: string }> {
+  async function runCommand(line: string, images: ImageCommandImage[] = []): Promise<{ ok: boolean; text?: string }> {
     if (!sessionId) return { ok: false, text: "请先开始一个会话（发一条消息），再使用该命令" }
     try {
-      const execution = await client.commandExecute(sessionId, line)
+      const execution = await client.commandExecute(sessionId, line, images)
       if (!execution) {
         // The commands service exists but this command is not registered
         // (e.g. the plan-mode plugin is missing) — degrade /plan instead of
@@ -1286,10 +1363,16 @@ export function createHarnessSession(
     try {
       const { projections } = await client.history(sessionId, 1)
       applyPlanProjection(projections)
+      applyImageLimitsProjection(projections)
     } catch {
       // The projection seam may be absent on old harnesses; the badge simply
       // stays hidden and the live `plan/mode` event path remains available.
     }
+  }
+
+  /** Restore the harness-reported `imageLimits` projection on resume/resync. */
+  function applyImageLimitsProjection(projections: Record<string, unknown> | undefined): void {
+    setImageLimits(parseImageLimits(projections))
   }
 
   /**
@@ -1307,9 +1390,12 @@ export function createHarnessSession(
     const unavailable =
       "harness 未启用 commands 服务，无法真正切换计划模式（升级 harness 或加载命令插件后 /plan 才会直接生效）"
     if (args === "off") {
-      const sent = await sendToSession(
-        "请退出计划模式：如果已生成计划，请通过 exit_plan_mode 提交审批；否则直接退出计划模式。如果当前不在计划模式，请忽略本条。",
-      )
+      const sent = await sendToSession([
+        {
+          type: "text",
+          text: "请退出计划模式：如果已生成计划，请通过 exit_plan_mode 提交审批；否则直接退出计划模式。如果当前不在计划模式，请忽略本条。",
+        },
+      ])
       return sent
         ? { ok: true, text: `${unavailable}；已请模型退出计划模式（通过 exit_plan_mode 提交审批）。` }
         : { ok: false, text: `${unavailable}，且退出消息发送失败，请检查 harness 连接` }
@@ -1317,9 +1403,12 @@ export function createHarnessSession(
     // Bare /plan and /plan <任务> both ask the agent to plan first; a task
     // rides along as the next message, mirroring the host command's flow.
     const task = args ? `\n\n任务：${args}` : ""
-    const sent = await sendToSession(
-      `请从下一步开始按计划模式执行：先只读探查，给出完整的实施计划（含具体改动），等我批准后再修改代码或执行命令。${task}`,
-    )
+    const sent = await sendToSession([
+      {
+        type: "text",
+        text: `请从下一步开始按计划模式执行：先只读探查，给出完整的实施计划（含具体改动），等我批准后再修改代码或执行命令。${task}`,
+      },
+    ])
     return sent
       ? {
           ok: true,
@@ -1520,9 +1609,9 @@ export function createHarnessSession(
         // what was typed; they are delivered as the next step/turn.
         if (pending.length > 0) {
           const delivered = new Set<string>()
-          for (const [id, text] of pending) {
+          for (const [id, content] of pending) {
             try {
-              const res = await client.prompt(sessionId, text, "steer")
+              const res = await client.prompt(sessionId, content, "steer")
               if (res.accepted) delivered.add(id)
             } catch {
               // Keep the dock entry; the user can still steer or remove it.
@@ -1564,7 +1653,10 @@ export function createHarnessSession(
     planMode,
     planPending,
     start,
+    startContent,
     send,
+    sendContent,
+    imageLimits,
     answer,
     answerPermission,
     answerApproval,

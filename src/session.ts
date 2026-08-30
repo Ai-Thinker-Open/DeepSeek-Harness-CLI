@@ -2,6 +2,8 @@ export type ChatMessage = {
   id: string
   role: "user" | "assistant"
   content: string
+  /** Image attachments carried by a user message (base64 data when loaded). */
+  images?: ChatImage[]
   /** Harness turn this message belongs to (assistant messages). */
   turn?: number
   /** Streaming reasoning content (deepseek-reasoner), shown in a thinking block. */
@@ -28,6 +30,20 @@ export type ChatMessage = {
   /** Error state. */
   error?: string
   createdAt: number
+}
+
+/** One image in a user message: inline wire data or a durable attachment ref. */
+export interface ChatImage {
+  attachmentId?: string
+  mediaType: string
+  /** Canonical base64 payload (no `data:` prefix); absent until fetched. */
+  data?: string
+  name?: string
+  bytes?: number
+  width?: number
+  height?: number
+  /** True when `session.attachment` failed to resolve this image. */
+  error?: boolean
 }
 
 /** Status shown while the harness is deep-diving (reasoning) over a turn. */

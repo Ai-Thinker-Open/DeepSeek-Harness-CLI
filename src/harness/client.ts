@@ -125,6 +125,83 @@ export interface QueueItem {
   placement: "queued" | "steering" | "context"
   text: string | null
   preview: string
+  /** Canonical prompt text used to match a locally-appended optimistic copy. */
+  signature?: string
+  /** Wire content blocks (text + image) for re-delivery after a cancel. */
+  contentBlocks?: PromptContentPart[]
+}
+
+/** Raster image media types accepted by the harness browser wire. */
+export type ImageMediaType = "image/png" | "image/jpeg" | "image/webp" | "image/gif"
+
+/** One image part in a prompt content list (`data` is canonical base64). */
+export interface ImageContentPart {
+  type: "image"
+  mediaType: ImageMediaType
+  data: string
+  name?: string
+}
+
+/** One item of a session prompt content list. */
+export type PromptContentPart = { type: "text"; text: string } | ImageContentPart
+
+/** Image wire shape for `commands/execute` (same as an image block minus type). */
+export interface ImageCommandImage {
+  mediaType: ImageMediaType
+  data: string
+  name?: string
+}
+
+/** Durable image reference used by history events (`session.attachment`). */
+export interface ImageAttachmentRef {
+  attachmentId: string
+  mediaType: ImageMediaType
+  bytes: number
+  width: number
+  height: number
+  name?: string
+}
+
+/** Client-side mirror of the harness `imageLimits` projection. */
+export interface ImageLimits {
+  maxImageBytes: number
+  maxImagesPerMessage: number
+  maxMessageImageBytes: number
+  maxImagePixels: number
+  maxImageDimension: number
+  mediaTypes: ImageMediaType[]
+}
+
+/** Defaults matching `dsh-client-connection`'s projection (used when the
+ *  harness does not report `imageLimits`). */
+export const DEFAULT_IMAGE_LIMITS: ImageLimits = {
+  maxImageBytes: 5 * 1024 * 1024,
+  maxImagesPerMessage: 20,
+  maxMessageImageBytes: 100 * 1024 * 1024,
+  maxImagePixels: 40_000_000,
+  maxImageDimension: 2000,
+  mediaTypes: ["image/png", "image/jpeg", "image/webp", "image/gif"],
+}
+
+/** Parse the harness `imageLimits` projection (tolerant of shape drift). */
+export function parseImageLimits(projections: Record<string, unknown> | undefined): ImageLimits {
+  const values = (projections?.values ?? projections) as Record<string, unknown> | undefined
+  const raw = values?.["imageLimits"] as Partial<ImageLimits> | undefined
+  if (!raw || typeof raw !== "object") return DEFAULT_IMAGE_LIMITS
+  const num = (v: unknown, fallback: number): number => (typeof v === "number" && Number.isFinite(v) && v > 0 ? v : fallback)
+  const media = Array.isArray(raw.mediaTypes)
+    ? (raw.mediaTypes as string[]).filter((m): m is ImageMediaType =>
+        m === "image/png" || m === "image/jpeg" || m === "image/webp" || m === "image/gif",
+      )
+    : DEFAULT_IMAGE_LIMITS.mediaTypes
+  return {
+    maxImageBytes: num(raw.maxImageBytes, DEFAULT_IMAGE_LIMITS.maxImageBytes),
+    maxImagesPerMessage: num(raw.maxImagesPerMessage, DEFAULT_IMAGE_LIMITS.maxImagesPerMessage),
+    maxMessageImageBytes: num(raw.maxMessageImageBytes, DEFAULT_IMAGE_LIMITS.maxMessageImageBytes),
+    maxImagePixels: num(raw.maxImagePixels, DEFAULT_IMAGE_LIMITS.maxImagePixels),
+    maxImageDimension: num(raw.maxImageDimension, DEFAULT_IMAGE_LIMITS.maxImageDimension),
+    mediaTypes: media.length > 0 ? media : DEFAULT_IMAGE_LIMITS.mediaTypes,
+  }
 }
 
 /** One mutation accepted by the session queue verb. */
@@ -147,19 +224,20 @@ export interface QuestionItem {
 export interface HarnessClientLike {
   describe(): Promise<HostDescribe>
   createSession(cwd?: string, agentPreset?: string, sessionId?: string): Promise<{ sessionId: string; agentPreset?: string }>
-  prompt(sessionId: string, text: string, mode?: "queue" | "steer"): Promise<{ accepted: boolean }>
+  prompt(sessionId: string, content: PromptContentPart[], mode?: "queue" | "steer"): Promise<{ accepted: boolean }>
   cancel(sessionId: string): Promise<{ accepted: boolean }>
   respond(rpcIdToAnswer: string, sessionId: string, answers: Array<{ id: string; selected: string[] }>): Promise<void>
   respondApproval(rpcIdToAnswer: string, sessionId: string, approvalId: string, outcome: "allowed-once" | "rejected"): Promise<void>
   history(sessionId: string, maxMessages?: number): Promise<{ events: HistoryEntry[]; hasMore: boolean; projections?: Record<string, unknown> }>
   listSessions(): Promise<{ items: SessionSummary[] }>
   commandList(sessionId: string): Promise<CommandDescriptor[]>
-  commandExecute(sessionId: string, line: string): Promise<CommandExecutionResult | undefined>
+  commandExecute(sessionId: string, line: string, images?: ImageCommandImage[]): Promise<CommandExecutionResult | undefined>
   listModels(sessionId: string): Promise<ModelCatalog>
   selectModel(sessionId: string, provider: string, model: string, reasoningEffort?: string): Promise<{ selected: ModelCatalog["current"] }>
   renameSession(sessionId: string, title: string): Promise<{ title: string }>
   forkSession(sessionId: string): Promise<{ sessionId: string }>
   skillList(sessionId: string): Promise<{ skills: SkillEntry[] }>
+  readAttachment(sessionId: string, attachmentId: string): Promise<{ attachment: ImageAttachmentRef; data: string }>
   updateQueue(sessionId: string, itemId: string, action: QueueAction): Promise<{ accepted: boolean }>
   credentialsDescribe(refs: string[]): Promise<Record<string, CredentialView>>
   credentialsSet(ref: string, value: string): Promise<void>
@@ -266,13 +344,18 @@ export class HarnessClient implements HarnessClientLike {
     })
   }
 
-  prompt(sessionId: string, text: string, mode: "queue" | "steer" = "queue"): Promise<{ accepted: boolean }> {
+  prompt(sessionId: string, content: PromptContentPart[], mode: "queue" | "steer" = "queue"): Promise<{ accepted: boolean }> {
     return this.call("session.prompt", {
       sessionId,
       mode,
-      content: [{ type: "text", text }],
+      content,
       clientTimeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
     })
+  }
+
+  /** Fetch a session-authorized historical image (base64 `data`). */
+  readAttachment(sessionId: string, attachmentId: string): Promise<{ attachment: ImageAttachmentRef; data: string }> {
+    return this.call("session.attachment", { sessionId, attachmentId })
   }
 
   cancel(sessionId: string): Promise<{ accepted: boolean }> {
@@ -340,10 +423,14 @@ export class HarnessClient implements HarnessClientLike {
    * Execute a slash-command line against the session's agent. Returns the
    * settled execution, or undefined when the line does not resolve.
    */
-  async commandExecute(sessionId: string, line: string): Promise<CommandExecutionResult | undefined> {
+  async commandExecute(
+    sessionId: string,
+    line: string,
+    images: ImageCommandImage[] = [],
+  ): Promise<CommandExecutionResult | undefined> {
     // Newer harnesses require `images` (composer attachments, empty for a
     // plain invocation) alongside agentId/line.
-    const args = { agentId: sessionId, line, images: [] as unknown[] }
+    const args = { agentId: sessionId, line, images }
     try {
       return await this.call<CommandExecutionResult | undefined>("commands/execute", { args })
     } catch (e) {

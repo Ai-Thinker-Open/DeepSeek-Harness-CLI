@@ -6,12 +6,13 @@ import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { useKeyboard, useRenderer, useSelectionHandler } from "@opentui/solid"
 import { copySelection } from "./clipboard"
+import { disposeHostClipboard } from "./images"
 import { Toast, type ToastMessage } from "./components/toast"
 import { ApiKeyModal } from "./components/api-key-modal"
 import { DirectoryRiskModal } from "./components/directory-risk-modal"
 import { UpdateModal } from "./components/update-modal"
 import { createHarnessSession } from "./harness/session"
-import type { HarnessClientLike, ModelCatalog } from "./harness/client"
+import type { HarnessClientLike, ImageCommandImage, ModelCatalog, PromptContentPart } from "./harness/client"
 import { listMcpTools, refreshMcpStatus, type McpToolEntry } from "./mcp"
 import { effectiveWorkspace, isHighRiskDirectory, markWorkspaceConfirmed, workspaceConfirmed } from "./directory-risk"
 import { UPDATE_PKG, checkForUpdate } from "./update"
@@ -114,6 +115,7 @@ export function App(
   onCleanup(() => {
     if (toastTimer) clearTimeout(toastTimer)
     session.dispose()
+    void disposeHostClipboard()
   })
 
   // Startup gate: prompt for a missing DeepSeek API key, then run the
@@ -287,16 +289,21 @@ export function App(
     }
   })
 
-  const handleSubmit = async (text: string) => {
-    const trimmed = text.trim()
-    if (!trimmed) return
+  const handleSubmit = async (content: PromptContentPart[]) => {
+    const text = content
+      .filter((b): b is { type: "text"; text: string } => b.type === "text")
+      .map((b) => b.text)
+      .join("")
+      .trim()
+    const hasImages = content.some((b) => b.type === "image")
+    if (!text && !hasImages) return
     if (screen() === "home") {
-      const ok = await session.start(trimmed)
+      const ok = await session.startContent(content)
       if (!ok) return
       void session.refreshCommands()
       setScreen("session")
     } else {
-      await session.send(trimmed)
+      await session.sendContent(content)
     }
   }
 
@@ -338,7 +345,7 @@ export function App(
     setMcpTools(await listMcpTools())
   }
 
-  const runCommand = async (line: string): Promise<CommandResultView | null> => {
+  const runCommand = async (line: string, images?: ImageCommandImage[]): Promise<CommandResultView | null> => {
     const bare = bareCommandName(line)
     const name = (bare ?? line.trim().slice(1).split(/\s+/)[0]?.toLowerCase() ?? "").toLowerCase()
     // Skills are invoked as ordinary user messages: the harness's pre-step
@@ -486,7 +493,7 @@ export function App(
       createdSession = true
       void session.refreshCommands()
     }
-    const res = await session.runCommand(line)
+    const res = await session.runCommand(line, images)
     if (res.ok) {
       // `/plan <任务>` delivers the task to the agent on the harness; mirror it
       // as a user message so the conversation shows what is being worked on.
@@ -533,6 +540,8 @@ export function App(
               model={session.modelName}
               toast={toast}
               onSubmit={handleSubmit}
+              onNotice={(text, kind) => showToast(text, kind)}
+              imageLimits={session.imageLimits}
               commandItems={commandItems}
               onCommand={runCommand}
               onCommandPopupOpen={handleCommandOpen}
@@ -580,6 +589,8 @@ export function App(
             resultOverride={resultOverride}
             queue={session.queue}
             onQueueAction={(itemId, action) => void session.updateQueueItem(itemId, action)}
+            onNotice={(text, kind) => showToast(text, kind)}
+            imageLimits={session.imageLimits}
             active={() => screen() === "session"}
           />
         </box>

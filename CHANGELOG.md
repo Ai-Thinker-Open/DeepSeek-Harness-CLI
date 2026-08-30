@@ -1,5 +1,21 @@
 # Changelog
 
+## v0.3.3 — 2026-08-29
+
+图片附件：让 DeepSeek Harness 真正收到图片（视觉模型看图）。
+
+- 双通道添加图片：`Ctrl+V` / `/image clipboard` 读取宿主剪贴板图片（剪贴板只有文本时按文本粘贴），`/image <路径>` 附加本地图片；Windows 风格路径（`D:\...`）在 WSL 下自动转 `/mnt/d/...`，剪贴板原生读取不可用时尝试 Windows PowerShell 兜底。
+- 剪贴板识别增强：从资源管理器复制图片文件时，剪贴板里是文件路径——现在会自动识别并作为图片附件（单行且指向存在的图片才触发，多行/普通文字仍按文本粘贴）。
+- 图片以 Harness 协议内容块发送（`session.prompt` 的 `{type:"image", mediaType, data}`，canonical base64），单张 ≤5MiB、单条 ≤20 张等限制按 harness 的 `imageLimits` 投影执行；非视觉模型会提示切换。
+- 输入区附件条：缩略图/名称/大小，点击 ✕ 或空稿 Backspace 移除；提交时按「图片 + 文本」顺序组装内容块，纯图片消息也可发送。
+- 会话内渲染：Kitty/Sixel 终端显示真实缩略图，其余终端回退 `🖼 名称` 标签；历史消息通过新增的 `session.attachment` RPC 拉取并缓存，失败显示占位。
+- 队列/取消链路适配图片消息（按签名匹配乐观副本、按 messageId 重新投递），slash 命令可携带图片（`commands/execute` 的 `images` 参数）。
+- mock server 支持图片端到端演练：图片块转 durable 附件引用、`session.attachment` 回传 base64。
+- 多实例并存：`dsh --profile tui` 默认端口 3080 被占用时（含 Windows 侧实例经 WSL2 localhost 转发造成的隐形占用）自动改用空闲端口并提示，不再 EADDRINUSE 失败；显式 `--port` 始终优先，多个 `dsh-cli` 客户端可复用同一 harness。
+- Windows→WSL2 粘贴图片打通：Windows Terminal 会把 `Ctrl+V` 拦截成终端粘贴（应用收不到按键），现在监听粘贴事件——粘贴文本照常插入、粘贴的图片文件路径自动转附件、空粘贴（剪贴板只有图片，如截图）自动读宿主剪贴板取图；宿主剪贴板读取失败（如无 WSLg）时也尝试 Windows PowerShell 兜底。修复绝对路径以 `/` 开头被误判为命令的问题。
+- WSL 下先探测 Windows 剪贴板（PowerShell）再读原生剪贴板：WSLg 在 Windows 剪贴板只有图片时会返回空文本，旧逻辑会把它当成"剪贴板里是空文本"而什么都不插入（表现就是 Ctrl+V 无反应）——现在 Windows 侧图片优先命中，实测 Windows 截图可正常附加；PowerShell 返回的图片额外校验魔数，避免把错误输出当 PNG 发给 harness。
+- 多行粘贴折叠（对齐 Codex）：粘贴内容 ≥5 行 或 ≥1000 字符（Unicode 码点）时不再把全文塞进输入框，折叠为首行缩略条 `📋 首行… [已折叠 N 行 · M 字符 · Ctrl+E]`；全文在提交时逐字发送（不 trim），`Ctrl+E` 或点击折叠条展开编辑，`Esc` 丢弃折叠，发送历史保存展开后的完整文本；折叠内容以 `/` 开头也不会被误判为 slash 命令。
+
 ## v0.3.2 — 2026-08-28
 
 更新改为在 TUI 内进行，完成后自动重启；跳过更新仍可正常使用当前版本。

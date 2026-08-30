@@ -13,7 +13,10 @@ import type { PermissionMode } from "../permission"
 import { DEEP_DIVING_STATUS, type ChatMessage, type HarnessQuestion, type SessionStats } from "../session"
 import { theme } from "../theme"
 import type { CommandItem, CommandResultView } from "../commands"
-import type { QueueAction, QueueItem } from "../harness/client"
+import type { ClipboardReadLike } from "../images"
+import type { ImageLimits, QueueAction, QueueItem } from "../harness/client"
+import type { ImageCommandImage } from "../harness/client"
+import type { PromptContentPart } from "../harness/client"
 
 export function SessionScreen(props: {
   messages: () => ChatMessage[]
@@ -26,14 +29,17 @@ export function SessionScreen(props: {
   planMode: () => boolean
   planPending: () => boolean
   question: () => HarnessQuestion | null
-  onSend: (text: string) => void
+  onSend: (content: PromptContentPart[]) => void
+  onNotice?: (text: string, kind?: "success" | "error") => void
+  imageLimits?: () => ImageLimits
+  clipboard?: ClipboardReadLike
   onCancel: () => void
   onQuestion: (choice: string) => void
   onQuestionMany?: (ids: string[]) => void
   onApproval?: (outcome: "allowed-once" | "rejected") => void
   onApprovalAllowSession?: () => void
   commandItems?: () => CommandItem[]
-  onCommand?: (line: string) => Promise<CommandResultView | null>
+  onCommand?: (line: string, images?: ImageCommandImage[]) => Promise<CommandResultView | null>
   onCommandPopupOpen?: (open: boolean) => void
   commandsLoading?: () => boolean
   resultOverride?: () => CommandResultView | null
@@ -56,7 +62,10 @@ export function SessionScreen(props: {
       <Prompt
         mode={props.mode}
         model={props.model}
-        onSubmit={(text) => props.onSend(text)}
+        onSubmit={(content) => props.onSend(content)}
+        onNotice={props.onNotice}
+        imageLimits={props.imageLimits}
+        clipboard={props.clipboard}
         commandItems={props.commandItems}
         onCommand={props.onCommand}
         onPopupOpenChange={(open) => {

@@ -1,5 +1,13 @@
 import { expect, test } from "bun:test"
-import type { CredentialView, HarnessClientLike, HostDescribe, ServerRequest, SessionEvent } from "../src/harness/client"
+import type {
+  CredentialView,
+  HarnessClientLike,
+  HostDescribe,
+  ImageAttachmentRef,
+  PromptContentPart,
+  ServerRequest,
+  SessionEvent,
+} from "../src/harness/client"
 import { HarnessError } from "../src/harness/client"
 import { createHarnessSession } from "../src/harness/session"
 
@@ -8,7 +16,7 @@ class FakeClient implements HarnessClientLike {
   failDescribe = false
   created = 0
   createdCwds: Array<string | undefined> = []
-  prompts: Array<{ sessionId: string; text: string }> = []
+  prompts: Array<{ sessionId: string; content: PromptContentPart[] }> = []
   responded: Array<{ rpcId: string; sessionId: string; answers: Array<{ id: string; selected: string[] }> }> = []
   respondedApprovals: Array<{ rpcId: string; sessionId: string; approvalId: string; outcome: "allowed-once" | "rejected" }> = []
   cancelled: string[] = []
@@ -22,16 +30,30 @@ class FakeClient implements HarnessClientLike {
     return this.describeResult
   }
 
-  async createSession(cwd?: string) {
+  async createSession(_cwd?: string, _agentPreset?: string, sessionId?: string) {
+    if (sessionId) {
+      this.currentSessionId = sessionId
+      return { sessionId }
+    }
     this.created += 1
-    this.createdCwds.push(cwd)
+    this.createdCwds.push(_cwd)
     this.currentSessionId = `s-${this.created}`
     return { sessionId: `s-${this.created}` }
   }
 
-  async prompt(sessionId: string, text: string) {
-    this.prompts.push({ sessionId, text })
+  async prompt(sessionId: string, content: PromptContentPart[]) {
+    this.prompts.push({ sessionId, content })
     return { accepted: true }
+  }
+
+  attachmentReads: Array<{ sessionId: string; attachmentId: string }> = []
+  attachmentStore: Record<string, { attachment: ImageAttachmentRef; data: string }> = {}
+
+  async readAttachment(sessionId: string, attachmentId: string) {
+    this.attachmentReads.push({ sessionId, attachmentId })
+    const entry = this.attachmentStore[attachmentId]
+    if (!entry) throw new Error(`attachment ${attachmentId} not found`)
+    return entry
   }
 
   async cancel() {
@@ -142,6 +164,10 @@ const frame = (method: string, payload: Record<string, unknown>, rpcId = `r-${Ma
   payload,
 })
 
+/** Plain text of a recorded prompt (for legacy text assertions). */
+const promptText = (p: { content: PromptContentPart[] }): string =>
+  p.content.filter((b) => b.type === "text").map((b) => b.text).join("")
+
 test("start creates a harness session and sends the first prompt", async () => {
   const client = new FakeClient()
   const session = createHarnessSession(client, "/tmp")
@@ -150,7 +176,7 @@ test("start creates a harness session and sends the first prompt", async () => {
 
   expect(ok).toBe(true)
   expect(client.created).toBe(1)
-  expect(client.prompts).toEqual([{ sessionId: "s-1", text: "hello" }])
+  expect(client.prompts).toEqual([{ sessionId: "s-1", content: [{ type: "text", text: "hello" }] }])
   expect(session.messages().map((m) => m.role)).toEqual(["user"])
   expect(session.messages()[0]?.content).toBe("hello")
   // Deep diving starts immediately on send — no intermediate "发送中" phase.
@@ -670,8 +696,8 @@ test("/plan degrades to a plan-first message when the commands service is missin
   const res = await session.runCommand("/plan 重构模块 A")
   expect(res.ok).toBe(true)
   expect(res.text).toContain("commands 服务")
-  expect(client.prompts.at(-1)?.text).toContain("重构模块 A")
-  expect(client.prompts.at(-1)?.text).toContain("先只读探查")
+  expect(promptText(client.prompts.at(-1)!)).toContain("重构模块 A")
+  expect(promptText(client.prompts.at(-1)!)).toContain("先只读探查")
 })
 
 test("/plan off degrades to an exit-plan-mode message when the commands service is missing", async () => {
@@ -684,8 +710,8 @@ test("/plan off degrades to an exit-plan-mode message when the commands service 
 
   const res = await session.runCommand("/plan off")
   expect(res.ok).toBe(true)
-  expect(client.prompts.at(-1)?.text).toContain("退出计划模式")
-  expect(client.prompts.at(-1)?.text).toContain("exit_plan_mode")
+  expect(promptText(client.prompts.at(-1)!)).toContain("退出计划模式")
+  expect(promptText(client.prompts.at(-1)!)).toContain("exit_plan_mode")
 })
 
 test("bare /plan asks the agent to plan from the next step when the commands service is missing", async () => {
@@ -700,7 +726,7 @@ test("bare /plan asks the agent to plan from the next step when the commands ser
   expect(res.ok).toBe(true)
   expect(res.text).toContain("从下一步开始按计划模式执行")
   expect(client.prompts).toHaveLength(2)
-  expect(client.prompts.at(-1)?.text).toContain("从下一步开始按计划模式执行")
+  expect(promptText(client.prompts.at(-1)!)).toContain("从下一步开始按计划模式执行")
 })
 
 test("/plan degrades too when the commands service reports it unknown", async () => {
@@ -711,7 +737,7 @@ test("/plan degrades too when the commands service reports it unknown", async ()
 
   const res = await session.runCommand("/plan 写测试")
   expect(res.ok).toBe(true)
-  expect(client.prompts.at(-1)?.text).toContain("写测试")
+  expect(promptText(client.prompts.at(-1)!)).toContain("写测试")
 
   // Non-plan commands still report an unknown line instead of degrading.
   const miss = await session.runCommand("/nope")
@@ -742,7 +768,7 @@ test("session/queue frames fold into the pending-message dock", async () => {
   expect(queue[0]?.preview).toBe("排队消息")
   expect(queue[0]?.text).toBe("排队消息")
   expect(queue[1]?.text).toBeNull()
-  expect(queue[1]?.preview).toContain("image")
+  expect(queue[1]?.preview).toContain("图片")
 })
 
 test("queued messages live in the dock, not the conversation, until claimed", async () => {
@@ -786,6 +812,102 @@ test("queued messages live in the dock, not the conversation, until claimed", as
   await tick()
   expect(session.messages().filter((m) => m.role === "user").map((m) => m.content)).toEqual(["hello"])
   expect(session.queue()).toEqual([])
+})
+
+test("sendContent sends image blocks and mirrors an optimistic copy", async () => {
+  const client = new FakeClient()
+  const session = createHarnessSession(client, "/tmp")
+  const content: PromptContentPart[] = [
+    { type: "image", mediaType: "image/png", data: "aGk=", name: "shot.png" },
+    { type: "text", text: "看看这张图" },
+  ]
+
+  const ok = await session.sendContent(content)
+
+  expect(ok).toBe(true)
+  expect(client.prompts[0]?.content).toEqual(content)
+  const user = session.messages().find((m) => m.role === "user")
+  expect(user?.content).toContain("[图片: shot.png]")
+  expect(user?.content).toContain("看看这张图")
+  expect(user?.images).toEqual([{ mediaType: "image/png", data: "aGk=", name: "shot.png", bytes: 2 }])
+})
+
+test("image-only queued messages move to the dock and back on claim", async () => {
+  const client = new FakeClient()
+  const session = createHarnessSession(client, "/tmp")
+  const content: PromptContentPart[] = [{ type: "image", mediaType: "image/png", data: "aGk=", name: "shot.png" }]
+  await session.sendContent(content)
+  expect(session.messages().filter((m) => m.role === "user")).toHaveLength(1)
+
+  // The harness queues the image-only message: it leaves the conversation and
+  // becomes a dock row (text is null, preview labels the image).
+  client.push({
+    type: "server-request",
+    rpcId: "q",
+    method: "session/queue",
+    payload: {
+      sessionId: "s-1",
+      items: [{ id: "item-1", message: { id: "m-1", content }, placement: "queued" }],
+    },
+  })
+  await tick()
+  expect(session.messages().filter((m) => m.role === "user")).toEqual([])
+  expect(session.queue()[0]?.text).toBeNull()
+  expect(session.queue()[0]?.preview).toContain("图片")
+
+  // Claimed: the echo moves it back and hydrates the durable attachment.
+  const attachmentId = "att-1"
+  const ref = { attachmentId, mediaType: "image/png" as const, bytes: 2, width: 1, height: 1, name: "shot.png" }
+  client.attachmentStore[attachmentId] = { attachment: ref, data: "aGk=" }
+  client.push(
+    frame("session/event", {
+      sessionId: "s-1",
+      event: ev(
+        "user/message",
+        { id: "m-1", content: [{ type: "image", attachment: ref }], source: { kind: "user" } },
+        3,
+      ),
+    }),
+  )
+  await tick()
+  const user = session.messages().find((m) => m.role === "user")
+  expect(user?.images?.[0]?.data).toBe("aGk=")
+  expect(user?.content).toBe("")
+  expect(client.attachmentReads).toEqual([{ sessionId: "s-1", attachmentId }])
+})
+
+test("resume hydrates historical image attachments via session.attachment", async () => {
+  const client = new FakeClient()
+  const attachmentId = "att-hist"
+  client.attachmentStore[attachmentId] = {
+    attachment: { attachmentId, mediaType: "image/png", bytes: 2, width: 1, height: 1, name: "old.png" },
+    data: "aGk=",
+  }
+  client.history = (async () => ({
+    events: [
+      {
+        event: ev(
+          "user/message",
+          {
+            id: "m1",
+            content: [{ type: "image", attachment: client.attachmentStore[attachmentId]!.attachment }],
+            source: { kind: "user" },
+          },
+          1,
+        ),
+      },
+    ],
+    hasMore: false,
+  })) as unknown as typeof client.history
+  const session = createHarnessSession(client, "/tmp")
+
+  await session.resumeSession("s-old")
+  await tick()
+
+  const user = session.messages().find((m) => m.role === "user")
+  expect(user?.images?.[0]?.attachmentId).toBe(attachmentId)
+  expect(user?.images?.[0]?.data).toBe("aGk=")
+  expect(client.attachmentReads).toEqual([{ sessionId: "s-old", attachmentId }])
 })
 
 test("queue actions dispatch edit/remove/steer to the harness", async () => {
@@ -1210,7 +1332,7 @@ test("second send reuses the same session", async () => {
   await tick()
 
   expect(client.created).toBe(1)
-  expect(client.prompts.map((p) => p.text)).toEqual(["first", "second"])
+  expect(client.prompts.map(promptText)).toEqual(["first", "second"])
   expect(session.stats().turns).toBe(2)
   expect(session.messages().filter((m) => m.role === "user").map((m) => m.content)).toEqual(["first", "second"])
 })

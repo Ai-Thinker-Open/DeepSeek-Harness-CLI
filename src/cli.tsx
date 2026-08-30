@@ -13,8 +13,11 @@ const renderer = await createCliRenderer({
   // Windows Terminal emit CSI-u sequences (e.g. `ESC [ 57352u` for Up) once
   // the kitty protocol is active, and OpenTUI maps those back to the same
   // canonical names ("up"/"down"/"return") as legacy input. Legacy sequences
-  // (`ESC [ A`, `ESC O A`) keep working unchanged.
-  useKittyKeyboard: {},
+  // (`ESC [ A`, `ESC O A`) keep working unchanged. `events: true` also asks
+  // for press/repeat/release reports — Windows Terminal 1.25+ with the kitty
+  // protocol active signals an image-only paste with the Ctrl+V *release*
+  // (`ESC [ 118;5:3u`), which the composer uses as a clipboard-read trigger.
+  useKittyKeyboard: { events: true },
   useThread: false,
   onDestroy: () => {
     // OpenTUI restores the terminal (raw mode, cursor, alternate screen,

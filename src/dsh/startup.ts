@@ -8,6 +8,7 @@
  */
 
 import type { AppExitLike, CmdlineArgsLike, DshContext } from "./types"
+import { spawnSync } from "node:child_process"
 
 export const name = "tui-startup"
 
@@ -32,9 +33,41 @@ export interface TuiStartupValues {
 export const internals: {
   stdout: { write(chunk: string): unknown }
   stderr: { write(chunk: string): unknown }
+  /** Synchronous TCP occupancy probe (defaults to a tiny child process). */
+  portProbe: (port: number) => boolean
 } = {
   stdout: process.stdout,
   stderr: process.stderr,
+  portProbe: defaultPortProbe,
+}
+
+/**
+ * Synchronously probe whether 127.0.0.1:<port> accepts connections, via a
+ * short-lived child process. A `connect` probe (not /proc/net/tcp) is
+ * deliberate: under WSL2's localhost forwarding, a listener on the Windows
+ * side shadows the same port inside WSL — the real multi-instance conflict —
+ * and only an actual connect attempt sees it.
+ */
+function defaultPortProbe(port: number): boolean {
+  const script =
+    `require("net").connect(${port},"127.0.0.1")` +
+    `.on("connect",()=>process.exit(0))` +
+    `.on("error",()=>process.exit(1))` +
+    `.setTimeout(700,function(){process.exit(1)})`
+  try {
+    const result = spawnSync(process.execPath, ["-e", script], { timeout: 1200, stdio: "ignore" })
+    return result.status === 0
+  } catch {
+    return false
+  }
+}
+
+/** First free port at or above `start` (a probe is ~1ms per miss). */
+function nextFreePort(start: number, probe: (port: number) => boolean): number {
+  for (let port = start; port <= 65535; port++) {
+    if (!probe(port)) return port
+  }
+  return 0
 }
 
 const USAGE = `dsh --profile tui [options]
@@ -142,9 +175,22 @@ export function apply(ctx: DshContext): void {
     return
   }
 
+  // Multiple terminal instances are the normal case (one per terminal
+  // window). When the user did not ask for a specific port and the default
+  // 3080 is already taken — including by an instance on the Windows side
+  // shadowed into WSL by localhost forwarding — fall back to a free port
+  // instead of failing with EADDRINUSE. An explicit --port is always honored.
+  let resolvedPort = port ?? 3080
+  if (port === undefined && resolvedPort !== 0 && internals.portProbe(resolvedPort)) {
+    resolvedPort = nextFreePort(resolvedPort + 1, internals.portProbe)
+    internals.stderr.write(
+      `[dsh-cli] 127.0.0.1:${port ?? 3080} 已被其他实例占用，自动改用端口 ${resolvedPort}（多实例并存时新实例自动避让；也可显式指定 --port <N>）\n`,
+    )
+  }
+
   ctx.provide(TUI_STARTUP_SERVICE, {
     host: resolvedHost,
-    port: port ?? 3080,
+    port: resolvedPort,
     cwd,
     continueLast,
   } satisfies TuiStartupValues)

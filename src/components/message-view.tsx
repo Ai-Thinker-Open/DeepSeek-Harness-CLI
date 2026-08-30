@@ -1,5 +1,6 @@
 import { createEffect, createMemo, createSignal, For, Show } from "solid-js"
-import type { ChatMessage } from "../session"
+import { useRenderer } from "@opentui/solid"
+import type { ChatImage, ChatMessage } from "../session"
 import type { ToolCallRecord, ToolResultRecord, ToolCallStatus } from "../session"
 import { ACCENT_BORDER, theme } from "../theme"
 import { CONTEXT_FORM_LABELS } from "../harness/fold"
@@ -22,6 +23,65 @@ const STREAMING_CONTENT_TAIL = 4000
 const MAX_RENDERED_CONTENT = 32_000
 const INJECT_PREVIEW_LINES = 8
 const MAX_OUTPUT_LINES = 20
+
+/** Kitty/Sixel graphics availability (same probe as ToolIcon). */
+function graphicsSupported(): boolean {
+  const caps = useRenderer().capabilities
+  if (!caps) return false
+  return (
+    caps.kitty_graphics ||
+    caps.sixel ||
+    caps.image_protocol === "kitty" ||
+    caps.image_protocol === "sixel"
+  )
+}
+
+const MAX_IMAGE_CELLS_W = 40
+const MAX_IMAGE_CELLS_H = 12
+
+function thumbnailCells(image: ChatImage): { width: number; height: number } {
+  const w = image.width
+  const h = image.height
+  if (!w || !h) return { width: 12, height: 8 }
+  const scale = Math.min(MAX_IMAGE_CELLS_W / w, MAX_IMAGE_CELLS_H / h, 1)
+  return {
+    width: Math.max(1, Math.round(w * scale)),
+    height: Math.max(1, Math.round(h * scale)),
+  }
+}
+
+/** One attached image: Kitty/Sixel thumbnail, or a text chip fallback. */
+function ImageThumb({ image }: { image: ChatImage }) {
+  const [failed, setFailed] = createSignal(false)
+  const cells = thumbnailCells(image)
+  const dataUrl = image.data ? `data:${image.mediaType};base64,${image.data}` : undefined
+  const showImage = () => graphicsSupported() && dataUrl !== undefined && !failed()
+  return (
+    <Show
+      when={showImage()}
+      fallback={
+        <text fg={theme.textMuted}>
+          <span>🖼 </span>
+          <span>{image.name ?? "图片"}</span>
+          <Show when={!image.data && !image.error}>
+            <span>（加载中…）</span>
+          </Show>
+          <Show when={image.error}>
+            <span>（加载失败）</span>
+          </Show>
+        </text>
+      }
+    >
+      <image
+        source={dataUrl}
+        style={{ width: cells.width, height: cells.height }}
+        fit="fit"
+        protocol="auto"
+        onError={() => setFailed(true)}
+      />
+    </Show>
+  )
+}
 
 function formatDuration(ms: number): string {
   if (ms < 1000) return `${Math.round(ms)}ms`
@@ -564,10 +624,32 @@ export function MessageView(props: { message: ChatMessage }) {
         borderColor={theme.primary}
         customBorderChars={ACCENT_BORDER}
       >
-        <box paddingLeft={2} paddingRight={2} paddingTop={1} paddingBottom={1} flexGrow={1} minWidth={0}>
-          <text fg={theme.text} wrapMode="char">
-            {props.message.content}
-          </text>
+        <box
+          paddingLeft={2}
+          paddingRight={2}
+          paddingTop={1}
+          paddingBottom={1}
+          flexGrow={1}
+          minWidth={0}
+          flexDirection="column"
+        >
+          <Show when={props.message.images?.length}>
+            <box
+              flexDirection="row"
+              flexWrap="wrap"
+              gap={1}
+              marginBottom={props.message.content ? 1 : 0}
+            >
+              <For each={props.message.images ?? []}>
+                {(image) => <ImageThumb image={image} />}
+              </For>
+            </box>
+          </Show>
+          <Show when={props.message.content}>
+            <text fg={theme.text} wrapMode="char">
+              {props.message.content}
+            </text>
+          </Show>
         </box>
       </box>
     )

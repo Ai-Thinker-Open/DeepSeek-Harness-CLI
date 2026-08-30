@@ -18,6 +18,7 @@ It drives a locally running DeepSeek Harness instance: sessions, tool calls, per
 - **Think blocks**: reasoning streams in a collapsible block that shares the tool rows' shine animation and hover collapse hint
 - **Permission approvals**: permission / ask-user / plan-review questions render as a modal — permission requests are multi-select checkboxes (`Space` to toggle, `a`/`n`/`i`/`l` to select all / none / invert / latest, Enter to confirm all, Esc to deny); sandbox-escalation approvals (e.g. writing back to a Windows D drive) offer "allow once / allow for this session / reject"
 - **Plan mode**: `/plan` enters / exits plan mode; the badge reflects `active/pending` state live
+- **Image attachments**: paste an image from the host clipboard with `Ctrl+V` (or `/image clipboard`) or attach a local file with `/image <path>` — a copied image file path is auto-detected and attached too; terminals that intercept `Ctrl+V` (Windows Terminal, WSL2) deliver a paste event that the composer handles the same way, so Windows screenshots paste straight into WSL; images travel to the harness as base64 content blocks (vision models like DeepSeek-V4-Flash-Vision-Exp see them), with Kitty/Sixel thumbnails in the composer and conversation and a text-chip fallback
 - **Slash commands**: local commands, harness host commands and skills all live in the `/` menu
 - **Queue dock**: pending / steering messages can be edited, removed or sent inline
 - **Stats bar**: turns, steps, LLM/tool time, average first-token latency, cache-hit ratio and token usage
@@ -201,6 +202,13 @@ Once started, the `tui-runner` plugin reads the bound web-server address, spawns
 
 > `dsh-cli -c` forwards `--continue` to the client as well.
 
+> Multiple terminal instances are supported: when the default port `3080` is
+> already taken (including by an instance on the Windows side shadowed into
+> WSL by localhost forwarding), a new `dsh --profile tui` automatically picks
+> a free port and prints a notice instead of failing with `EADDRINUSE`. An
+> explicit `--port` is always honored. Running a second `dsh-cli` reuses the
+> already-running harness directly.
+
 ### Environment variables
 
 | Variable | Description |
@@ -268,12 +276,13 @@ consistent experience across platforms.
 | `Esc` | Cancel the running turn while busy / close the menu / go back to home / reject the current question or approval |
 | `Enter` | Send message / confirm selection |
 | `↑↓` | Move through menus and options |
+| `Ctrl+V` | Paste an image from the host clipboard into the draft (falls back to plain-text paste) |
 | Mouse | Click to expand tool cards and queue rows; hover tool rows to reveal the collapse hint; drag to select text (OSC52 copy) |
 | `Ctrl+C` | Quit |
 
 ### Slash commands
 
-- **Local**: `/sessions`, `/resume`, `/model`, `/rename`, `/fork`, `/help`
+- **Local**: `/sessions`, `/resume`, `/model`, `/rename`, `/fork`, `/image <path|clipboard>`, `/help`
 - **Host** (executed by the harness): `/compact`, `/feedback`, `/goal`, `/plan`, `/permission`, `/export`
 - **Skills**: the session's skill catalog merges into the `/` menu and is sent as an ordinary user message
 - **MCP-style**: `/server:tool` lines go through the message channel

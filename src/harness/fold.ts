@@ -2,8 +2,8 @@
  * Fold DSH `session/event` streams into the UI's ChatMessage model.
  * Pure helpers shared by history replay and live streaming.
  */
-import type { ChatMessage, ToolCallRecord, ToolResultRecord } from "../session"
-import type { SessionEvent } from "./client"
+import type { ChatImage, ChatMessage, ToolCallRecord, ToolResultRecord } from "../session"
+import type { ImageContentPart, ImageMediaType, PromptContentPart, SessionEvent } from "./client"
 import { toolSummary } from "./tool-card"
 
 export interface Block {
@@ -15,6 +15,18 @@ export interface Block {
   toolCallId?: string
   content?: Block[]
   isError?: boolean
+  /** Wire-form image payload (prompt content). */
+  mediaType?: string
+  data?: string
+  /** Durable-form image payload (history events). */
+  attachment?: {
+    attachmentId?: string
+    mediaType?: string
+    bytes?: number
+    width?: number
+    height?: number
+    name?: string
+  }
 }
 
 /** Bound applied to tool-result text kept in the UI model. */
@@ -93,6 +105,65 @@ export function blockText(blocks: Block[] | undefined): string {
     .join("")
 }
 
+/** Plain text of text blocks only (image blocks are rendered separately). */
+export function textBlockText(blocks: Block[] | undefined): string {
+  return (blocks ?? [])
+    .filter((b) => b.type === "text")
+    .map((b) => b.text ?? "")
+    .join("")
+}
+
+/** Extract image attachments from a content block list (wire or durable form). */
+export function extractImageBlocks(blocks: Block[] | undefined): ChatImage[] {
+  const images: ChatImage[] = []
+  for (const b of blocks ?? []) {
+    if (b.type !== "image") continue
+    const att = b.attachment
+    if (att && typeof att === "object") {
+      images.push({
+        attachmentId: att.attachmentId,
+        mediaType: att.mediaType ?? "image/png",
+        bytes: att.bytes,
+        width: att.width,
+        height: att.height,
+        name: att.name,
+      })
+    } else {
+      images.push({
+        mediaType: (b.mediaType ?? "image/png") as ImageMediaType,
+        data: b.data,
+        name: b.name,
+      })
+    }
+  }
+  return images
+}
+
+/** Display text for an optimistic user copy of a prompt content list. */
+export function contentToUserText(content: PromptContentPart[]): string {
+  const text = content.filter((b): b is { type: "text"; text: string } => b.type === "text").map((b) => b.text).join("")
+  const markers = content
+    .filter((b): b is ImageContentPart => b.type === "image")
+    .map((b) => `[图片: ${b.name ?? "未命名"}]`)
+    .join(" ")
+  return [text, markers].filter(Boolean).join("\n")
+}
+
+/** Optimistic ChatImage list (inline data) for a prompt content list. */
+export function contentToImages(content: PromptContentPart[]): ChatImage[] {
+  return content
+    .filter((b): b is ImageContentPart => b.type === "image")
+    .map((b) => {
+      const pad = b.data.endsWith("==") ? 2 : b.data.endsWith("=") ? 1 : 0
+      return {
+        mediaType: b.mediaType,
+        data: b.data,
+        name: b.name,
+        bytes: Math.floor((b.data.length * 3) / 4) - pad,
+      }
+    })
+}
+
 export function summaryFor(name: string, args: Record<string, unknown>): string {
   return toolSummary(name, args)
 }
@@ -135,6 +206,7 @@ export function eventToMessage(ev: SessionEvent): ChatMessage | null {
       const m = data as unknown as { id?: string; content?: Block[]; source?: UserMessageSource }
       if (!m.content) return null
       const source = m.source
+      const images = extractImageBlocks(m.content)
       if (isInjectedSource(source)) {
         const title = injectSourceTitle(source)
         const { text, truncated } = truncateText(blockText(m.content), MAX_INJECT_CHARS)
@@ -153,7 +225,8 @@ export function eventToMessage(ev: SessionEvent): ChatMessage | null {
       return {
         id: `msg-${m.id ?? seqId}`,
         role: "user" as const,
-        content: blockText(m.content),
+        content: textBlockText(m.content),
+        ...(images.length > 0 ? { images } : {}),
         createdAt: ev.time,
       }
     }

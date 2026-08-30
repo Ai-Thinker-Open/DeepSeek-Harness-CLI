@@ -2,11 +2,15 @@
 import { expect, test } from "bun:test"
 import { testRender } from "@opentui/solid"
 import { createSignal } from "solid-js"
+import { mkdtempSync, writeFileSync } from "node:fs"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
 import { SessionScreen } from "../src/screens/session"
 import { EMPTY_STATS, type ChatMessage, type HarnessQuestion, type SessionStats } from "../src/session"
 import type { CommandItem } from "../src/commands"
 import type { CommandResultView } from "../src/commands"
-import type { QueueAction, QueueItem } from "../src/harness/client"
+import type { PromptContentPart, QueueAction, QueueItem } from "../src/harness/client"
+import type { ClipboardReadLike } from "../src/images"
 
 const userMsg = (content: string): ChatMessage => ({ id: `u-${content}`, role: "user", content, createdAt: 1 })
 const assistantMsg = (content: string, extra: Partial<ChatMessage> = {}): ChatMessage => ({
@@ -16,6 +20,9 @@ const assistantMsg = (content: string, extra: Partial<ChatMessage> = {}): ChatMe
   createdAt: 2,
   ...extra,
 })
+
+const promptText = (content: PromptContentPart[]): string =>
+  content.filter((b) => b.type === "text").map((b) => b.text).join("")
 
 async function renderSession(opts: {
   messages?: ChatMessage[]
@@ -31,7 +38,9 @@ async function renderSession(opts: {
   onApproval?: (outcome: "allowed-once" | "rejected") => void
   onApprovalAllowSession?: () => void
   onCancel?: () => void
-  onSend?: (text: string) => void
+  onSend?: (content: PromptContentPart[]) => void
+  onNotice?: (text: string, kind?: "success" | "error") => void
+  clipboard?: ClipboardReadLike
   commandItems?: () => CommandItem[]
   onCommand?: (line: string) => Promise<CommandResultView | null>
   queue?: () => QueueItem[]
@@ -52,6 +61,8 @@ async function renderSession(opts: {
         planPending={opts.planPending ?? (() => false)}
         question={opts.question ?? (() => null)}
         onSend={opts.onSend ?? (() => {})}
+        onNotice={opts.onNotice}
+        clipboard={opts.clipboard}
         onCancel={opts.onCancel ?? (() => {})}
         onQuestion={opts.onQuestion ?? (() => {})}
         onQuestionMany={opts.onQuestionMany}
@@ -1001,7 +1012,7 @@ test("up/down arrows recall sent-message history like a shell", async () => {
   const sent: string[] = []
   const app = await renderSession({
     messages: [userMsg("你好")],
-    onSend: (text) => sent.push(text),
+    onSend: (content) => sent.push(promptText(content)),
   })
   await app.renderOnce()
 
@@ -1047,7 +1058,7 @@ test("ctrl+enter inserts a newline instead of submitting", async () => {
   const sent: string[] = []
   const app = await renderSession({
     messages: [userMsg("你好")],
-    onSend: (text) => sent.push(text),
+    onSend: (content) => sent.push(promptText(content)),
     kittyKeyboard: true,
   })
   await app.renderOnce()
@@ -1078,7 +1089,7 @@ test("windows ctrl+enter arrives as linefeed and still inserts a newline", async
   const sent: string[] = []
   const app = await renderSession({
     messages: [userMsg("你好")],
-    onSend: (text) => sent.push(text),
+    onSend: (content) => sent.push(promptText(content)),
   })
   await app.renderOnce()
 
@@ -1743,4 +1754,547 @@ test("escape while busy still rejects an open question first", async () => {
   await app.renderOnce()
   expect(answered).toEqual(["No"])
   expect(cancelled).toBe(0)
+})
+
+test("/image attaches a file and the next submit sends image content", async () => {
+  const png = Buffer.from(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==",
+    "base64",
+  )
+  const dir = mkdtempSync(join(tmpdir(), "dsh-img-ui-"))
+  const file = join(dir, "shot.png")
+  writeFileSync(file, png)
+  const sent: PromptContentPart[][] = []
+  const notices: string[] = []
+  const app = await renderSession({
+    onSend: (content) => sent.push(content),
+    onNotice: (text) => notices.push(text),
+  })
+  await app.renderOnce()
+
+  app.mockInput.typeText(`/image ${file}`)
+  await new Promise((resolve) => setTimeout(resolve, 80))
+  app.mockInput.pressEnter()
+  await new Promise((resolve) => setTimeout(resolve, 200))
+  await app.renderOnce()
+
+  // The command result panel confirms the attachment.
+  expect(app.captureCharFrame()).toContain("已添加")
+  expect(notices).toContain("当前模型可能不支持图片，请切换到视觉模型（如 DeepSeek-V4-Flash-Vision-Exp）")
+
+  app.mockInput.typeText("看看这张图")
+  await new Promise((resolve) => setTimeout(resolve, 80))
+  app.mockInput.pressEnter()
+  await new Promise((resolve) => setTimeout(resolve, 80))
+  await app.renderOnce()
+
+  expect(sent).toHaveLength(1)
+  expect(sent[0]).toMatchObject([
+    { type: "image", mediaType: "image/png", name: "shot.png" },
+    { type: "text", text: "看看这张图" },
+  ])
+  const image = sent[0]![0]
+  if (image?.type !== "image") throw new Error("expected an image content part")
+  expect(image.data).toBe(png.toString("base64"))
+})
+
+test("ctrl+v pastes an image from the host clipboard into the draft", async () => {
+  const png = Buffer.from(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==",
+    "base64",
+  )
+  const clipboard: ClipboardReadLike = {
+    read: async () => ({ status: "read", representation: { mimeType: "image/png", bytes: png } }),
+  }
+  const sent: PromptContentPart[][] = []
+  const app = await renderSession({
+    onSend: (content) => sent.push(content),
+    clipboard,
+  })
+  await app.renderOnce()
+
+  app.mockInput.pressKey("v", { ctrl: true })
+  await new Promise((resolve) => setTimeout(resolve, 150))
+  await app.renderOnce()
+  expect(app.captureCharFrame()).toContain("[剪贴板.png]")
+
+  app.mockInput.pressEnter()
+  await new Promise((resolve) => setTimeout(resolve, 80))
+  await app.renderOnce()
+  expect(sent).toHaveLength(1)
+  const image = sent[0]![0]
+  if (image?.type !== "image") throw new Error("expected an image content part")
+  expect(image.mediaType).toBe("image/png")
+})
+
+test("bracketed paste of an image file path attaches it as an image", async () => {
+  const png = Buffer.from(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==",
+    "base64",
+  )
+  const dir = mkdtempSync(join(tmpdir(), "dsh-paste-"))
+  const file = join(dir, "shot.png")
+  writeFileSync(file, png)
+  const sent: PromptContentPart[][] = []
+  const app = await renderSession({ onSend: (content) => sent.push(content) })
+  await app.renderOnce()
+
+  // Windows Terminal intercepts Ctrl+V and delivers a bracketed paste; the
+  // pasted text is a single image file path, which must attach instead of
+  // being inserted as text.
+  await app.mockInput.pasteBracketedText(file)
+  await new Promise((resolve) => setTimeout(resolve, 200))
+  await app.renderOnce()
+  expect(app.captureCharFrame()).toContain("shot.png")
+
+  app.mockInput.pressEnter()
+  await new Promise((resolve) => setTimeout(resolve, 80))
+  await app.renderOnce()
+  expect(sent).toHaveLength(1)
+  const image = sent[0]![0]
+  if (image?.type !== "image") throw new Error("expected an image content part")
+  expect(image.name).toBe("shot.png")
+})
+
+test("bracketed paste of plain text still inserts the text", async () => {
+  const sent: PromptContentPart[][] = []
+  const app = await renderSession({ onSend: (content) => sent.push(content) })
+  await app.renderOnce()
+
+  await app.mockInput.pasteBracketedText("你好，看看这个")
+  await new Promise((resolve) => setTimeout(resolve, 150))
+  app.mockInput.pressEnter()
+  await new Promise((resolve) => setTimeout(resolve, 80))
+  await app.renderOnce()
+
+  expect(sent).toHaveLength(1)
+  expect(promptText(sent[0]!)).toBe("你好，看看这个")
+})
+
+test("empty bracketed paste reads the host clipboard for a Windows screenshot", async () => {
+  const png = Buffer.from(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==",
+    "base64",
+  )
+  const clipboard: ClipboardReadLike = {
+    read: async () => ({ status: "read", representation: { mimeType: "image/png", bytes: png } }),
+  }
+  const sent: PromptContentPart[][] = []
+  const notices: string[] = []
+  const app = await renderSession({ onSend: (content) => sent.push(content), clipboard, onNotice: (text) => notices.push(text) })
+  await app.renderOnce()
+
+  // Windows Terminal delivers an empty bracketed paste for a screenshot (the
+  // clipboard holds no text representation); the composer must fall back to
+  // reading the host clipboard.
+  await app.mockInput.pasteBracketedText("")
+  await new Promise((resolve) => setTimeout(resolve, 200))
+  await app.renderOnce()
+  expect(app.captureCharFrame()).toContain("[剪贴板.png]")
+
+  app.mockInput.pressEnter()
+  await new Promise((resolve) => setTimeout(resolve, 80))
+  await app.renderOnce()
+  expect(sent).toHaveLength(1)
+  const image = sent[0]![0]
+  if (image?.type !== "image") throw new Error("expected an image content part")
+  expect(image.mediaType).toBe("image/png")
+  expect(notices.some((n) => n.includes("已添加图片"))).toBe(true)
+})
+
+test("bracketed paste of large multi-line text collapses and sends verbatim", async () => {
+  const sent: PromptContentPart[][] = []
+  const app = await renderSession({ onSend: (content) => sent.push(content) })
+  await app.renderOnce()
+
+  const body =
+    "第一行日志\n" +
+    Array.from({ length: 20 }, (_, i) => `第 ${i + 2} 行内容 ${"x".repeat(50)}`).join("\n")
+  expect(Array.from(body).length).toBeGreaterThan(1000)
+
+  await app.mockInput.pasteBracketedText(body)
+  await new Promise((resolve) => setTimeout(resolve, 200))
+  await app.renderOnce()
+
+  // The composer shows a fold bar with the first-line preview, not the body.
+  const frame = app.captureCharFrame()
+  expect(frame).toContain("已折叠")
+  expect(frame).toContain("第一行日志")
+  expect(frame).not.toContain("第 20 行内容")
+
+  app.mockInput.pressEnter()
+  await new Promise((resolve) => setTimeout(resolve, 80))
+  await app.renderOnce()
+  expect(sent).toHaveLength(1)
+  expect(promptText(sent[0]!)).toBe(body)
+})
+
+test("five-line paste collapses; four-line paste stays inline", async () => {
+  const app = await renderSession({ onSend: () => {} })
+  await app.renderOnce()
+
+  await app.mockInput.pasteBracketedText("line-one\nline-two\nline-three\nline-four\nline-five")
+  await new Promise((resolve) => setTimeout(resolve, 150))
+  await app.renderOnce()
+  expect(app.captureCharFrame()).toContain("已折叠")
+
+  // Esc discards the fold (the textarea stays empty).
+  app.mockInput.pressEscape()
+  await new Promise((resolve) => setTimeout(resolve, 80))
+  await app.renderOnce()
+  expect(app.captureCharFrame()).not.toContain("已折叠")
+
+  await app.mockInput.pasteBracketedText("line-one\nline-two\nline-three\nline-four")
+  await new Promise((resolve) => setTimeout(resolve, 150))
+  await app.renderOnce()
+  const frame = app.captureCharFrame()
+  expect(frame).not.toContain("已折叠")
+  expect(frame).toContain("line-four")
+})
+
+test("ctrl+e expands the folded paste for editing", async () => {
+  const sent: PromptContentPart[][] = []
+  const app = await renderSession({ onSend: (content) => sent.push(content) })
+  await app.renderOnce()
+
+  // No trailing newline: after Ctrl+E the draft is ordinary editable text,
+  // so the pre-existing whole-message trim applies on submit.
+  const body = "第一行\n" + "第二行内容\n".repeat(7) + "第二行内容"
+  await app.mockInput.pasteBracketedText(body)
+  await new Promise((resolve) => setTimeout(resolve, 150))
+  await app.renderOnce()
+  expect(app.captureCharFrame()).toContain("已折叠")
+
+  app.mockInput.pressKey("e", { ctrl: true })
+  await new Promise((resolve) => setTimeout(resolve, 80))
+  await app.renderOnce()
+  const frame = app.captureCharFrame()
+  expect(frame).not.toContain("已折叠")
+  expect(frame).toContain("第二行内容")
+
+  app.mockInput.pressEnter()
+  await new Promise((resolve) => setTimeout(resolve, 80))
+  await app.renderOnce()
+  expect(sent).toHaveLength(1)
+  expect(promptText(sent[0]!)).toBe(body)
+})
+
+test("clicking the fold bar expands it like ctrl+e", async () => {
+  const app = await renderSession({ onSend: () => {} })
+  await app.renderOnce()
+
+  await app.mockInput.pasteBracketedText("第一行\n第二行\n第三行\n第四行\n第五行")
+  await new Promise((resolve) => setTimeout(resolve, 150))
+  await app.renderOnce()
+  expect(app.captureCharFrame()).toContain("已折叠")
+
+  const lines = app.captureCharFrame().split("\n")
+  const y = lines.findIndex((line) => line.includes("已折叠"))
+  const x = lines[y]?.indexOf("已折叠") ?? 0
+  await app.mockMouse.click(x + 1, y)
+  await app.renderOnce()
+  const frame = app.captureCharFrame()
+  expect(frame).not.toContain("已折叠")
+  expect(frame).toContain("第二行")
+})
+
+test("typing after a fold appends before the folded content", async () => {
+  const sent: PromptContentPart[][] = []
+  const app = await renderSession({ onSend: (content) => sent.push(content) })
+  await app.renderOnce()
+
+  const body = "第一行\n第二行\n第三行\n第四行\n第五行"
+  await app.mockInput.pasteBracketedText(body)
+  await new Promise((resolve) => setTimeout(resolve, 150))
+  app.mockInput.typeText("补充说明")
+  await new Promise((resolve) => setTimeout(resolve, 80))
+  app.mockInput.pressEnter()
+  await new Promise((resolve) => setTimeout(resolve, 80))
+  await app.renderOnce()
+
+  expect(sent).toHaveLength(1)
+  expect(promptText(sent[0]!)).toBe("补充说明" + body)
+})
+
+test("a folded paste starting with a slash sends as a normal message", async () => {
+  const sent: PromptContentPart[][] = []
+  const commands: string[] = []
+  const app = await renderSession({
+    onSend: (content) => sent.push(content),
+    onCommand: async (line) => {
+      commands.push(line)
+      return null
+    },
+  })
+  await app.renderOnce()
+
+  const body = "/tmp/非常长的路径内容".repeat(80)
+  expect(Array.from(body).length).toBeGreaterThan(1000)
+  await app.mockInput.pasteBracketedText(body)
+  await new Promise((resolve) => setTimeout(resolve, 200))
+  await app.renderOnce()
+  expect(app.captureCharFrame()).toContain("已折叠")
+
+  app.mockInput.pressEnter()
+  await new Promise((resolve) => setTimeout(resolve, 80))
+  await app.renderOnce()
+  expect(commands).toHaveLength(0)
+  expect(sent).toHaveLength(1)
+  expect(promptText(sent[0]!)).toBe(body)
+})
+
+test("escape discards the fold bar and keeps the typed prefix", async () => {
+  const sent: PromptContentPart[][] = []
+  const app = await renderSession({ onSend: (content) => sent.push(content) })
+  await app.renderOnce()
+
+  app.mockInput.typeText("前缀：")
+  await new Promise((resolve) => setTimeout(resolve, 80))
+  await app.mockInput.pasteBracketedText("第一行\n第二行\n第三行\n第四行\n第五行")
+  await new Promise((resolve) => setTimeout(resolve, 150))
+  await app.renderOnce()
+  expect(app.captureCharFrame()).toContain("已折叠")
+
+  app.mockInput.pressEscape()
+  await new Promise((resolve) => setTimeout(resolve, 80))
+  await app.renderOnce()
+  expect(app.captureCharFrame()).not.toContain("已折叠")
+
+  app.mockInput.pressEnter()
+  await new Promise((resolve) => setTimeout(resolve, 80))
+  await app.renderOnce()
+  expect(sent).toHaveLength(1)
+  expect(promptText(sent[0]!)).toBe("前缀：")
+})
+
+test("folded paste coexists with an image attachment", async () => {
+  const png = Buffer.from(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==",
+    "base64",
+  )
+  const dir = mkdtempSync(join(tmpdir(), "dsh-paste-"))
+  const file = join(dir, "shot.png")
+  writeFileSync(file, png)
+  const sent: PromptContentPart[][] = []
+  const app = await renderSession({ onSend: (content) => sent.push(content) })
+  await app.renderOnce()
+
+  app.mockInput.typeText(`/image ${file}`)
+  await new Promise((resolve) => setTimeout(resolve, 80))
+  app.mockInput.pressEnter()
+  await new Promise((resolve) => setTimeout(resolve, 200))
+  await app.renderOnce()
+  expect(app.captureCharFrame()).toContain("已添加")
+  // Close the command-result panel so Enter below submits the draft.
+  app.mockInput.pressEscape()
+  await new Promise((resolve) => setTimeout(resolve, 80))
+
+  const body = "第一行\n第二行\n第三行\n第四行\n第五行"
+  await app.mockInput.pasteBracketedText(body)
+  await new Promise((resolve) => setTimeout(resolve, 150))
+  await app.renderOnce()
+  expect(app.captureCharFrame()).toContain("已折叠")
+
+  app.mockInput.pressEnter()
+  await new Promise((resolve) => setTimeout(resolve, 80))
+  await app.renderOnce()
+  expect(sent).toHaveLength(1)
+  expect(sent[0]).toMatchObject([
+    { type: "image", mediaType: "image/png", name: "shot.png" },
+    { type: "text" },
+  ])
+  expect(promptText(sent[0]!)).toBe(body)
+})
+
+test("history recall after a folded send shows the expanded full text", async () => {
+  const sent: PromptContentPart[][] = []
+  const app = await renderSession({ onSend: (content) => sent.push(content) })
+  await app.renderOnce()
+
+  const body = "第一行\n第二行\n第三行\n第四行\n第五行"
+  await app.mockInput.pasteBracketedText(body)
+  await new Promise((resolve) => setTimeout(resolve, 150))
+  app.mockInput.pressEnter()
+  await new Promise((resolve) => setTimeout(resolve, 80))
+  await app.renderOnce()
+  expect(sent).toHaveLength(1)
+
+  app.mockInput.pressArrow("up")
+  await new Promise((resolve) => setTimeout(resolve, 80))
+  await app.renderOnce()
+  const frame = app.captureCharFrame()
+  expect(frame).toContain("第一行")
+  expect(frame).not.toContain("已折叠")
+})
+
+test("ctrl+v key release reads the image-only clipboard (Windows Terminal 1.25+ kitty)", async () => {
+  const png = Buffer.from(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==",
+    "base64",
+  )
+  const clipboard: ClipboardReadLike = {
+    read: async () => ({ status: "read", representation: { mimeType: "image/png", bytes: png } }),
+  }
+  const sent: PromptContentPart[][] = []
+  const app = await renderSession({
+    onSend: (content) => sent.push(content),
+    clipboard,
+    kittyKeyboard: true,
+  })
+  await app.renderOnce()
+
+  // Windows Terminal 1.25+ with the kitty keyboard protocol emits no empty
+  // bracketed paste for an image-only clipboard — the only signal is the
+  // Ctrl+V key release (CSI 118;5:3u). The composer must treat it as a
+  // clipboard read request.
+  await app.mockInput.pressKeys(["\x1b[118;5:3u"])
+  await new Promise((resolve) => setTimeout(resolve, 350))
+  await app.renderOnce()
+  expect(app.captureCharFrame()).toContain("[剪贴板.png]")
+
+  app.mockInput.pressEnter()
+  await new Promise((resolve) => setTimeout(resolve, 80))
+  await app.renderOnce()
+  expect(sent).toHaveLength(1)
+  const image = sent[0]![0]
+  if (image?.type !== "image") throw new Error("expected an image content part")
+  expect(image.mediaType).toBe("image/png")
+})
+
+test("ctrl+v release after a text paste does not double-insert", async () => {
+  const sent: PromptContentPart[][] = []
+  const app = await renderSession({
+    onSend: (content) => sent.push(content),
+    // If the release fallback misfired it would read this text and append it.
+    clipboard: {
+      read: async () => ({
+        status: "read",
+        representation: { mimeType: "text/plain", bytes: Buffer.from("重复文本") },
+      }),
+    },
+    kittyKeyboard: true,
+  })
+  await app.renderOnce()
+
+  await app.mockInput.pasteBracketedText("你好")
+  await new Promise((resolve) => setTimeout(resolve, 150))
+  // A text paste may be followed by the Ctrl+V release; it must not trigger
+  // a second clipboard read that appends the same content again.
+  await app.mockInput.pressKeys(["\x1b[118;5:3u"])
+  await new Promise((resolve) => setTimeout(resolve, 250))
+  app.mockInput.pressEnter()
+  await new Promise((resolve) => setTimeout(resolve, 80))
+  await app.renderOnce()
+
+  expect(sent).toHaveLength(1)
+  expect(promptText(sent[0]!)).toBe("你好")
+})
+
+test("alt+v pastes an image from the host clipboard (terminal-independent)", async () => {
+  const png = Buffer.from(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==",
+    "base64",
+  )
+  const clipboard: ClipboardReadLike = {
+    read: async () => ({ status: "read", representation: { mimeType: "image/png", bytes: png } }),
+  }
+  const sent: PromptContentPart[][] = []
+  const app = await renderSession({
+    onSend: (content) => sent.push(content),
+    clipboard,
+    kittyKeyboard: true,
+  })
+  await app.renderOnce()
+
+  // Windows Terminal intercepts Ctrl+V at the emulator level, so Alt+V is the
+  // reliable in-app shortcut; kitty mode encodes it as CSI 118;3u.
+  app.mockInput.pressKey("v", { meta: true })
+  await new Promise((resolve) => setTimeout(resolve, 150))
+  await app.renderOnce()
+  expect(app.captureCharFrame()).toContain("[剪贴板.png]")
+
+  app.mockInput.pressEnter()
+  await new Promise((resolve) => setTimeout(resolve, 80))
+  await app.renderOnce()
+  expect(sent).toHaveLength(1)
+  const image = sent[0]![0]
+  if (image?.type !== "image") throw new Error("expected an image content part")
+  expect(image.mediaType).toBe("image/png")
+})
+
+test("alt+v works with legacy terminal encoding (ESC v)", async () => {
+  const png = Buffer.from(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==",
+    "base64",
+  )
+  const clipboard: ClipboardReadLike = {
+    read: async () => ({ status: "read", representation: { mimeType: "image/png", bytes: png } }),
+  }
+  const app = await renderSession({ onSend: () => {}, clipboard })
+  await app.renderOnce()
+
+  // Legacy terminals send ESC v for Alt+V; the composer matches the raw bytes.
+  await app.mockInput.pressKeys(["\x1bv"])
+  await new Promise((resolve) => setTimeout(resolve, 150))
+  await app.renderOnce()
+  expect(app.captureCharFrame()).toContain("[剪贴板.png]")
+})
+
+test("multiple clipboard images number in send order (图片名-序号)", async () => {
+  const png = Buffer.from(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==",
+    "base64",
+  )
+  const clipboard: ClipboardReadLike = {
+    read: async () => ({ status: "read", representation: { mimeType: "image/png", bytes: png } }),
+  }
+  const sent: PromptContentPart[][] = []
+  const app = await renderSession({ onSend: (content) => sent.push(content), clipboard })
+  await app.renderOnce()
+
+  // Two clipboard pastes appear as numbered tags inside the message text.
+  app.mockInput.pressKey("v", { ctrl: true })
+  await new Promise((resolve) => setTimeout(resolve, 120))
+  app.mockInput.pressKey("v", { ctrl: true })
+  await new Promise((resolve) => setTimeout(resolve, 120))
+  await app.renderOnce()
+  const frame = app.captureCharFrame()
+  expect(frame).toContain("[剪贴板.png]")
+  expect(frame).toContain("[剪贴板-1.png]")
+
+  // Submit strips the tags and sends both images as real blocks.
+  app.mockInput.pressEnter()
+  await new Promise((resolve) => setTimeout(resolve, 80))
+  await app.renderOnce()
+  expect(sent).toHaveLength(1)
+  expect(sent[0]).toHaveLength(2)
+  expect(sent[0]!.every((b) => b.type === "image")).toBe(true)
+})
+
+test("image tags highlight across CJK by display columns, not UTF-16 units", async () => {
+  const png = Buffer.from(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==",
+    "base64",
+  )
+  const clipboard: ClipboardReadLike = {
+    read: async () => ({ status: "read", representation: { mimeType: "image/png", bytes: png } }),
+  }
+  const app = await renderSession({ onSend: () => {}, clipboard })
+  await app.renderOnce()
+
+  app.mockInput.pressKey("v", { ctrl: true })
+  await new Promise((resolve) => setTimeout(resolve, 150))
+  await app.renderOnce()
+
+  const frame = app.captureSpans() as unknown as {
+    lines: Array<{ spans: Array<{ text: string; fg: { buffer: { [k: number]: number } } }> }>
+  }
+  const tag = frame.lines
+    .flatMap((l) => l.spans)
+    .find((s) => s.text.includes("[剪贴板.png]"))
+  expect(tag).toBeTruthy()
+  // Accent color (#4D6BFE): red well below white(255), blue high.
+  const fg = tag!.fg.buffer
+  expect(fg[0]).toBeLessThan(180)
+  expect(fg[2]).toBeGreaterThan(200)
 })

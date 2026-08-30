@@ -18,6 +18,7 @@
 - **Think 块**：推理内容以可折叠块呈现，与工具行共用闪光动画和 hover 折叠箭头交互
 - **权限审批**：harness 抛出的权限 / 提问 / 计划审批以弹窗呈现；权限请求支持多选 checkbox（`Space` 切换、`a`/`n`/`i`/`l` 全选 / 全不选 / 反选 / 只选最新、Enter 一次确认全部、Esc 全部拒绝）；沙箱升级授权（如写回 Windows D 盘）提供「允许本次 / 当前会话允许 / 拒绝」三个选项
 - **计划模式**：`/plan` 进入 / 退出计划模式，徽标实时反映 `active/pending` 状态
+- **图片附件**：`Ctrl+V`（或 `/image clipboard`）从宿主剪贴板粘贴图片，`/image <路径>` 附加本地图片；复制图片文件时剪贴板里的文件路径会被自动识别为附件。Windows Terminal / WSL2 会把 `Ctrl+V` 拦截成终端粘贴，粘贴事件同样会被识别——Windows 截图（`Win+Shift+S`）后直接在 WSL2 的 dsh-cli 里按 `Ctrl+V` 即可附加。图片以 base64 内容块真正发给 harness（视觉模型如 DeepSeek-V4-Flash-Vision-Exp 可直接看图）；输入区与会话内支持 Kitty/Sixel 缩略图，无图形协议时回退为文本标签
 - **Slash 命令**：本地命令 + harness 宿主命令 + 技能统一收录在 `/` 菜单
 - **队列停靠**：待发 / 引导中的消息可直接编辑、移除或发送
 - **统计栏**：轮次、步骤、LLM/工具耗时、首 token 平均、缓存命中率、token 用量
@@ -166,6 +167,11 @@ dsh --profile tui -c                     # 恢复最近会话
 
 > `dsh-cli -c` 也会把 `--continue` 转发给客户端。
 
+> 支持多终端实例并存：默认端口 `3080` 已被占用时（包括 Windows 侧实例经
+> WSL2 localhost 转发「镜像」进 WSL 的隐形占用），新的 `dsh --profile tui`
+> 会自动改用空闲端口并提示，而不是报 `EADDRINUSE` 失败；显式 `--port` 始终
+> 优先。再开一个 `dsh-cli` 则会直接复用已在运行的 harness。
+
 ### 环境变量
 
 | 变量 | 说明 |
@@ -211,12 +217,13 @@ MCP 服务端依赖 `pyserial`、`mcp`、`starlette`、`uvicorn`。若本机 Pyt
 | `Esc` | 执行中取消当前回合 / 关闭菜单 / 返回主页 / 拒绝当前问题与权限申请 |
 | `Enter` | 发送消息 / 确认选择 |
 | `↑↓` | 菜单与选项移动 |
+| `Ctrl+V` | 从宿主剪贴板粘贴图片到输入区（剪贴板无图片时按文本粘贴） |
 | 鼠标 | 点击展开工具卡片、队列行；hover 工具行显示折叠箭头；拖动选择文本（OSC52 复制） |
 | `Ctrl+C` | 退出 |
 
 ### Slash 命令
 
-- **本地**：`/sessions`、`/resume`、`/model`、`/rename`、`/fork`、`/help`
+- **本地**：`/sessions`、`/resume`、`/model`、`/rename`、`/fork`、`/image <路径|clipboard>`、`/help`
 - **host**（由 harness 执行）：`/compact`、`/feedback`、`/goal`、`/plan`、`/permission`、`/export`
 - **技能**：会话的技能目录会并入 `/` 菜单，作为普通消息交给模型
 - **MCP 风格**：`/server:tool` 形式的输入走消息通道

@@ -32,6 +32,7 @@ export const LOCAL_COMMANDS: CommandItem[] = [
   { name: "model", description: "切换当前会话的 LLM 模型", kind: "local", behavior: "run" },
   { name: "rename", description: "重命名当前会话", kind: "local", input: { hint: "<标题>" }, behavior: "fill" },
   { name: "fork", description: "从当前会话分叉出新会话", kind: "local", behavior: "run" },
+  { name: "image", description: "附加图片（<路径|clipboard>，Ctrl+V 也可从剪贴板粘贴）", kind: "local", input: { hint: "<路径|clipboard>" }, behavior: "fill" },
   { name: "help", description: "显示全部快捷命令", kind: "local", behavior: "run" },
 ]
 

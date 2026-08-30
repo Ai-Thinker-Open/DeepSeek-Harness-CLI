@@ -31,6 +31,8 @@ const pendingQuestions = new Map() // rpcId -> { resolve }
 const pendingApprovals = new Map() // rpcId -> { resolve, sessionId, approvalId }
 const cancelledSessions = new Map() // sessionId -> true while the turn is being cancelled
 const credentials = new Map()
+const attachments = new Map() // attachmentId -> { mediaType, data, bytes, width, height, name? }
+const IMAGE_MEDIA_TYPES = new Set(["image/png", "image/jpeg", "image/webp", "image/gif"])
 if (process.env.MOCK_API_KEY) credentials.set("DEEPSEEK_API_KEY", process.env.MOCK_API_KEY)
 // The active session model, switched via `session.selectModel`; surfaced in
 // `host.describe` and in every assistant turn so /model switching is
@@ -158,7 +160,7 @@ function pickToolCall(text) {
   }
 }
 
-async function runTurn(sessionId, text, firstTurn) {
+async function runTurn(sessionId, text, firstTurn, imageCount = 0) {
   // Give the client's events.mux socket time to open before emitting, so the
   // first events (injections, user/message, turn/start) are not lost.
   await sleep(150)
@@ -205,7 +207,7 @@ async function runTurn(sessionId, text, firstTurn) {
     type: "user/message",
     seq: nextSeq(),
     time: now(),
-    data: { id: `um-${turn}`, content: [{ type: "text", text }], source: { kind: "user" } },
+    data: { id: `um-${turn}`, content: text ? [{ type: "text", text }] : [], source: { kind: "user" } },
   })
   emitEvent(sessionId, { type: "step/start", seq: nextSeq(), time: now(), data: { turn, step: 1 } })
   emitEvent(sessionId, {
@@ -223,6 +225,21 @@ async function runTurn(sessionId, text, firstTurn) {
       seq: nextSeq(),
       time: now(),
       data: { turn, step: 1, chunk: { type: "reasoning-delta", text: part } },
+    })
+    await sleep(120)
+    if (await pauseForCancel(sessionId, 0, turn)) return
+  }
+
+  if (imageCount > 0) {
+    emitEvent(sessionId, {
+      type: "assistant/chunk",
+      seq: nextSeq(),
+      time: now(),
+      data: {
+        turn,
+        step: 1,
+        chunk: { type: "text-delta", text: `已收到 ${imageCount} 张图片，我来描述一下图片内容。` },
+      },
     })
     await sleep(120)
     if (await pauseForCancel(sessionId, 0, turn)) return
@@ -461,7 +478,34 @@ async function handleRpc(req) {
     }
     case "session.prompt": {
       const sessionId = String(payload.sessionId ?? "")
-      const text = String(payload.content?.[0]?.text ?? "")
+      const parts = Array.isArray(payload.content) ? payload.content : []
+      const text = parts
+        .filter((p) => p?.type === "text")
+        .map((p) => String(p.text ?? ""))
+        .join("")
+      // Convert wire image blocks into durable attachment references so
+      // history replay can exercise the session.attachment RPC.
+      const durableContent = []
+      let imageCount = 0
+      for (const p of parts) {
+        if (p?.type === "text") {
+          durableContent.push({ type: "text", text: String(p.text ?? "") })
+        } else if (p?.type === "image" && typeof p.data === "string" && IMAGE_MEDIA_TYPES.has(p.mediaType)) {
+          imageCount += 1
+          const attachmentId = `att-${++seq}`
+          const bytes = Math.ceil((p.data.length * 3) / 4)
+          const ref = {
+            attachmentId,
+            mediaType: p.mediaType,
+            bytes,
+            width: 800,
+            height: 600,
+            ...(typeof p.name === "string" && p.name ? { name: p.name } : {}),
+          }
+          attachments.set(attachmentId, { ...ref, data: p.data })
+          durableContent.push({ type: "image", attachment: ref })
+        }
+      }
       const s = sessions.get(sessionId)
       if (!s) return respond(fail(`session ${sessionId} not found`, "not-found"))
       const firstTurn = s.events.length === 0
@@ -469,10 +513,17 @@ async function handleRpc(req) {
         type: "user/message",
         seq: nextSeq(),
         time: Date.now(),
-        data: { id: `um-q`, content: [{ type: "text", text }], source: { kind: "user" } },
+        data: { id: `um-q`, content: durableContent, source: { kind: "user" } },
       })
-      void runTurn(sessionId, text, firstTurn)
+      void runTurn(sessionId, text, firstTurn, imageCount)
       return respond(ok({ accepted: true }))
+    }
+    case "session.attachment": {
+      const attachmentId = String(payload.attachmentId ?? "")
+      const att = attachments.get(attachmentId)
+      if (!att) return respond(fail(`attachment ${attachmentId} not found`, "not-found"))
+      const { data, ...ref } = att
+      return respond(ok({ attachment: ref, data }))
     }
     case "session.cancel":
       cancelledSessions.set(payload.sessionId, true)

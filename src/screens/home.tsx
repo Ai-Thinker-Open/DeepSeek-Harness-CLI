@@ -12,6 +12,8 @@ import { deepseek } from "../logo-art"
 import type { PermissionMode } from "../permission"
 import { theme } from "../theme"
 import type { CommandItem, CommandResultView } from "../commands"
+import type { ClipboardReadLike } from "../images"
+import type { ImageCommandImage, ImageLimits, PromptContentPart } from "../harness/client"
 
 export function Home(props: {
   motion?: boolean
@@ -19,9 +21,12 @@ export function Home(props: {
   mode?: () => PermissionMode
   model?: () => string
   toast?: () => ToastMessage | null
-  onSubmit?: (text: string) => void
+  onSubmit?: (content: PromptContentPart[]) => void
+  onNotice?: (text: string, kind?: "success" | "error") => void
+  imageLimits?: () => ImageLimits
+  clipboard?: ClipboardReadLike
   commandItems?: () => CommandItem[]
-  onCommand?: (line: string) => Promise<CommandResultView | null>
+  onCommand?: (line: string, images?: ImageCommandImage[]) => Promise<CommandResultView | null>
   onCommandPopupOpen?: (open: boolean) => void
   commandsLoading?: () => boolean
   planMode?: () => boolean
@@ -78,6 +83,9 @@ export function Home(props: {
             mode={mode}
             model={model}
             onSubmit={props.onSubmit}
+            onNotice={props.onNotice}
+            imageLimits={props.imageLimits}
+            clipboard={props.clipboard}
             commandItems={props.commandItems}
             onCommand={props.onCommand}
             onPopupOpenChange={(open) => {

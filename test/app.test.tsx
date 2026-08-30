@@ -7,12 +7,24 @@
 import { beforeEach, expect, test } from "bun:test"
 import { testRender } from "@opentui/solid"
 import { App } from "../src/app"
-import type { HarnessClientLike, HostDescribe, ServerRequest, SessionEvent, SessionSummary } from "../src/harness/client"
+import type {
+  HarnessClientLike,
+  HostDescribe,
+  ImageAttachmentRef,
+  PromptContentPart,
+  ServerRequest,
+  SessionEvent,
+  SessionSummary,
+} from "../src/harness/client"
 
 beforeEach(() => {
   process.env.DSH_SKIP_RISK_CONFIRM = "1"
   process.env.DSH_NO_UPDATE_CHECK = "1"
 })
+
+/** Plain text of a recorded prompt (for legacy text assertions). */
+const promptText = (p: { content: PromptContentPart[] }): string =>
+  p.content.filter((b) => b.type === "text").map((b) => b.text).join("")
 
 type SpanLike = { text: string; fg: { r: number; g: number; b: number } }
 type FrameLike = { captureSpans: () => { lines: Array<{ spans: SpanLike[] }> } }
@@ -34,7 +46,7 @@ class FakeClient implements HarnessClientLike {
   failDescribe = false
   created = 0
   resumedId: string | null = null
-  prompts: Array<{ sessionId: string; text: string }> = []
+  prompts: Array<{ sessionId: string; content: PromptContentPart[] }> = []
   commandCalls: string[] = []
   selectedModel: { provider: string; model: string } | null = null
   sessionsResult: SessionSummary[] = []
@@ -59,9 +71,13 @@ class FakeClient implements HarnessClientLike {
     return { sessionId: `s-${this.created}` }
   }
 
-  async prompt(sessionId: string, text: string) {
-    this.prompts.push({ sessionId, text })
+  async prompt(sessionId: string, content: PromptContentPart[]) {
+    this.prompts.push({ sessionId, content })
     return { accepted: true }
+  }
+
+  async readAttachment(): Promise<{ attachment: ImageAttachmentRef; data: string }> {
+    throw new Error("not used in app tests")
   }
 
   async cancel() {
@@ -220,7 +236,7 @@ test("submitting on the home prompt opens the session with the first message", a
   expect(frame).not.toContain("发送消息开始对话")
   expect(frame).not.toContain("esc 返回")
   expect(client.created).toBe(1)
-  expect(client.prompts.map((p) => p.text)).toEqual(["hello"])
+  expect(client.prompts.map(promptText)).toEqual(["hello"])
 })
 
 test("later sends reuse the same session and append messages", async () => {
@@ -241,7 +257,7 @@ test("later sends reuse the same session and append messages", async () => {
   await app.renderOnce()
 
   expect(client.created).toBe(1)
-  expect(client.prompts.map((p) => p.text)).toEqual(["hello", "world"])
+  expect(client.prompts.map(promptText)).toEqual(["hello", "world"])
   const frame = app.captureCharFrame()
   expect(frame).toContain("hello")
   expect(frame).toContain("world")
@@ -679,7 +695,7 @@ test("skills appear as slash commands and submit as messages", async () => {
   await tick()
   await app.renderOnce()
 
-  expect(client.prompts.some((p) => p.text === "/opentui")).toBe(true)
+  expect(client.prompts.some((p) => promptText(p) === "/opentui")).toBe(true)
 })
 
 test("unknown slash command shows a toast instead of a result panel", async () => {

@@ -4,11 +4,15 @@ import type { ChatMessage } from "../src/session"
 import {
   assistantBlocksToMessage,
   blockText,
+  contentToImages,
+  contentToUserText,
   eventToMessage,
+  extractImageBlocks,
   foldHistory,
   foldToolCall,
   foldToolResult,
   MAX_TOOL_OUTPUT_CHARS,
+  textBlockText,
   tryParseArgs,
   userMessageText,
 } from "../src/harness/fold"
@@ -99,6 +103,45 @@ test("eventToMessage folds injected context into a context-injection block", () 
     ev("user/message", { id: "inj-4", content: [{ type: "text", text: "x" }], source: { kind: "plugin", plugin: "" } }, 4),
   )
   expect(unknown?.inject?.source).toBe("unknown")
+})
+
+test("extractImageBlocks parses wire and durable image blocks", () => {
+  const wire = extractImageBlocks([
+    { type: "text", text: "看看" },
+    { type: "image", mediaType: "image/png", data: "aGk=", name: "shot.png" },
+  ])
+  expect(wire).toEqual([{ mediaType: "image/png", data: "aGk=", name: "shot.png" }])
+
+  const durable = extractImageBlocks([
+    {
+      type: "image",
+      attachment: { attachmentId: "att-1", mediaType: "image/jpeg", bytes: 12, width: 800, height: 600, name: "old.jpg" },
+    },
+  ])
+  expect(durable).toEqual([
+    { attachmentId: "att-1", mediaType: "image/jpeg", bytes: 12, width: 800, height: 600, name: "old.jpg" },
+  ])
+  expect(extractImageBlocks(undefined)).toEqual([])
+})
+
+test("user/message events carry image attachments separately from text", () => {
+  const msg = eventToMessage(
+    ev("user/message", { id: "m1", content: [{ type: "image", mediaType: "image/png", data: "aGk=", name: "a.png" }] }, 1),
+  )
+  expect(msg).toMatchObject({ role: "user", content: "", images: [{ mediaType: "image/png", data: "aGk=", name: "a.png" }] })
+  expect(textBlockText([{ type: "image" }])).toBe("")
+})
+
+test("contentToUserText and contentToImages shape optimistic copies", () => {
+  const content = [
+    { type: "image" as const, mediaType: "image/png" as const, data: "aGk=", name: "shot.png" },
+    { type: "text" as const, text: "看看" },
+  ]
+  expect(contentToUserText(content)).toContain("[图片: shot.png]")
+  expect(contentToUserText(content)).toContain("看看")
+  expect(contentToImages(content)).toEqual([
+    { mediaType: "image/png", data: "aGk=", name: "shot.png", bytes: 2 },
+  ])
 })
 
 test("foldHistory replays tool calls and results onto assistant messages", () => {
