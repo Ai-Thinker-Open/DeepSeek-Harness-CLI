@@ -96,10 +96,9 @@ const SEND_HISTORY: string[] = []
  * real drafts are plain printable text plus ordinary whitespace. C0/C1
  * control ranges cover ESC and friends (tab/newline/CR are kept).
  */
-/** Git Bash subprocess stderr (e.g. `ssh (pid) C:\Program Files\Git\usr\bin\
- *  ssh.exe: *** fatal error - couldn't create signal pipe…`) leaking into the
- *  terminal. These markers are specific enough that real drafts never match. */
-export const SUBPROCESS_NOISE_RE = /(?:couldn't create signal pipe|\*\*\* fatal error|Program Files[\\/]Git[\\/]usr[\\/]bin)/i
+import { SUBPROCESS_NOISE_RE, stripSubprocessNoise } from "../subprocess-noise"
+
+export { SUBPROCESS_NOISE_RE } from "../subprocess-noise"
 
 export function isUsableDraft(text: string): boolean {
   return (
@@ -339,11 +338,13 @@ export function Prompt(props: {
     }
     const timer = setInterval(() => {
       const text = ref?.plainText ?? ""
-      // Git Bash subprocess errors (ssh etc.) can be surfaced in the focused
-      // input on Windows. They are never real typing: drop them from the
-      // buffer instead of letting them become part of the draft.
+      // Git Bash subprocess errors (ssh etc.) can leak into the focused input
+      // on Windows. They are never real typing: strip those noise lines from
+      // the buffer instead of letting them become a draft (any surrounding
+      // text the user was typing is preserved).
       if (text && SUBPROCESS_NOISE_RE.test(text)) {
-        ref?.setText("")
+        const cleaned = stripSubprocessNoise(text)
+        ref?.setText(cleaned)
         return
       }
       // A pending restore (question modal closed) may race the native editor
