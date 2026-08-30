@@ -212,12 +212,19 @@ export function Prompt(props: {
 
   // An external refresh (e.g. the model picker re-rendering after a switch)
   // replaces the result panel without touching the input draft.
+  let prevOverride = props.resultOverride?.()
   createEffect(() => {
     const next = props.resultOverride?.()
     if (next) {
       setResult(next)
       setResultScroll(0)
+    } else if (prevOverride) {
+      // The external panel was cleared (e.g. home → session transition):
+      // drop the mirrored internal panel too, otherwise it lingers.
+      setResult(null)
+      setResultScroll(0)
     }
+    prevOverride = next
   })
 
   const items = () => props.commandItems?.() ?? []

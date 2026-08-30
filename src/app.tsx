@@ -82,6 +82,16 @@ export function App(
   const [skills, setSkills] = createSignal<SkillEntry[]>([])
   const [mcpTools, setMcpTools] = createSignal<McpToolEntry[]>([])
   const [apiKeyOpen, setApiKeyOpen] = createSignal(false)
+
+  // A result panel (e.g. `/model`) opened on the home screen must not leak
+  // into the session view: the composer moves to a new context the moment the
+  // user starts a conversation. Clear it on the home → session transition.
+  let prevScreen = screen()
+  createEffect(() => {
+    const current = screen()
+    if (current === "session" && prevScreen === "home") setResultOverride(null)
+    prevScreen = current
+  })
   // The risk decision is taken synchronously before the first frame: the
   // directory confirmation blocks the home/session screens until the user
   // decides, instead of appearing as an overlay on top of the home screen.

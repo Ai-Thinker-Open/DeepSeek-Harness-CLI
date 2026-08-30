@@ -67,3 +67,30 @@ test("model panel highlight follows arrow keys (Solid For untrack regression)", 
   expect(nearBg(rowBg(app, "DeepSeek-V4"), 77, 107, 254)).toBe(true)
   expect(nearBg(rowBg(app, "DeepSeek-V4-Flash"), 30, 30, 30)).toBe(true)
 })
+
+test("clearing resultOverride closes the mirrored panel (home→session transition)", async () => {
+  const [override, setOverride] = createSignal<CommandResultView | null>(null)
+  const app = await testRender(
+    () => (
+      <Prompt
+        resultOverride={override}
+        commandItems={() => []}
+        active={() => true}
+      />
+    ),
+    { width: 80, height: 24 },
+  )
+
+  setOverride({
+    title: "模型（点击行切换）",
+    rows: ["当前模型：deepseek/deepseek-v4", "── DeepSeek ──", "● DeepSeek-V4"],
+  })
+  await app.renderOnce()
+  expect(app.captureCharFrame()).toContain("模型（点击行切换）")
+
+  // The host clears the override when moving into a session; the composer
+  // must drop the mirrored panel instead of letting it linger on screen.
+  setOverride(null)
+  await app.renderOnce()
+  expect(app.captureCharFrame()).not.toContain("模型（点击行切换）")
+})
