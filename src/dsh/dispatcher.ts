@@ -11,9 +11,9 @@ import { Socket } from "node:net"
 import { homedir } from "node:os"
 import { dirname, join } from "node:path"
 import { fileURLToPath, pathToFileURL } from "node:url"
-import { ensureHarnessUpToDate } from "./harness-update"
 import { bunVersionProblemFor, nodeVersionProblem } from "./node-version"
 import { portableSpawnOptions, portableSpawnSyncOptions, resolveBun } from "./portable"
+export { applyPendingUpdates } from "./silent-update"
 export { bootstrapAll } from "./bootstrap"
 
 export const DEFAULT_HARNESS_URL = "http://127.0.0.1:3080"
@@ -32,6 +32,7 @@ function findRoot(start: string): string {
 
 const PKG_ROOT = findRoot(dirname(fileURLToPath(import.meta.url)))
 const TUI_CLI = join(PKG_ROOT, "dist", "cli.js")
+const SILENT_UPDATE_AGENT = join(PKG_ROOT, "dist", "silent-update-agent.js")
 
 function readManifest(): { name?: string } {
   return JSON.parse(readFileSync(join(PKG_ROOT, "package.json"), "utf8")) as { name?: string }
@@ -254,8 +255,23 @@ export const internals: {
   probe: typeof probe
   spawn: typeof spawn
   spawnSync: typeof spawnSync
-  harnessUpdate: typeof ensureHarnessUpToDate
-} = { probe, spawn, spawnSync, harnessUpdate: ensureHarnessUpToDate }
+  stageUpdates: typeof stageUpdates
+} = { probe, spawn, spawnSync, stageUpdates }
+
+/**
+ * Spawn the background silent-update agent (fire-and-forget, never blocks
+ * startup, reuses the running process's node so no PATH probe is needed).
+ */
+function stageUpdates(): void {
+  if (!existsSync(SILENT_UPDATE_AGENT)) return
+  if (process.env.DSH_DEBUG === "1") process.stderr.write("[dsh-cli] staging background updates (silent-update-agent)\n")
+  const child = internals.spawn(process.execPath, [SILENT_UPDATE_AGENT], {
+    stdio: "ignore",
+    detached: true,
+    ...portableSpawnOptions({}),
+  })
+  child.unref()
+}
 
 /**
  * Run the dispatcher and resolve with the process exit code.
@@ -283,6 +299,12 @@ export async function run(args: readonly string[]): Promise<number> {
   if (bunProblem) {
     process.stderr.write(`[dsh-cli] ${bunProblem}\n`)
     return 1
+  }
+
+  // Stage any newer dsh-cli / harness version in the background before we
+  // probe/launch; the next launch applies it. Skipped when disabled.
+  if (process.env.DSH_NO_UPDATE_CHECK !== "1") {
+    internals.stageUpdates()
   }
 
   if (await internals.probe(url)) {
@@ -366,13 +388,6 @@ export async function run(args: readonly string[]): Promise<number> {
       process.stderr.write(`[dsh-cli] failed to register the tui profile (dsh plugin add exited with ${setup.status ?? "error"}).${pnpmHint}\n`)
       return setup.status ?? 1
     }
-  }
-
-  // Keep the official harness (`@deepseek-ai/dsh`) up to date before we boot
-  // it ourselves. Skipped when reusing a running harness (probe returned
-  // true above) and when disabled with DSH_NO_UPDATE_CHECK=1.
-  if (process.env.DSH_NO_UPDATE_CHECK !== "1") {
-    await internals.harnessUpdate()
   }
 
   if (process.env.DSH_DEBUG === "1") {

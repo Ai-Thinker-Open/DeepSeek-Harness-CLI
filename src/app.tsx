@@ -1,22 +1,14 @@
 import { Show, createEffect, createSignal, onCleanup, onMount } from "solid-js"
-import { spawn } from "node:child_process"
-import { readFileSync, writeFileSync } from "node:fs"
-import { tmpdir } from "node:os"
-import { dirname, join } from "node:path"
-import { fileURLToPath } from "node:url"
 import { useKeyboard, useRenderer, useSelectionHandler } from "@opentui/solid"
 import { copySelection } from "./clipboard"
 import { disposeHostClipboard } from "./images"
 import { Toast, type ToastMessage } from "./components/toast"
 import { ApiKeyModal } from "./components/api-key-modal"
 import { DirectoryRiskModal } from "./components/directory-risk-modal"
-import { UpdateModal } from "./components/update-modal"
 import { createHarnessSession } from "./harness/session"
 import type { HarnessClientLike, ImageCommandImage, ModelCatalog, PromptContentPart } from "./harness/client"
 import { listMcpTools, refreshMcpStatus, type McpToolEntry } from "./mcp"
 import { effectiveWorkspace, isHighRiskDirectory, markWorkspaceConfirmed, workspaceConfirmed } from "./directory-risk"
-import { UPDATE_PKG, checkForUpdate } from "./update"
-import pkg from "../package.json"
 import { nextMode, type PermissionMode } from "./permission"
 import { Home } from "./screens/home"
 import { SessionScreen } from "./screens/session"
@@ -67,8 +59,6 @@ export function App(
     minToolRunningMs?: number
     /** Clean-exit hook (renderer destroy in cli.tsx); defaults to process.exit. */
     onExit?: () => void
-    /** Update runner; defaults to the detached self-updater. */
-    onUpdate?: (latest: string) => void
   } = {},
 ) {
   const renderer = useRenderer()
@@ -106,10 +96,6 @@ export function App(
   const [riskHigh, setRiskHigh] = createSignal(initialRisk?.high ?? false)
   /** Home/session screens render only after the risk gate closes. */
   const [started, setStarted] = createSignal(initialRisk === null)
-  const [updateOpen, setUpdateOpen] = createSignal(false)
-  const [updateInfo, setUpdateInfo] = createSignal("")
-  const [updatePhase, setUpdatePhase] = createSignal<"ask" | "running" | "done" | "failed">("ask")
-  const [updateStatus, setUpdateStatus] = createSignal("")
   const session = createHarnessSession(props.client, undefined, { minToolRunningMs: props.minToolRunningMs })
   let toastTimer: ReturnType<typeof setTimeout> | undefined
   let startupRan = false
@@ -177,97 +163,8 @@ export function App(
 
   const exit = props.onExit ?? (() => process.exit(0))
 
-  /** Run the update in place: the updater stages the new package while the
-   *  TUI shows progress (read from a status file), then the TUI exits briefly
-   *  so npm can replace the locked native library, and the updater relaunches
-   *  dsh-cli in the same terminal. */
-  const runSelfUpdate = (latest: string) => {
-    const statusPath = join(tmpdir(), `dsh-cli-update-${process.pid}.json`)
-    const script = join(dirname(fileURLToPath(import.meta.url)), "..", "scripts", "self-update.mjs")
-    setUpdatePhase("running")
-    setUpdateStatus("正在准备更新…")
-    let polling: ReturnType<typeof setInterval> | undefined
-    const stopPolling = () => {
-      if (polling) clearInterval(polling)
-      polling = undefined
-    }
-    const readStatus = (): { stage?: string; message?: string } | null => {
-      try {
-        return JSON.parse(readFileSync(statusPath, "utf8")) as { stage?: string; message?: string }
-      } catch {
-        return null
-      }
-    }
-    const finalize = (phase: "running" | "done" | "failed", message: string) => {
-      stopPolling()
-      setUpdatePhase(phase)
-      setUpdateStatus(message)
-    }
-    polling = setInterval(() => {
-      const status = readStatus()
-      if (!status?.stage) return
-      if (status.stage === "done") {
-        finalize("done", status.message ?? "更新完成，正在重启…")
-        // Let the user see the completion notice, then release the renderer
-        // so the updater can replace the locked native library and restart.
-        setTimeout(() => {
-          try {
-            writeFileSync(`${statusPath}.exit`, "1")
-          } catch {
-            // The updater falls back to a fixed wait.
-          }
-          exit()
-        }, 900)
-      } else if (status.stage === "failed") {
-        finalize("failed", status.message ?? "更新失败")
-      } else {
-        setUpdateStatus(status.message ?? status.stage)
-      }
-    }, 300)
-    try {
-      const child = spawn(process.execPath, [script, `${UPDATE_PKG}@${latest}`, "dsh-cli"], {
-        stdio: "inherit",
-        env: { ...process.env, DSH_UPDATE_STATUS: statusPath },
-      })
-      child.unref()
-      // A clean exit without a "done" status means staging failed; the
-      // updater already wrote the failure message for the polling loop.
-      child.on("exit", (code) => {
-        if (readStatus()?.stage !== "done" && updatePhase() === "running") {
-          finalize("failed", readStatus()?.message ?? `更新进程异常退出（${code ?? "?"}）`)
-        }
-      })
-    } catch {
-      finalize("failed", "无法启动更新进程")
-    }
-  }
-
-  const update = props.onUpdate ?? runSelfUpdate
-
-  const handleUpdateDone = (approved: boolean) => {
-    setUpdateOpen(false)
-    if (approved) {
-      update(updateInfo())
-      return
-    }
-    // The risk gate is already on screen (decided synchronously at startup):
-    // let the user answer it; the home screen follows afterwards.
-    if (riskOpen()) return
-    setStarted(true)
-    continueStartup()
-  }
-
   onMount(() => {
     void (async () => {
-      // Update gate first: if a newer version exists, ask before starting.
-      if (process.env.DSH_NO_UPDATE_CHECK !== "1") {
-        const latest = await checkForUpdate()
-        if (latest) {
-          setUpdateInfo(latest)
-          setUpdateOpen(true)
-          return
-        }
-      }
       // Risk gate first (computed synchronously at startup): home/session
       // render only after the user confirms the workspace.
       if (riskOpen()) return
@@ -616,15 +513,6 @@ export function App(
         highRisk={riskHigh()}
         onExit={exit}
         onProceed={handleRiskProceed}
-      />
-      <UpdateModal
-        open={updateOpen}
-        current={pkg.version}
-        latest={updateInfo()}
-        phase={updatePhase}
-        status={updateStatus}
-        onUpdate={() => handleUpdateDone(true)}
-        onSkip={() => handleUpdateDone(false)}
       />
     </box>
   )

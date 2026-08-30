@@ -135,10 +135,14 @@ re-installed when already correct):
   when missing).
 - `pnpm`: required by the harness to build the tui profile (auto-installed
   when missing).
-- Keeping `@deepseek-ai/dsh` current: before `dsh-cli` boots the harness it
-  queries the npm registry and auto-installs
-  `npm install -g @deepseek-ai/dsh@<latest>` when a newer version is
-  published (disable with `DSH_NO_UPDATE_CHECK=1`).
+- Silent forced updates for both dsh-cli itself and `@deepseek-ai/dsh`: every
+  `dsh-cli` launch queries the npm registry in the background and stages any
+  newer package into a temp prefix (recording a pending marker in
+  `~/.dsh/.updates-pending.json`); the next launch installs it
+  (`npm install -g <pkg>@<latest>`) before booting, so that launch already
+  runs the newest version. No update dialog is shown and failures fall back
+  to the current version without blocking (disable with
+  `DSH_NO_UPDATE_CHECK=1`).
 - First-launch bootstrap (skippable): links the bundled skills into
   `~/.dsh/skills`, registers FlashKey MCP in the tui profile, and tries to
   install `flashkey-mcp` (Python; failure only prints a hint, never blocks).
@@ -146,7 +150,8 @@ re-installed when already correct):
 All of the above can be controlled with environment variables:
 `DSH_SKIP_BOOTSTRAP=1` skips all bootstrap, `DSH_NO_SKILLS=1` /
 `DSH_NO_FLASHKEY=1` skip the corresponding resource, `DSH_NO_UPDATE_CHECK=1`
-disables the startup update checks for both dsh-cli itself and the harness,
+disables the startup update checks (background staging and next-launch
+application) for both dsh-cli itself and the harness,
 and `DSH_SKIP_RISK_CONFIRM=1` disables the directory risk confirmation. See
 `CHANGELOG.md` for the full list.
 

@@ -4,19 +4,19 @@ import { theme } from "../theme"
 export type ToastMessage = { text: string; kind: "success" | "error" }
 
 export function Toast(props: { toast: () => ToastMessage | null }) {
+  const color = () => (props.toast()!.kind === "error" ? theme.error : theme.primary)
   return (
     <Show when={props.toast()}>
-      <box position="absolute" left={0} right={0} bottom={3} justifyContent="center" zIndex={6000}>
+      <box position="absolute" right={1} top={1} zIndex={6000}>
         <box
-          backgroundColor={theme.backgroundPanel}
           border
-          borderColor={props.toast()!.kind === "error" ? theme.error : theme.primary}
+          borderStyle="rounded"
+          borderColor={color()}
+          backgroundColor={color()}
           paddingLeft={2}
           paddingRight={2}
-          paddingTop={1}
-          paddingBottom={1}
         >
-          <text fg={props.toast()!.kind === "error" ? theme.error : theme.primary}>
+          <text fg={theme.text}>
             {props.toast()!.text}
           </text>
         </box>

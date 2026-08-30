@@ -98,10 +98,6 @@ export function DirectoryRiskModal(props: {
               {"\n"}
               DeepSeek Harness 将能够访问你所有的个人文件 — SSH 密钥、凭证、浏览器配置等
               {props.dir === "/" ? "系统" : "主目录"}下的所有内容。
-              {"\n"}
-              如果此目录中存在恶意插件，它们可以执行任意代码、读取、修改或窃取你的文件。
-              {"\n"}
-              除非有明确的理由，否则不要信任你的整个{props.dir === "/" ? "系统" : "主目录"}。
             </text>
           </Show>
           <box marginTop={1} marginBottom={1} flexDirection="column">

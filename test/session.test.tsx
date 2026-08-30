@@ -152,7 +152,7 @@ test("escape in plan mode exits plan mode instead of going home", async () => {
   expect(commands).toEqual(["/plan off"])
 })
 
-test("hovering the stats bar shows real stats without flickering", async () => {
+test("hovering the stats bar no longer reveals a detail popup", async () => {
   const stats: SessionStats = {
     turns: 3,
     steps: 12,
@@ -173,30 +173,25 @@ test("hovering the stats bar shows real stats without flickering", async () => {
   })
   await app.renderOnce()
 
+  // The compact inline row is still shown.
+  expect(app.captureCharFrame()).toContain("3 轮 · 12 步")
+  expect(app.captureCharFrame()).toContain("缓存命中 91%")
+
+  // Hovering no longer surfaces the detailed popup.
   const lines = app.captureCharFrame().split("\n")
   const y = lines.findIndex((line) => line.includes("3 轮"))
   const x = lines[y]?.indexOf("3 轮") ?? 0
-
   await app.mockMouse.moveTo(x + 1, y)
   await app.renderOnce()
-  // Not instant: still hidden before the hover delay elapses.
-  expect(app.captureCharFrame()).not.toContain("轮次 3")
-  // The popup appears after a hover delay, not instantly.
   await new Promise((resolve) => setTimeout(resolve, 650))
   await app.renderOnce()
-  expect(app.captureCharFrame()).toContain("轮次 3")
-  expect(app.captureCharFrame()).toContain("输入 1.2k tokens")
+  expect(app.captureCharFrame()).not.toContain("轮次 3")
+  expect(app.captureCharFrame()).not.toContain("输入 1.2k tokens")
 
-  // Staying over the row must keep the popup stable, not flicker it away.
-  for (let i = 0; i < 3; i++) {
-    await app.mockMouse.moveTo(x + 2 + i, y)
-    await app.renderOnce()
-    expect(app.captureCharFrame()).toContain("轮次 3")
-  }
-
+  // Moving away keeps the (unchanged) inline row.
   await app.mockMouse.moveTo(x + 1, 2)
   await app.renderOnce()
-  expect(app.captureCharFrame()).not.toContain("轮次 3")
+  expect(app.captureCharFrame()).toContain("3 轮 · 12 步")
 })
 
 test("status text sits above the prompt and never hides the stats row", async () => {

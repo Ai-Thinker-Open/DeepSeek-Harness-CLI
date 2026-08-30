@@ -73,7 +73,6 @@ test("home directory shows the red high-risk warning", async () => {
   const frame = app.captureCharFrame()
   expect(frame).toContain("目录风险警告")
   expect(frame).toContain("SSH 密钥")
-  expect(frame).toContain("恶意插件")
   expect(frame).not.toContain("DeepSeek Harness CLI")
 })
 

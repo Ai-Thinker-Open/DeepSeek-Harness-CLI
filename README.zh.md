@@ -111,7 +111,7 @@ npx 临时运行同样在首次启动时自动补齐缺失部分；Bun 已随包
 - Bun 1.3.14：终端客户端运行时，作为 `@oven/bun-<平台>-<arch>` 平台包随依赖安装。Windows 上 bun 1.4+ 会触发 OpenTUI 段错误，因此运行时优先使用包内 1.3.14 并拒绝 1.4+。
 - `@deepseek-ai/dsh`：DeepSeek Harness 服务端（缺失时通过 npm 自动安装）。
 - `pnpm`：harness 构建 tui profile 所需（缺失时自动安装）。
-- `@deepseek-ai/dsh` 版本保持最新：每次由 `dsh-cli` 拉起 harness 前会查询 npm registry，发现新版自动执行 `npm install -g @deepseek-ai/dsh@<最新版>`（可用 `DSH_NO_UPDATE_CHECK=1` 关闭）。
+- dsh-cli 自身与 `@deepseek-ai/dsh` 采用「静默强制后台更新」：每次 `dsh-cli` 启动时后台查询 npm registry 并暂存新版到临时目录（把待更新写入 `~/.dsh/.updates-pending.json`），下次启动在拉起 harness 前自动 `npm install -g <pkg>@<最新版>`，本次启动即运行最新版。不再弹出更新确认窗，失败静默回退当前版本、不阻塞（可用 `DSH_NO_UPDATE_CHECK=1` 关闭）。
 - 首次启动的 bootstrap（可跳过）：把内置技能链接到 `~/.dsh/skills`、向 tui profile 注册 FlashKey MCP、并尝试安装 `flashkey-mcp`（Python 包；失败只提示、不影响启动）。
 
 以上行为均可用环境变量控制：`DSH_SKIP_BOOTSTRAP=1` 跳过全部 bootstrap，`DSH_NO_SKILLS=1` / `DSH_NO_FLASHKEY=1` 只跳过对应资源，`DSH_NO_UPDATE_CHECK=1` 关闭启动时对 dsh-cli 自身与 harness 的更新检查，`DSH_SKIP_RISK_CONFIRM=1` 关闭目录风险确认。完整列表见 `CHANGELOG.md`。

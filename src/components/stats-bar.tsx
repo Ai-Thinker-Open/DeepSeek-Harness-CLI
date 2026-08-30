@@ -1,10 +1,5 @@
-// @ts-nocheck
-import { For, Show, createSignal, onCleanup } from "solid-js"
 import { EMPTY_STATS, type SessionStats } from "../session"
 import { theme } from "../theme"
-
-/** Hover delay before the stats detail popup appears (tooltip-like). */
-const HOVER_DELAY_MS = 500
 
 function formatDuration(ms: number): string {
   if (ms <= 0) return "—"
@@ -27,31 +22,14 @@ function formatTokens(n: number): string {
   return String(n)
 }
 
-function fullStats(s: SessionStats): string[] {
-  const lines = [
-    `轮次 ${s.turns} · 步骤 ${s.steps}`,
-    `LLM 用时 ${formatDuration(s.llmMs)} · 工具调用 ${formatDuration(s.toolMs)}`,
-  ]
-  if (s.firstTokenMs != null && s.firstTokenCount > 0) {
-    lines.push(`首 token 平均 ${formatPrecise(s.firstTokenMs)}（${s.firstTokenCount} 步）`)
-  }
-  lines.push(`输入 ${formatTokens(s.inTokens)} tokens · 缓存读取 ${formatTokens(s.cacheReadTokens)} · 缓存写入 ${formatTokens(s.cacheWriteTokens)}`)
-  lines.push(`输出 ${formatTokens(s.outTokens)} tokens · 推理 ${formatTokens(s.reasoningTokens)} tokens`)
-  return lines
-}
-
 function cacheHitPct(s: SessionStats): number | null {
   const billed = s.inTokens + s.cacheReadTokens
   if (billed <= 0) return null
   return Math.round((s.cacheReadTokens / billed) * 100)
 }
 
+/** Compact one-line usage summary (the hover detail popup was removed). */
 export function StatsBar(props: { stats?: () => SessionStats } = {}) {
-  const [hover, setHover] = createSignal(false)
-  let hoverTimer: ReturnType<typeof setTimeout> | undefined
-  onCleanup(() => {
-    if (hoverTimer) clearTimeout(hoverTimer)
-  })
   const stats = props.stats ?? (() => EMPTY_STATS)
 
   const short = () => {
@@ -76,41 +54,8 @@ export function StatsBar(props: { stats?: () => SessionStats } = {}) {
   }
 
   return (
-    <box width="100%" position="relative" flexShrink={0}>
-      <box
-        onMouse={(evt) => {
-          if (evt.type === "over") {
-            // Tooltip-style delay: only show details after hovering steadily.
-            if (hoverTimer) clearTimeout(hoverTimer)
-            hoverTimer = setTimeout(() => setHover(true), HOVER_DELAY_MS)
-          } else if (evt.type === "out") {
-            if (hoverTimer) clearTimeout(hoverTimer)
-            hoverTimer = undefined
-            setHover(false)
-          }
-        }}
-      >
-        <text fg={theme.textMuted}>{short()}</text>
-      </box>
-      <Show when={hover()}>
-        <box
-          position="absolute"
-          bottom={2}
-          left={0}
-          zIndex={7000}
-          backgroundColor={theme.backgroundPanel}
-          border
-          borderColor={theme.border}
-          paddingLeft={2}
-          paddingRight={2}
-          paddingTop={1}
-          paddingBottom={1}
-          flexDirection="column"
-          gap={0}
-        >
-          <For each={fullStats(stats())}>{(line) => <text fg={theme.text}>{line}</text>}</For>
-        </box>
-      </Show>
+    <box width="100%" flexShrink={0}>
+      <text fg={theme.textMuted}>{short()}</text>
     </box>
   )
 }

@@ -13,7 +13,7 @@ const savedEnv = { ...process.env }
 const savedProbe = dispatcherInternals.probe
 const savedSpawn = dispatcherInternals.spawn
 const savedSpawnSync = dispatcherInternals.spawnSync
-const savedHarnessUpdate = dispatcherInternals.harnessUpdate
+const noopStageUpdates = () => {}
 let profileHome: string | undefined
 
 afterEach(() => {
@@ -21,14 +21,14 @@ afterEach(() => {
   dispatcherInternals.probe = savedProbe
   dispatcherInternals.spawn = savedSpawn
   dispatcherInternals.spawnSync = savedSpawnSync
-  dispatcherInternals.harnessUpdate = savedHarnessUpdate
+  dispatcherInternals.stageUpdates = noopStageUpdates
   if (profileHome) rmSync(profileHome, { recursive: true, force: true })
   profileHome = undefined
 })
 
-// Harness auto-update is exercised in harness-update.test.ts; keep dispatcher
-// tests free of real `npm root -g` / registry calls unless a test opts in.
-dispatcherInternals.harnessUpdate = async () => ({ before: undefined, after: undefined })
+// Silent-update staging is exercised in silent-update.test.ts; keep dispatcher
+// tests free of real background agent spawns unless a test opts in.
+dispatcherInternals.stageUpdates = noopStageUpdates
 
 function installSpawn() {
   const calls: SpawnCall[] = []
@@ -256,18 +256,17 @@ test("dispatcher falls back to npx when dsh is not installed and no cache exists
   expect(calls[0]?.args).toEqual(["--yes", "@deepseek-ai/dsh", "--profile", "tui"])
 })
 
-test("dispatcher updates the harness before booting it", async () => {
+test("dispatcher stages updates in the background before booting", async () => {
   // Parallel test files (app.test.tsx / directory-risk.test.tsx) set this
-  // globally; make sure the auto-update path is actually exercised.
+  // globally; make sure the silent-update path is actually exercised.
   delete process.env.DSH_NO_UPDATE_CHECK
   const { calls, children } = installSpawn()
   installSpawnSync({ "--help": { status: 0 } })
   dispatcherInternals.probe = async () => false
   writeProfile(["@ai-thinker/deepseek-harness-cli"])
   let updateCalls = 0
-  dispatcherInternals.harnessUpdate = async () => {
+  dispatcherInternals.stageUpdates = () => {
     updateCalls++
-    return { before: "1.0.0", after: "2.0.0" }
   }
 
   const pending = run([])
@@ -279,22 +278,25 @@ test("dispatcher updates the harness before booting it", async () => {
   expect(calls[0]?.command).toBe("dsh")
 })
 
-test("dispatcher skips the harness update when disabled or reusing a harness", async () => {
+test("dispatcher skips staging only when disabled", async () => {
   let updateCalls = 0
-  dispatcherInternals.harnessUpdate = async () => {
+  dispatcherInternals.stageUpdates = () => {
     updateCalls++
-    return { before: "1.0.0", after: "2.0.0" }
   }
 
-  const { calls: reuseCalls, children: reuseChildren } = installSpawn()
+  // Reusing a running harness still stages: launch-time background updates
+  // apply to the next launch, so they are not tied to booting a new harness.
+  delete process.env.DSH_NO_UPDATE_CHECK
+  const { children: reuseChildren } = installSpawn()
   dispatcherInternals.probe = async () => true
   process.env.DSH_URL = "http://127.0.0.1:3999"
   const reuse = run([])
   await settle()
   reuseChildren[0]?.emit("exit", 0)
   await expect(reuse).resolves.toBe(0)
-  expect(updateCalls).toBe(0)
+  expect(updateCalls).toBe(1)
 
+  updateCalls = 0
   process.env.DSH_NO_UPDATE_CHECK = "1"
   const { calls: bootCalls, children: bootChildren } = installSpawn()
   installSpawnSync({ "--help": { status: 0 } })
