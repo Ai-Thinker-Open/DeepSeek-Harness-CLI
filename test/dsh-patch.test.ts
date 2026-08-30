@@ -64,7 +64,7 @@ test("manifest declares standard npm dependencies and no install-time mutation",
     dependencies?: Record<string, string>
     optionalDependencies?: Record<string, string>
   }
-  expect(manifest.version).toBe("0.3.3")
+  expect(manifest.version).toBe("0.3.4")
   expect(manifest.scripts?.postinstall).toBeUndefined()
   expect(manifest.files ?? []).not.toContain("scripts/ensure-runtime.mjs")
   expect(manifest.dependencies?.["@opentui/core"]).toBe("0.5.9")
