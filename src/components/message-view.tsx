@@ -1,5 +1,5 @@
 import { createEffect, createMemo, createSignal, For, Show } from "solid-js"
-import { useRenderer } from "@opentui/solid"
+import { useRenderer, useTerminalDimensions } from "@opentui/solid"
 import type { ChatImage, ChatMessage } from "../session"
 import type { ToolCallRecord, ToolResultRecord, ToolCallStatus } from "../session"
 import { ACCENT_BORDER, theme } from "../theme"
@@ -494,6 +494,7 @@ function CommandCard({ message }: { message: ChatMessage }) {
 function ThinkingBlock({ text, streaming }: { text: string; streaming?: boolean }) {
   const [expanded, setExpanded] = createSignal(false)
   const [hovered, setHovered] = createSignal(false)
+  const terminal = useTerminalDimensions()
   // The expanded body shows the full reasoning text; the surrounding scrollbox
   // handles overflow vertically and wrapMode="char" handles long runs, so no
   // arbitrary line cap is applied here.
@@ -501,10 +502,16 @@ function ThinkingBlock({ text, streaming }: { text: string; streaming?: boolean 
   const expandable = () => text.length > 0
   const toggle = () => setExpanded((v) => !v)
   const preview = () => lines()
-  // "Think · <streaming content>" on a single line: the whole reasoning stream
-  // folds into the header row, collapsing newlines/whitespace to spaces and
-  // truncating to the terminal width as it grows. Expand for the full body.
-  const inline = text.replace(/\s+/g, " ").trim()
+  // Single-line header shows the MOST RECENT portion of the reasoning so the
+  // streaming growth stays visible. OpenTUI's `truncate` keeps the head, which
+  // would otherwise pin the start and hide the newly-arriving tail; instead we
+  // slice from the end to fit the terminal width and mark the cut with "…".
+  const inline = () => {
+    const raw = text.replace(/\s+/g, " ").trim()
+    if (!raw) return ""
+    const max = Math.max(24, terminal().width - 14)
+    return raw.length > max ? `… ${raw.slice(-max)}` : raw
+  }
   return (
     <box flexDirection="column" paddingLeft={2}>
       <box
@@ -523,7 +530,7 @@ function ThinkingBlock({ text, streaming }: { text: string; streaming?: boolean 
           hovered={hovered()}
           expandable={expandable()}
         />
-        <text fg={theme.textMuted} wrapMode="none" truncate>
+        <text fg={theme.textMuted} wrapMode="none">
           <Show when={!streaming}>
             <b> Think</b>
           </Show>
@@ -531,8 +538,8 @@ function ThinkingBlock({ text, streaming }: { text: string; streaming?: boolean 
             <span> </span>
             <ShineSpans text="Think" />
           </Show>
-          <Show when={inline}>
-            <span style={{ fg: theme.textMuted }}> · {inline}</span>
+          <Show when={inline()}>
+            <span style={{ fg: theme.textMuted }}> · {inline()}</span>
           </Show>
         </text>
       </box>
