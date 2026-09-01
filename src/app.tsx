@@ -169,6 +169,12 @@ export function App(
       // render only after the user confirms the workspace.
       if (riskOpen()) return
       setStarted(true)
+      const restartFor = process.env.DSH_RESTART_FOR_UPDATE
+      if (restartFor) {
+        // A background/launch-time update installed a newer build; it only
+        // takes effect on the next launch, so remind the user to restart.
+        showToast(`已更新 ${restartFor} · 重启 dsh-cli 后生效`)
+      }
       continueStartup()
     })()
   })

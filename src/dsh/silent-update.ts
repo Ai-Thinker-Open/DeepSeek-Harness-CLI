@@ -97,16 +97,24 @@ function installGlobal(pkgName: string, version: string): { status: number; stde
  * Successful entries are removed; failures are kept (so the next launch
  * retries) with a single stderr line. Never throws and never blocks the
  * caller on a hard error.
+ *
+ * Returns the packages it actually upgraded, so the launcher can tell the
+ * running session "restart to pick this up" — the freshly-installed version
+ * only takes effect on the next launch, not this one.
  */
-export async function applyPendingUpdates(env: NodeJS.ProcessEnv = process.env): Promise<void> {
-  if (env.DSH_NO_UPDATE_CHECK === "1") return
+export async function applyPendingUpdates(
+  env: NodeJS.ProcessEnv = process.env,
+): Promise<{ updated: Array<{ pkg: string; version: string }> }> {
+  if (env.DSH_NO_UPDATE_CHECK === "1") return { updated: [] }
   const pending = readMarker(env)
-  if (pending.length === 0) return
+  if (pending.length === 0) return { updated: [] }
 
   const remaining: PendingUpdate[] = []
+  const updated: Array<{ pkg: string; version: string }> = []
   for (const entry of pending) {
     const { status, stderr } = installGlobal(entry.pkg, entry.version)
     if (status === 0) {
+      updated.push({ pkg: entry.pkg, version: entry.version })
       if (env.DSH_DEBUG === "1") process.stderr.write(`[dsh-cli] updated ${entry.pkg} → ${entry.version}\n`)
       continue
     }
@@ -117,6 +125,7 @@ export async function applyPendingUpdates(env: NodeJS.ProcessEnv = process.env):
 
   if (remaining.length > 0) writeMarker(remaining, env)
   else writeMarker([], env)
+  return { updated }
 }
 
 function npmBinary(): string {
