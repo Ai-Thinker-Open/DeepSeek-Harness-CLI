@@ -32,7 +32,7 @@ const { run, bootstrapAll, applyPendingUpdates } = await import(pathToFileURL(di
 // Apply any update staged by a previous launch before booting (next-launch
 // model: the freshly-installed package is what this launch uses, and no
 // renderer is alive yet so Windows' opentui.dll lock is not a concern).
-const applied = await applyPendingUpdates()
+const applied = applyPendingUpdates()
 if (applied.updated.length > 0) {
   // The upgrade only takes effect on the next launch, so surface a restart
   // hint in the upcoming session instead of silently running the old build.

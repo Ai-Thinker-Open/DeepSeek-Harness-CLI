@@ -13,6 +13,7 @@ import Schema from "@deepseek-ai/schemastery"
 import type { AppExitLike, DshContext } from "./types"
 import type { TuiStartupValues } from "./startup"
 import { bunVersionProblemFor } from "./node-version"
+import { applyPendingUpdates } from "./silent-update"
 import { portableSpawnOptions, portableSpawnSyncOptions, resolveBun } from "./portable"
 
 export const name = "tui-runner"
@@ -99,6 +100,15 @@ export function apply(ctx: DshContext, config: TuiRunnerConfig = {}): void {
     process.stderr.write(`[dsh-cli] ${bunProblem}\n`)
     exit(1)
     return
+  }
+  // The tui profile runs inside a dsh process, so its launcher path never
+  // reaches bin/dsh-cli; still apply any staged silent update (dsh-cli and the
+  // harness) and surface a restart hint to the terminal client. Upgrading in
+  // place is safe here: the running process keeps its loaded modules and picks
+  // the new build on the next `dsh --profile tui`.
+  const applied = applyPendingUpdates()
+  if (applied.updated.length > 0) {
+    process.env.DSH_RESTART_FOR_UPDATE = applied.updated.map((u) => `${u.pkg}@${u.version}`).join(" | ")
   }
   const child = internals.spawn(bunBin, [cliPath, ...cliArgs], {
     stdio: "inherit",

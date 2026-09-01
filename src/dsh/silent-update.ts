@@ -102,9 +102,9 @@ function installGlobal(pkgName: string, version: string): { status: number; stde
  * running session "restart to pick this up" — the freshly-installed version
  * only takes effect on the next launch, not this one.
  */
-export async function applyPendingUpdates(
+export function applyPendingUpdates(
   env: NodeJS.ProcessEnv = process.env,
-): Promise<{ updated: Array<{ pkg: string; version: string }> }> {
+): { updated: Array<{ pkg: string; version: string }> } {
   if (env.DSH_NO_UPDATE_CHECK === "1") return { updated: [] }
   const pending = readMarker(env)
   if (pending.length === 0) return { updated: [] }
