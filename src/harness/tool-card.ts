@@ -460,7 +460,9 @@ function toolSpecificBody(name: string, args: Record<string, unknown>): string |
     }
     case "exit_plan_mode": {
       const plan = str(args.plan)
-      return plan ? truncate(plan, 300) : undefined
+      // Show the full plan in the card: it is the artifact the user approves
+      // and the implementation then follows, so truncating it defeats review.
+      return plan || undefined
     }
     case "cordis_define": {
       const parts: string[] = []
@@ -710,6 +712,8 @@ export interface ToolRowModel {
   body: string | null
   output: string | null
   markers: BashMarkers
+  /** True for `exit_plan_mode`: the body carries the full plan markdown. */
+  isPlan: boolean
   /** Structured card material from `tool/result` meta, when present. */
   card: ToolCardMeta | null
 }
@@ -803,5 +807,5 @@ export function toolRowModel(call: ToolCallRecord, result: ToolResultRecord | un
     variant === "bash"
       ? bashMarkers(card?.kind === "terminal" && card.terminal?.output !== undefined ? card.terminal.output : output ?? "")
       : { text: output ?? "" }
-  return { variant, title, icon: toolIcon(call.name), summary, body, output, markers, card }
+  return { variant, title, icon: toolIcon(call.name), summary, body, output, markers, isPlan: call.name === "exit_plan_mode", card }
 }

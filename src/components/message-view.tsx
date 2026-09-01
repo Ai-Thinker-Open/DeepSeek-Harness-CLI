@@ -334,7 +334,12 @@ function ToolBody({ model, args }: { model: ToolRowModel; args: Record<string, u
     default:
       return (
         <box flexDirection="column" paddingLeft={2}>
-          <Show when={model.body}>
+          <Show when={model.isPlan && model.body}>
+            {/* The plan artifact is markdown: render it so headings, lists,
+                and code blocks read properly instead of raw markers. */}
+            <MarkdownText text={model.body as string} />
+          </Show>
+          <Show when={!model.isPlan && model.body}>
             <text fg={theme.textMuted} wrapMode="char">
               {model.body}
             </text>
@@ -376,7 +381,7 @@ export function ToolCard({ call, result }: { call: ToolCallRecord; result?: Tool
   createEffect(() => {
     if (call.status === "running" || autoExpanded) return
     const variant = model().variant
-    if (variant === "edit" || variant === "write" || model().card?.kind === "diff") {
+    if (variant === "edit" || variant === "write" || call.name === "exit_plan_mode" || model().card?.kind === "diff") {
       autoExpanded = true
       setExpanded(true)
     }

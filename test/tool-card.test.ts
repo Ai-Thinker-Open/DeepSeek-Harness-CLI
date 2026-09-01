@@ -9,6 +9,7 @@ import {
   todoItems,
   toolBody,
   toolIcon,
+  toolRowModel,
   toolSummary,
   toolTitle,
 } from "../src/harness/tool-card"
@@ -262,4 +263,23 @@ test("generic action families get readable expanded bodies", () => {
   expect(toolBody("job_kill", { job_id: "j1", reason: "超时" })).toBe("job: j1\nreason: 超时")
   // Unknown tools still fall back to the pretty-printed args.
   expect(toolBody("mystery_tool", { foo: "bar" })).toBe('{\n  "foo": "bar"\n}')
+})
+
+test("exit_plan_mode renders the full plan body and is flagged as a plan", () => {
+  const plan = `# 重构计划
+
+1. 先迁移现有模块
+2. 再补测试
+
+\`\`\`ts
+const x = 1
+\`\`\`
+
+` + "长内容".repeat(200)
+  // The body carries the whole markdown artifact, never a 300-char slice.
+  expect(toolBody("exit_plan_mode", { plan })).toBe(plan)
+  expect(
+    toolRowModel({ id: "c", name: "exit_plan_mode", args: { plan }, status: "ok" }, undefined).isPlan,
+  ).toBe(true)
+  expect(toolRowModel({ id: "c", name: "bash", args: { command: "ls" }, status: "ok" }, undefined).isPlan).toBe(false)
 })
