@@ -497,12 +497,12 @@ function ThinkingBlock({ text, streaming }: { text: string; streaming?: boolean 
     const all = lines()
     return all.length > 12 ? [...all.slice(0, 12), `… (${all.length - 12} more lines)`] : all
   }
-  // While streaming, surface the first substantive content line as a live
-  // preview directly under the "Think" header, so the reader sees reasoning
-  // progress without expanding. It tracks the accumulating `text` reactively.
-  const streamPreview = () => {
-    if (!streaming) return ""
-    return text.split("\n").map((l) => l.trim()).find((l) => l.length > 0) ?? ""
+  // Fold the first substantive content line into the header as "Think · <…>",
+  // streaming it live while the reasoning accumulates and leaving it pinned
+  // once it ends. The full body only appears on expand.
+  const headerPreview = () => {
+    const first = text.split("\n").map((l) => l.trim()).find((l) => l.length > 0) ?? ""
+    return first ? ` · ${first}` : ""
   }
   return (
     <box flexDirection="column" paddingLeft={2}>
@@ -522,22 +522,19 @@ function ThinkingBlock({ text, streaming }: { text: string; streaming?: boolean 
           hovered={hovered()}
           expandable={expandable()}
         />
-        <text fg={theme.textMuted}>
+        <text fg={theme.textMuted} wrapMode="none" truncate>
           <Show when={!streaming}>
             <b> Think</b>
           </Show>
+          <Show when={streaming}>
+            <span> </span>
+            <ShineSpans text="Think" />
+          </Show>
+          <Show when={headerPreview()}>
+            <span style={{ fg: theme.textMuted }}>{headerPreview()}</span>
+          </Show>
         </text>
-        <Show when={streaming}>
-          <text fg={theme.textMuted}> </text>
-          <ShineText text="Think" />
-          <text fg={theme.textMuted}> …</text>
-        </Show>
       </box>
-      <Show when={streamPreview()}>
-        <text fg={theme.textMuted} wrapMode="none" truncate>
-          {streamPreview()}
-        </text>
-      </Show>
       <Show when={expanded()}>
         <For each={preview()}>
           {(line) => (

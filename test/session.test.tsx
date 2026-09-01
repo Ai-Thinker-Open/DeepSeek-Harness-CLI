@@ -320,7 +320,7 @@ test("thinking row matches tool-row interaction: glyph by default, collapse hint
   const frame = app.captureCharFrame()
   expect(frame).toContain("✺")
   expect(frame).toContain("Think")
-  expect(frame).toContain("…")
+  expect(frame).toContain("推理内容")
 
   const lines = frame.split("\n")
   const y = lines.findIndex((line) => line.includes("Think"))
