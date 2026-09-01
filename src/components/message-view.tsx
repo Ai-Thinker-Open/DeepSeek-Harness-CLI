@@ -497,13 +497,11 @@ function ThinkingBlock({ text, streaming }: { text: string; streaming?: boolean 
     const all = lines()
     return all.length > 12 ? [...all.slice(0, 12), `… (${all.length - 12} more lines)`] : all
   }
-  // Fold the first substantive content line into the header as "Think · <…>",
-  // streaming it live while the reasoning accumulates and leaving it pinned
-  // once it ends. The full body only appears on expand.
-  const headerPreview = () => {
-    const first = text.split("\n").map((l) => l.trim()).find((l) => l.length > 0) ?? ""
-    return first ? ` · ${first}` : ""
-  }
+  // Stream the reasoning body live: auto-expand the moment a stream starts so
+  // the reader watches the output unfold, and leave it up to them once it ends.
+  createEffect(() => {
+    if (streaming) setExpanded(true)
+  })
   return (
     <box flexDirection="column" paddingLeft={2}>
       <box
@@ -529,9 +527,6 @@ function ThinkingBlock({ text, streaming }: { text: string; streaming?: boolean 
           <Show when={streaming}>
             <span> </span>
             <ShineSpans text="Think" />
-          </Show>
-          <Show when={headerPreview()}>
-            <span style={{ fg: theme.textMuted }}>{headerPreview()}</span>
           </Show>
         </text>
       </box>
