@@ -494,19 +494,17 @@ function CommandCard({ message }: { message: ChatMessage }) {
 function ThinkingBlock({ text, streaming }: { text: string; streaming?: boolean }) {
   const [expanded, setExpanded] = createSignal(false)
   const [hovered, setHovered] = createSignal(false)
-  // Bounded slice first so huge reasoning dumps never split in full.
-  const lines = createMemo(() => text.slice(0, 12_000).split("\n"))
+  // The expanded body shows the full reasoning text; the surrounding scrollbox
+  // handles overflow vertically and wrapMode="char" handles long runs, so no
+  // arbitrary line cap is applied here.
+  const lines = createMemo(() => text.split("\n"))
   const expandable = () => text.length > 0
   const toggle = () => setExpanded((v) => !v)
-  const preview = () => {
-    const all = lines()
-    return all.length > 12 ? [...all.slice(0, 12), `… (${all.length - 12} more lines)`] : all
-  }
-  // Stream the reasoning body live: auto-expand the moment a stream starts so
-  // the reader watches the output unfold, and leave it up to them once it ends.
-  createEffect(() => {
-    if (streaming) setExpanded(true)
-  })
+  const preview = () => lines()
+  // "Think · <streaming content>" on a single line: the whole reasoning stream
+  // folds into the header row, collapsing newlines/whitespace to spaces and
+  // truncating to the terminal width as it grows. Expand for the full body.
+  const inline = text.replace(/\s+/g, " ").trim()
   return (
     <box flexDirection="column" paddingLeft={2}>
       <box
@@ -532,6 +530,9 @@ function ThinkingBlock({ text, streaming }: { text: string; streaming?: boolean 
           <Show when={streaming}>
             <span> </span>
             <ShineSpans text="Think" />
+          </Show>
+          <Show when={inline}>
+            <span style={{ fg: theme.textMuted }}> · {inline}</span>
           </Show>
         </text>
       </box>

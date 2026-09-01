@@ -320,8 +320,8 @@ test("thinking row matches tool-row interaction: glyph by default, collapse hint
   await app.renderOnce()
 
   const hoverFrame = app.captureCharFrame()
-  // Streaming auto-expands the body, so hover offers a collapse arrow.
-  expect(hoverFrame).toContain("▾")
+  // Collapsed by default, hover offers an expand arrow.
+  expect(hoverFrame).toContain("▸")
   expect(hoverFrame).not.toContain("✺")
 })
 
