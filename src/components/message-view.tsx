@@ -497,6 +497,13 @@ function ThinkingBlock({ text, streaming }: { text: string; streaming?: boolean 
     const all = lines()
     return all.length > 12 ? [...all.slice(0, 12), `… (${all.length - 12} more lines)`] : all
   }
+  // While streaming, surface the first substantive content line as a live
+  // preview directly under the "Think" header, so the reader sees reasoning
+  // progress without expanding. It tracks the accumulating `text` reactively.
+  const streamPreview = () => {
+    if (!streaming) return ""
+    return text.split("\n").map((l) => l.trim()).find((l) => l.length > 0) ?? ""
+  }
   return (
     <box flexDirection="column" paddingLeft={2}>
       <box
@@ -526,6 +533,11 @@ function ThinkingBlock({ text, streaming }: { text: string; streaming?: boolean 
           <text fg={theme.textMuted}> …</text>
         </Show>
       </box>
+      <Show when={streamPreview()}>
+        <text fg={theme.textMuted} wrapMode="none" truncate>
+          {streamPreview()}
+        </text>
+      </Show>
       <Show when={expanded()}>
         <For each={preview()}>
           {(line) => (

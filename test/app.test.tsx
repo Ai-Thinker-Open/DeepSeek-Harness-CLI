@@ -96,6 +96,14 @@ class FakeClient implements HarnessClientLike {
     return { items: this.sessionsResult }
   }
 
+  async searchSessions(_query: string) {
+    return { items: [], hasMore: false }
+  }
+
+  async exportSession(_sessionId: string, _options?: { includeDescendants?: boolean }) {
+    return { data: new Uint8Array([80, 75, 3, 4]), filename: "dsh-session-test.zip" }
+  }
+
   async commandList() {
     return [{ name: "compact", description: "Compact", input: undefined }]
   }

@@ -29,6 +29,8 @@ export const LOCAL_COMMANDS: CommandItem[] = [
   { name: "mcp", description: "显示 MCP 服务器列表与状态", kind: "local", behavior: "run" },
   { name: "sessions", description: "列出主机上的全部会话", kind: "local", behavior: "run" },
   { name: "resume", description: "浏览已保存的会话（只读列表）", kind: "local", behavior: "run" },
+  { name: "search", description: "跨会话全文搜索历史记录", kind: "local", input: { hint: "<关键词>" }, behavior: "fill" },
+  { name: "export", description: "导出会话日志到本地文件", kind: "local", input: { hint: "[路径]" }, behavior: "run" },
   { name: "model", description: "切换当前会话的 LLM 模型", kind: "local", behavior: "run" },
   { name: "rename", description: "重命名当前会话", kind: "local", input: { hint: "<标题>" }, behavior: "fill" },
   { name: "fork", description: "从当前会话分叉出新会话", kind: "local", behavior: "run" },
@@ -53,7 +55,6 @@ export const HARNESS_COMMANDS: CommandItem[] = [
   },
   { name: "plan", description: "描述你的任务以生成计划（进入/退出计划模式）", kind: "host", input: { hint: "[<任务描述|off>]" }, behavior: "fill" },
   { name: "permission", description: "切换权限预设（沙箱模式与审批策略）", kind: "host", input: { hint: "<preset>" }, behavior: "fill" },
-  { name: "export", description: "导出会话日志", kind: "host", behavior: "run" },
 ]
 
 /** Canonical Chinese descriptions for host commands, so the palette never

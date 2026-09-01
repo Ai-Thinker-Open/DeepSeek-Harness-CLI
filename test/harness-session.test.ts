@@ -9,7 +9,10 @@ import type {
   SessionEvent,
 } from "../src/harness/client"
 import { HarnessError } from "../src/harness/client"
-import { createHarnessSession } from "../src/harness/session"
+import { createHarnessSession, describeHarnessError } from "../src/harness/session"
+import { mkdtempSync, readFileSync, rmSync } from "node:fs"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
 
 class FakeClient implements HarnessClientLike {
   describeResult: HostDescribe = { version: "mock", cwd: "/tmp", attachedSessions: 0, canOpenPath: true }
@@ -75,6 +78,14 @@ class FakeClient implements HarnessClientLike {
 
   async listSessions() {
     return { items: [] }
+  }
+
+  async searchSessions(_query: string) {
+    return { items: [], hasMore: false }
+  }
+
+  async exportSession(_sessionId: string, _options?: { includeDescendants?: boolean }) {
+    return { data: new Uint8Array([80, 75, 3, 4]), filename: "dsh-session-test.zip" }
   }
 
   async commandList() {
@@ -420,7 +431,37 @@ test("resumeSession renders the listing-preview transcript immediately", async (
   })) as typeof client.listSessions
   client.history = (async () => {
     historyCalls += 1
-    if (historyCalls === 1) {
+    return {
+      events: [
+        {
+          event: {
+            type: "user/message",
+            seq: 1,
+            time: 1,
+            data: { id: "m1", content: [{ type: "text", text: "历史消息" }], source: { kind: "user" } },
+          },
+        },
+      ],
+      hasMore: false,
+    }
+  }) as typeof client.history
+  const session = createHarnessSession(client, "/tmp")
+  const items = await session.listSessions()
+  expect(items).toHaveLength(1)
+
+  // The listing prefetches the transcript (seed) and resume re-syncs it; both
+  // agree on the content, so it renders once resume completes.
+  expect(await session.resumeSession(items[0]!.sessionId)).toBe(true)
+  expect(session.messages().map((m) => m.content)).toContain("历史消息")
+  expect(historyCalls).toBeGreaterThanOrEqual(2)
+  session.dispose()
+})
+
+test("resume onto a blank session clears the previous conversation", async () => {
+  const client = new FakeClient()
+  let target = "s-full"
+  client.history = (async () => {
+    if (target === "s-full") {
       return {
         events: [
           {
@@ -428,7 +469,7 @@ test("resumeSession renders the listing-preview transcript immediately", async (
               type: "user/message",
               seq: 1,
               time: 1,
-              data: { id: "m1", content: [{ type: "text", text: "历史消息" }], source: { kind: "user" } },
+              data: { id: "m1", content: [{ type: "text", text: "旧会话内容" }], source: { kind: "user" } },
             },
           },
         ],
@@ -438,14 +479,123 @@ test("resumeSession renders the listing-preview transcript immediately", async (
     return { events: [], hasMore: false }
   }) as typeof client.history
   const session = createHarnessSession(client, "/tmp")
-  const items = await session.listSessions()
-  expect(items).toHaveLength(1)
 
-  // The second history call (during resume re-sync) is empty, so the only way
-  // the transcript shows is the listing preview seed.
-  expect(await session.resumeSession(items[0]!.sessionId)).toBe(true)
-  expect(session.messages().map((m) => m.content)).toContain("历史消息")
-  expect(historyCalls).toBeGreaterThanOrEqual(2)
+  // A session that has a conversation.
+  expect(await session.resumeSession("s-full")).toBe(true)
+  expect(session.messages().map((m) => m.content)).toContain("旧会话内容")
+
+  // A blank session must not keep the previous conversation on screen.
+  target = "s-blank"
+  expect(await session.resumeSession("s-blank")).toBe(true)
+  expect(session.messages()).toEqual([])
+  session.dispose()
+})
+
+test("fork resets the session stats instead of inheriting the parent's", async () => {
+  const client = new FakeClient()
+  const session = createHarnessSession(client, "/tmp")
+  expect(await session.start("hello")).toBe(true)
+  client.push(frame("session/event", { sessionId: "s-1", event: ev("turn/start", { turn: 1 }, 5) }))
+  client.push(frame("session/event", { sessionId: "s-1", event: ev("step/start", { step: 1 }, 6) }))
+  await tick()
+  expect(session.stats().turns).toBe(1)
+  expect(session.stats().steps).toBe(1)
+
+  // The forked child starts with its own zeroed counters.
+  expect(await session.forkSession()).toBe("s-forked")
+  expect(session.stats().turns).toBe(0)
+  expect(session.stats().steps).toBe(0)
+  expect(session.messages()).toEqual([])
+  session.dispose()
+})
+
+test("searchSessions forwards the query and returns hits", async () => {
+  const client = new FakeClient()
+  client.searchSessions = (async (query: string) => ({
+    items: [{ sessionId: "s-1", snippet: `命中 ${query}` }],
+    hasMore: false,
+  })) as typeof client.searchSessions
+  const session = createHarnessSession(client, "/tmp")
+  const result = await session.searchSessions("keyword")
+  expect(result.items).toHaveLength(1)
+  expect(result.items[0]?.sessionId).toBe("s-1")
+  session.dispose()
+})
+
+test("searchSessions surfaces the disabled-index error", async () => {
+  const client = new FakeClient()
+  client.searchSessions = (async () => {
+    throw new HarnessError("session search is disabled", "SESSION_QUERY_SEARCH_DISABLED")
+  }) as typeof client.searchSessions
+  const session = createHarnessSession(client, "/tmp")
+  const result = await session.searchSessions("x")
+  expect(result.items).toEqual([])
+  expect(result.error).toContain("disabled")
+  session.dispose()
+})
+
+test("exportSession writes the archive and reports the path", async () => {
+  const client = new FakeClient()
+  let requestedDescendants: boolean | undefined
+  client.exportSession = (async (_sessionId, options) => {
+    requestedDescendants = options?.includeDescendants
+    return {
+      data: new Uint8Array([80, 75, 3, 4]), // zip magic
+      filename: "dsh-session-s-1.zip",
+    }
+  }) as typeof client.exportSession
+  const session = createHarnessSession(client, "/tmp")
+  await session.start("hello") // creates session s-1
+  const dir = mkdtempSync(join(tmpdir(), "dsh-cli-export-"))
+  const target = join(dir, "out.zip")
+  const res = await session.exportSession(target)
+  expect(res.ok).toBe(true)
+  expect(res.path).toBe(target)
+  expect(requestedDescendants).toBe(true)
+  expect(readFileSync(target)).toEqual(Buffer.from([80, 75, 3, 4]))
+  rmSync(dir, { recursive: true, force: true })
+  session.dispose()
+})
+
+test("exportSession without a session reports a clear error", async () => {
+  const client = new FakeClient()
+  const session = createHarnessSession(client, "/tmp")
+  const res = await session.exportSession()
+  expect(res.ok).toBe(false)
+  expect(res.error).toContain("会话")
+  session.dispose()
+})
+
+test("describeHarnessError reports a workspace mismatch distinctly", () => {
+  const err = new Error('session "s-x" already exists with cwd "/other"; requested "/tmp"')
+  const msg = describeHarnessError(err)
+  expect(msg).toContain("另一个工作区")
+  expect(msg).toContain("/other")
+  expect(msg).not.toContain("无法连接")
+})
+
+test("resume warns when the session being left is still running", async () => {
+  const client = new FakeClient()
+  const session = createHarnessSession(client, "/tmp")
+  await session.start("hello") // creates s-1 and sets busy
+  client.history = (async () => ({ events: [], hasMore: false })) as typeof client.history
+  expect(await session.resumeSession("s-other")).toBe(true)
+  expect(session.backgroundNotice()).toContain("后台运行")
+  session.clearBackgroundNotice()
+  expect(session.backgroundNotice()).toBeNull()
+  session.dispose()
+})
+
+test("resume does not warn when the session being left is idle", async () => {
+  const client = new FakeClient()
+  const session = createHarnessSession(client, "/tmp")
+  await session.start("hello") // creates s-1 and sets busy
+  client.push(frame("session/event", { sessionId: "s-1", event: ev("turn/end", {}, 5) }))
+  await tick()
+  expect(session.busy()).toBe(false)
+  client.history = (async () => ({ events: [], hasMore: false })) as typeof client.history
+  expect(await session.resumeSession("s-other")).toBe(true)
+  expect(session.backgroundNotice()).toBeNull()
   session.dispose()
 })
 

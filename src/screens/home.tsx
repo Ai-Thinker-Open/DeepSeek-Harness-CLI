@@ -32,6 +32,7 @@ export function Home(props: {
   planMode?: () => boolean
   planPending?: () => boolean
   resultOverride?: () => CommandResultView | null
+  sessionId?: () => string | null
   visible?: boolean
   active?: () => boolean
 } = {}) {
@@ -93,6 +94,7 @@ export function Home(props: {
             }}
             commandsLoading={props.commandsLoading}
             resultOverride={props.resultOverride}
+            sessionId={props.sessionId}
             active={props.active}
             inputId="home-prompt-input"
           />

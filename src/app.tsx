@@ -196,6 +196,16 @@ export function App(
     }
   })
 
+  // Surface the one-shot "previous session still running in the background"
+  // notice raised by resume/fork as a transient toast.
+  createEffect(() => {
+    const notice = session.backgroundNotice()
+    if (notice) {
+      showToast(notice)
+      session.clearBackgroundNotice()
+    }
+  })
+
   const handleSubmit = async (content: PromptContentPart[]) => {
     const text = content
       .filter((b): b is { type: "text"; text: string } => b.type === "text")
@@ -291,6 +301,7 @@ export function App(
                 const ok = await session.resumeSession(s.sessionId)
                 if (ok) {
                   void session.refreshCommands()
+                  void refreshSkills()
                   setScreen("session")
                 }
               },
@@ -305,6 +316,39 @@ export function App(
     if (name === "help") {
       const rows = commandItems().map((i) => `/${i.name}  ${i.description}`)
       return { title: "快捷命令", rows }
+    }
+    if (name === "search") {
+      const query = line.trim().slice("/search".length).trim()
+      if (!query) {
+        showToast("用法：/search <关键词>", "error")
+        return null
+      }
+      const result = await session.searchSessions(query)
+      if (result.error) {
+        showToast(result.error, "error")
+        return null
+      }
+      const rows = result.items.length
+        ? result.items.map((item) => {
+            const shortId = item.sessionId.replace(/^s-/, "").slice(0, 8)
+            // A snippet is a bounded match context; collapse newlines so each
+            // hit reads as one line with its session id.
+            const snippet = truncateTo(item.snippet.replace(/\s*\n\s*/g, " · "), 58)
+            return {
+              text: `${shortId}  ${snippet}`,
+              onClick: async () => {
+                const ok = await session.resumeSession(item.sessionId)
+                if (ok) {
+                  void session.refreshCommands()
+                  void refreshSkills()
+                  setScreen("session")
+                }
+              },
+            }
+          })
+        : ["（没有匹配的会话）"]
+      const more = result.hasMore ? " · 结果超过上限，请更精确" : ""
+      return { title: `搜索“${query}”（${result.items.length} 条）${more} · 点击行恢复会话`, rows }
     }
     if (name === "mcp") {
       const servers = await refreshMcpStatus()
@@ -388,7 +432,15 @@ export function App(
         return null
       }
       void session.refreshCommands()
+      void refreshSkills()
       showToast(`已创建新会话 ${childId.replace(/^s-/, "").slice(0, 8)}`)
+      return null
+    }
+    if (name === "export") {
+      const targetPath = line.trim().slice("/export".length).trim() || undefined
+      const res = await session.exportSession(targetPath)
+      if (res.ok) showToast(`已导出到 ${res.path}`)
+      else showToast(res.error ?? "导出失败", "error")
       return null
     }
     // Host commands need a live session: create one on demand so commands
@@ -456,6 +508,7 @@ export function App(
               resultOverride={resultOverride}
               planMode={session.planMode}
               planPending={session.planPending}
+              sessionId={session.sessionId}
               motion
               active={() => true}
             />
@@ -498,6 +551,7 @@ export function App(
             onQueueAction={(itemId, action) => void session.updateQueueItem(itemId, action)}
             onNotice={(text, kind) => showToast(text, kind)}
             imageLimits={session.imageLimits}
+            sessionId={session.sessionId}
             active={() => screen() === "session"}
           />
         </box>

@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test"
-import { SUBPROCESS_NOISE_RE, isUsableDraft } from "../src/components/prompt"
+import { SUBPROCESS_NOISE_RE, isUsableDraft, recallSourceNotice } from "../src/components/prompt"
 
 test("Git Bash subprocess errors are rejected as drafts", () => {
   expect(
@@ -18,4 +18,17 @@ test("ordinary drafts and control-sequence fragments behave as before", () => {
   expect(isUsableDraft("\u001b[200~garbage")).toBe(false)
   // A plain mention of "fatal error" is still a valid user draft.
   expect(isUsableDraft("请解释这个 fatal error")).toBe(true)
+})
+
+test("recallSourceNotice warns only for cross-session recalls", () => {
+  // Same session → no warning.
+  expect(recallSourceNotice("s-abc123", "s-abc123")).toBeNull()
+  // No session recorded (legacy / home-screen sends) → no warning.
+  expect(recallSourceNotice(null, "s-abc123")).toBeNull()
+  expect(recallSourceNotice("s-abc123", null)).toBeNull()
+  // Cross-session → warns and shortens the origin id.
+  const notice = recallSourceNotice("s-12345678-0000", "s-99999999-0000")
+  expect(notice).toContain("召回")
+  expect(notice).toContain("12345678")
+  expect(notice).not.toContain("99999999")
 })

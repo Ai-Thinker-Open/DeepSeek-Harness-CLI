@@ -25,6 +25,16 @@
     # Keep the same temporary process-wide Code Mode opt-in as the other surfaces.
     mode: !!js process.env.DSH_TOOLS_MODE
 
+# Full-text cross-session search is a TUI-first feature: the client's /search
+# command queries the harness session-query index. Enable the SQLite FTS5
+# backend lazily (openAt first-search) with a durable index path, so search
+# works without paying the index cost on every boot and without the
+# SESSION_QUERY_SEARCH_DISABLED failure the base's `openAt: never` would raise.
+- id: session-query-sqlite
+  config:
+    path: !!js dshHomePath('session-search.sqlite')
+    openAt: first-search
+
 # ── terminal-only host rows: the API/WS transport and the runner ────────────
 #
 # The `name` entries below reference THIS package's own name (it exports

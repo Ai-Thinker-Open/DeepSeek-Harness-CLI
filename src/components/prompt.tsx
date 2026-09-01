@@ -86,8 +86,18 @@ function stripImageTags(text: string): string {
 }
 const KEY_LOG = join(tmpdir(), "dsh-cli-keys.log")
 
-/** Sent plain-text messages, for ↑/↓ recall like a shell history. */
-const SEND_HISTORY: string[] = []
+/** Sent plain-text messages, for ↑/↓ recall like a shell history. Each entry
+ *  remembers the session it was sent from so a cross-session recall can warn
+ *  the user before they re-send one conversation's text into another. */
+const SEND_HISTORY: Array<{ text: string; sessionId: string | null }> = []
+
+/** Human hint when a recalled history item belongs to a different session
+ *  than the one currently open; `null` when the recall is session-local. */
+export function recallSourceNotice(itemSessionId: string | null, currentSessionId: string | null): string | null {
+  if (itemSessionId == null || currentSessionId == null || itemSessionId === currentSessionId) return null
+  const shortId = itemSessionId.replace(/^s-/, "").slice(0, 8)
+  return `⚠ 召回的是会话 ${shortId} 的历史，确认后才发送到当前会话`
+}
 
 /**
  * Reject edit-buffer pollution that is not real typing. On Windows some
@@ -144,6 +154,8 @@ export function Prompt(props: {
   resultOverride?: () => CommandResultView | null
   mode?: () => PermissionMode
   model?: () => string
+  /** Current session id (for tagging recalled history items by origin). */
+  sessionId?: () => string | null
   active?: () => boolean
   inputId?: string
 } = {}) {
@@ -156,6 +168,8 @@ export function Prompt(props: {
   const [historyIndex, setHistoryIndex] = createSignal(-1)
   const [attachments, setAttachments] = createSignal<DraftImage[]>([])
   const [pastedFold, setPastedFold] = createSignal<PasteFoldInfo | null>(null)
+  /** Transient "recalled from another session" hint shown above the composer. */
+  const [historySourceNotice, setHistorySourceNotice] = createSignal<string | null>(null)
   const mode = props.mode ?? (() => "workspace-write" as PermissionMode)
   const model = props.model ?? (() => "DeepSeek-V4-Flash")
   const limits = props.imageLimits ?? (() => DEFAULT_IMAGE_LIMITS)
@@ -167,6 +181,7 @@ export function Prompt(props: {
   /** Draft captured before an interruption (question modal), restored after. */
   let savedDraft: string | null = null
   let restoreTimer: ReturnType<typeof setTimeout> | undefined
+  let historySourceTimer: ReturnType<typeof setTimeout> | undefined
   let draftSeq = 0
   let visionWarned = false
   /** Syntax style used to color `[图片名-序号.ext]` tags inside the draft. */
@@ -368,6 +383,7 @@ export function Prompt(props: {
     }, 60)
     onCleanup(() => {
       clearInterval(timer)
+      if (historySourceTimer) clearTimeout(historySourceTimer)
       imageStyle?.destroy()
       imageStyle = null
     })
@@ -679,8 +695,9 @@ export function Prompt(props: {
       void runCommandLine(messageText, matched)
       return
     }
-    if (SEND_HISTORY[SEND_HISTORY.length - 1] !== messageText) {
-      SEND_HISTORY.push(messageText)
+    const lastHistory = SEND_HISTORY[SEND_HISTORY.length - 1]
+    if (lastHistory?.text !== messageText) {
+      SEND_HISTORY.push({ text: messageText, sessionId: props.sessionId?.() ?? null })
       if (SEND_HISTORY.length > HISTORY_LIMIT) SEND_HISTORY.shift()
     }
     props.onSubmit?.([
@@ -696,6 +713,17 @@ export function Prompt(props: {
     ])
   }
 
+  /** Show a transient warning when a recalled item came from another session. */
+  const showRecallSource = (item: { text: string; sessionId: string | null }) => {
+    const current = props.sessionId?.() ?? null
+    const notice = recallSourceNotice(item.sessionId, current)
+    setHistorySourceNotice(notice)
+    if (notice != null) {
+      if (historySourceTimer) clearTimeout(historySourceTimer)
+      historySourceTimer = setTimeout(() => setHistorySourceNotice(null), 4000)
+    }
+  }
+
   /** Shell-style history recall: ↑ older, ↓ newer, ending at the draft. */
   const recallHistory = (delta: -1 | 1) => {
     if (SEND_HISTORY.length === 0) return
@@ -704,16 +732,21 @@ export function Prompt(props: {
       historyDraft = ref?.plainText ?? value()
       const next = SEND_HISTORY.length - 1
       setHistoryIndex(next)
-      setDraft(SEND_HISTORY[next] as string)
+      const item = SEND_HISTORY[next] as { text: string; sessionId: string | null }
+      setDraft(item.text)
+      showRecallSource(item)
       return
     }
     const next = current + delta
     if (next < 0 || next >= SEND_HISTORY.length) {
       setHistoryIndex(-1)
       setDraft(historyDraft)
+      setHistorySourceNotice(null)
     } else {
       setHistoryIndex(next)
-      setDraft(SEND_HISTORY[next] as string)
+      const item = SEND_HISTORY[next] as { text: string; sessionId: string | null }
+      setDraft(item.text)
+      showRecallSource(item)
     }
   }
 
@@ -1077,6 +1110,11 @@ export function Prompt(props: {
                 </text>
               </box>
             </box>
+          </Show>
+          <Show when={historySourceNotice() !== null}>
+            <text fg={theme.warning} wrapMode="char" marginTop={1}>
+              {historySourceNotice()}
+            </text>
           </Show>
           <box flexDirection="row" justifyContent="space-between" marginTop={1}>
             <text>

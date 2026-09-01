@@ -45,6 +45,7 @@ export function SessionScreen(props: {
   resultOverride?: () => CommandResultView | null
   queue?: () => QueueItem[]
   onQueueAction?: (itemId: string, action: QueueAction) => void
+  sessionId?: () => string | null
   visible?: boolean
   active?: () => boolean
 }) {
@@ -74,6 +75,7 @@ export function SessionScreen(props: {
         }}
         commandsLoading={props.commandsLoading}
         resultOverride={props.resultOverride}
+        sessionId={props.sessionId}
         active={() => (props.active?.() ?? true) && !props.question()}
         inputId="session-prompt-input"
       />

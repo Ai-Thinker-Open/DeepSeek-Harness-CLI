@@ -90,6 +90,27 @@ export interface SkillEntry {
   modelInvocable: boolean
 }
 
+/** One `session.search` hit: a session id and a bounded text snippet. */
+export interface SessionSearchItem {
+  sessionId: string
+  snippet: string
+}
+
+/** `session.search` response: up to 20 hits plus a has-more flag. */
+export interface SessionSearchResult {
+  items: SessionSearchItem[]
+  hasMore: boolean
+  /** Present when the search failed (e.g. the index is disabled) rather than
+   *  matching nothing; the UI shows it as a distinct error. */
+  error?: string
+}
+
+/** A fetched session-log export archive (the GET /api/session.export body). */
+export interface SessionExportResult {
+  data: Uint8Array
+  filename: string
+}
+
 /** Immutable command view returned by `command.list` (no leading slash). */
 export interface CommandDescriptor {
   name: string
@@ -230,6 +251,9 @@ export interface HarnessClientLike {
   respondApproval(rpcIdToAnswer: string, sessionId: string, approvalId: string, outcome: "allowed-once" | "rejected"): Promise<void>
   history(sessionId: string, maxMessages?: number): Promise<{ events: HistoryEntry[]; hasMore: boolean; projections?: Record<string, unknown> }>
   listSessions(): Promise<{ items: SessionSummary[] }>
+  searchSessions(query: string): Promise<SessionSearchResult>
+  /** Fetch a session-log export archive (GET /api/session.export). */
+  exportSession(sessionId: string, options?: { includeDescendants?: boolean; signal?: AbortSignal }): Promise<SessionExportResult>
   commandList(sessionId: string): Promise<CommandDescriptor[]>
   commandExecute(sessionId: string, line: string, images?: ImageCommandImage[]): Promise<CommandExecutionResult | undefined>
   listModels(sessionId: string): Promise<ModelCatalog>
@@ -334,6 +358,46 @@ export class HarnessClient implements HarnessClientLike {
 
   listSessions(): Promise<{ items: SessionSummary[] }> {
     return this.call("session.list", {})
+  }
+
+  /** Full-text search across the workspace's sessions (requires the harness's
+   *  session-query index; returns SESSION_QUERY_SEARCH_DISABLED when absent). */
+  searchSessions(query: string): Promise<SessionSearchResult> {
+    return this.call("session.search", { query })
+  }
+
+  /**
+   * Fetch a session-log export archive. This is a plain GET endpoint (not the
+   * /api/<method> RPC envelope), returning a zip of the session's raw log plus
+   * its attachments and (optionally) subagent descendants.
+   */
+  async exportSession(
+    sessionId: string,
+    options: { includeDescendants?: boolean; signal?: AbortSignal } = {},
+  ): Promise<SessionExportResult> {
+    const params = new URLSearchParams({ sessionId })
+    if (options.includeDescendants) params.set("includeDescendants", "true")
+    let res: Response
+    try {
+      res = await fetch(`${this.baseUrl.replace(/\/$/, "")}/api/session.export?${params}`, {
+        method: "GET",
+        // Exporting a large session compresses on the host; allow it to run
+        // longer than the ordinary RPC timeout.
+        signal: options.signal ?? AbortSignal.timeout(Math.max(this.timeoutMs, 120_000)),
+      })
+    } catch (e) {
+      if ((e as Error).name === "TimeoutError" || (e as Error).name === "AbortError") {
+        throw new HarnessError(`session.export timed out`, "timeout")
+      }
+      throw new HarnessError(`harness unreachable: ${(e as Error).message}`, "network")
+    }
+    if (!res.ok) {
+      throw new HarnessError(`session.export HTTP ${res.status}`, "http")
+    }
+    const disposition = res.headers.get("content-disposition") ?? ""
+    const filename = /filename="([^"]+)"/.exec(disposition)?.[1] ?? `dsh-session-${sessionId}.zip`
+    const data = new Uint8Array(await res.arrayBuffer())
+    return { data, filename }
   }
 
   createSession(cwd?: string, agentPreset?: string, sessionId?: string): Promise<{ sessionId: string; agentPreset?: string }> {

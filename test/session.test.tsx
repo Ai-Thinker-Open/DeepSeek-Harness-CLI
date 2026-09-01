@@ -283,14 +283,18 @@ test("assistant messages collapse thinking and render tool cards", async () => {
   expect(frame).not.toContain("src")
   expect(frame).not.toContain("test")
 
-  // Thinking body stays collapsed until clicked.
-  expect(frame).not.toContain("让我想想")
+  // While streaming, only the first reasoning line previews under the header;
+  // the rest of the body stays collapsed until the header is clicked.
+  expect(frame).toContain("让我想想")
+  expect(frame).not.toContain("第二行")
   const lines = frame.split("\n")
   const y = lines.findIndex((line) => line.includes("Think"))
   const x = lines[y]?.indexOf("Think") ?? 0
   await app.mockMouse.click(x + 1, y)
   await app.renderOnce()
-  expect(app.captureCharFrame()).toContain("让我想想")
+  const expandedFrame = app.captureCharFrame()
+  expect(expandedFrame).toContain("让我想想")
+  expect(expandedFrame).toContain("第二行")
 
   // Expanding the settled tool card reveals its output.
   const frame2 = app.captureCharFrame().split("\n")

@@ -1,3 +1,5 @@
+import { writeFile } from "node:fs/promises"
+import { join } from "node:path"
 import { createSignal } from "solid-js"
 import {
   DEEP_DIVING_STATUS,
@@ -24,6 +26,7 @@ import {
   type QueueItem,
   type ServerRequest,
   type SessionEvent,
+  type SessionSearchResult,
   type SkillEntry,
   type SessionSummary,
 } from "./client"
@@ -57,6 +60,8 @@ export interface HarnessSessionApi {
   commands: () => CommandDescriptor[]
   commandsLoading: () => boolean
   hasSession: () => boolean
+  /** Current session id (null until a session is created/attached). */
+  sessionId: () => string | null
   ensureSession: () => Promise<boolean>
   resumeSession: (sessionId: string) => Promise<boolean>
   /** Fast `-c` path: attach to the newest workspace session and show its
@@ -73,6 +78,10 @@ export interface HarnessSessionApi {
   /** Mirror a task message the harness already received via a command (e.g. `/plan <任务>`). */
   mirrorUserMessage: (text: string) => void
   listSessions: () => Promise<SessionSummary[]>
+  /** Full-text search across the workspace's sessions (host session-query). */
+  searchSessions: (query: string) => Promise<SessionSearchResult>
+  /** Export the current session's log archive to a local file. */
+  exportSession: (targetPath?: string) => Promise<{ ok: boolean; path?: string; error?: string }>
   listModels: () => Promise<ModelCatalog | null>
   selectModel: (provider: string, model: string, reasoningEffort?: string) => Promise<boolean>
   renameSession: (title: string) => Promise<boolean>
@@ -80,6 +89,9 @@ export interface HarnessSessionApi {
   listSkills: () => Promise<SkillEntry[]>
   question: () => HarnessQuestion | null
   error: () => string | null
+  /** One-shot notice that the previous session is still running (background). */
+  backgroundNotice: () => string | null
+  clearBackgroundNotice: () => void
   connected: () => boolean
   modelName: () => string
   planMode: () => boolean
@@ -110,6 +122,15 @@ const RECONNECT_DELAY_MS = 1500
 
 export function describeHarnessError(e: unknown): string {
   const message = e instanceof Error ? e.message : String(e)
+  // SessionCwdConflict: the session was created under another workspace, so
+  // attaching from the current one is refused. This is a workspace mismatch,
+  // not a connection failure — report it as such instead of a "unreachable"
+  // line so a cross-workspace /search hit explains why it cannot resume.
+  const cwdConflict = /already exists with cwd "([^"]*)"; requested "([^"]*)"/.exec(message)
+  if (cwdConflict) {
+    const existing = cwdConflict[1]
+    return `该会话属于另一个工作区（${existing}），当前工作区无法直接恢复——请切换到 ${existing} 后再打开`
+  }
   const rejectedWindowsCwd =
     /cwd must be an absolute path/.test(message) && isWin32Absolute(process.env.DSH_CWD ?? process.cwd())
   const hint = rejectedWindowsCwd
@@ -137,6 +158,9 @@ export function createHarnessSession(
   const [commandsLoading, setCommandsLoading] = createSignal(false)
   const [queue, setQueue] = createSignal<QueueItem[]>([])
   const [imageLimits, setImageLimits] = createSignal<ImageLimits>(DEFAULT_IMAGE_LIMITS)
+  /** One-shot notice that a previous session is still running in the harness
+   *  after the client switched away (set by resume/fork, consumed by the UI). */
+  const [backgroundNotice, setBackgroundNotice] = createSignal<string | null>(null)
 
   let sessionId: string | null = null
   let listening = false
@@ -210,6 +234,56 @@ export function createHarnessSession(
     setMessages([...model])
   }
   const syncStats = () => setStats({ ...statsModel })
+
+  /**
+   * Reset every session-scoped state to its initial value before attaching a
+   * different session (create / resume / fork). Host-scoped state — the
+   * connection, the stall watchdog, the mux loop, and the cross-session
+   * `seededHistory` transcript cache — is deliberately left alone, because
+   * those are properties of the process, not of any one conversation.
+   *
+   * Without this, switching sessions leaks the previous conversation's
+   * messages (a blank resume kept the old `model`), its statistics (the
+   * projection merge read stale in-memory counters), its queued messages, and
+   * its per-session caches into the new session.
+   */
+  function resetSessionState(): void {
+    // Drop any pending frame-batching and settle timers first so they cannot
+    // fire against a model that no longer belongs to this session.
+    if (flushTimer != null) {
+      clearTimeout(flushTimer)
+      flushTimer = undefined
+    }
+    dirty.clear()
+    for (const pending of pendingSettles.values()) clearTimeout(pending.timer)
+    pendingSettles.clear()
+
+    model = []
+    statsModel = { ...EMPTY_STATS }
+    messageSeq = 0
+    turnStartAt = null
+    stepStartAt = null
+    turnStepEnds = 0
+    streamTurn = null
+    promptSentAt = 0
+    firstTokenDone = true
+    pendingUserMessages.clear()
+    attachmentDataCache.clear()
+    usageByStep.clear()
+
+    setMessages([])
+    setStats({ ...EMPTY_STATS })
+    setBusy(false)
+    setStatusText("")
+    setQuestion(null)
+    setError(null)
+    setModelName("DeepSeek-V4-Flash")
+    setPlanMode(false)
+    setPlanPending(false)
+    setCommands([])
+    setQueue([])
+    setImageLimits(DEFAULT_IMAGE_LIMITS)
+  }
 
   function appendUserMessage(text: string, images?: ChatImage[]): void {
     model.push({
@@ -918,7 +992,9 @@ export function createHarnessSession(
       applyImageLimitsProjection(projections)
       applyHistoryStats(projections, events)
       const fresh = foldHistory(events.map((e) => e.event))
-      if (fresh.length === 0) return
+      // A blank session (no foldable events) must still clear the previous
+      // conversation — otherwise a resume onto an empty session keeps the
+      // prior session's messages on screen under the new session id.
       model = fresh
       streamTurn = null
       firstTokenDone = true
@@ -991,6 +1067,7 @@ export function createHarnessSession(
       if (info.model) setModelName(info.model)
       cwd = harnessCwdFor(cwd, info.cwd)
       const created = await client.createSession(cwd)
+      resetSessionState()
       sessionId = created.sessionId
       startListening()
       startStallWatchdog()
@@ -1009,6 +1086,14 @@ export function createHarnessSession(
   async function resumeSession(target: string): Promise<boolean> {
     if (!target) return false
     try {
+      // Capture whether the session we are leaving still has a turn running:
+      // resume does not cancel it, so it keeps consuming quota in the harness
+      // and the user deserves a heads-up after the switch.
+      const previousSessionId = sessionId
+      const wasBusy = busy()
+      // Detach cleanly from any previous session before loading the target,
+      // so a resume never carries the prior conversation's messages/stats.
+      resetSessionState()
       // Show the durable transcript right away from the listing's preview
       // fetch, before the attach round-trip completes.
       const seed = seededHistory.get(target)
@@ -1044,6 +1129,10 @@ export function createHarnessSession(
       // shows its existing conversation instead of an empty window.
       await resyncFromHistory()
       void seedPlanFromHistory()
+      void refreshModelName()
+      if (wasBusy && previousSessionId && previousSessionId !== target) {
+        setBackgroundNotice(`会话 ${previousSessionId.replace(/^s-/, "").slice(0, 8)} 仍在后台运行`)
+      }
       return true
     } catch (e) {
       setConnected(false)
@@ -1213,35 +1302,6 @@ export function createHarnessSession(
     if (typeof plan.pending === "boolean") setPlanPending(plan.pending)
   }
 
-  /** Restore the durable `sessionStats`/`tokenUsage` projections on resume. */
-  function applyStatsProjections(projections: Record<string, unknown> | undefined): void {
-    const values = projectionValues(projections)
-    const s = values.sessionStats as Record<string, number> | undefined
-    const usage = values.tokenUsage as Record<string, unknown> | undefined
-    const totals =
-      usage && typeof usage.totals === "object" && usage.totals !== null
-        ? (usage.totals as Record<string, number>)
-        : (usage as Record<string, number> | undefined)
-    if (!s && !totals) return
-    const ttftSteps = typeof s?.ttftSteps === "number" ? s.ttftSteps : 0
-    const ttftMs = typeof s?.ttftMs === "number" ? s.ttftMs : 0
-    statsModel = {
-      turns: typeof s?.turns === "number" ? s.turns : statsModel.turns,
-      steps: typeof s?.steps === "number" ? s.steps : statsModel.steps,
-      llmMs: typeof s?.llmMs === "number" ? s.llmMs : statsModel.llmMs,
-      toolMs: typeof s?.toolMs === "number" ? s.toolMs : statsModel.toolMs,
-      inTokens: typeof totals?.uncachedInputTokens === "number" ? totals.uncachedInputTokens : statsModel.inTokens,
-      outTokens: typeof totals?.outputTokens === "number" ? totals.outputTokens : statsModel.outTokens,
-      cacheReadTokens: typeof totals?.cacheReadTokens === "number" ? totals.cacheReadTokens : statsModel.cacheReadTokens,
-      cacheWriteTokens: typeof totals?.cacheWriteTokens === "number" ? totals.cacheWriteTokens : statsModel.cacheWriteTokens,
-      reasoningTokens: statsModel.reasoningTokens,
-      firstTokenMs: ttftSteps > 0 ? ttftMs / ttftSteps : null,
-      firstTokenSumMs: ttftMs || statsModel.firstTokenSumMs,
-      firstTokenCount: ttftSteps || statsModel.firstTokenCount,
-    }
-    syncStats()
-  }
-
   /** Derive session stats from a history event list (no projection needed). */
   function statsFromEvents(entries: HistoryEntry[]): SessionStats {
     const usageByStep = new Map<string, { in: number; out: number; cr: number; cw: number }>()
@@ -1330,29 +1390,56 @@ export function createHarnessSession(
     }
   }
 
-  /** Restore stats from projections, filling any gaps from the event list. */
+  /**
+   * Rebuild session stats from the durable projections, filling any gaps from
+   * the event list. This is the single ownership point for restored stats: it
+   * never merges into in-memory counters from a previous session, so a
+   * resume/fork cannot leak the prior conversation's numbers. Projection
+   * values win when their shape is present; the event derivation fills in
+   * whatever the projection does not carry.
+   */
   function applyHistoryStats(projections: Record<string, unknown> | undefined, entries: HistoryEntry[]): void {
-    applyStatsProjections(projections)
+    const values = projectionValues(projections)
+    const s = values.sessionStats as Record<string, number> | undefined
+    const usage = values.tokenUsage as Record<string, unknown> | undefined
+    const totals =
+      usage && typeof usage.totals === "object" && usage.totals !== null
+        ? (usage.totals as Record<string, number>)
+        : (usage as Record<string, number> | undefined)
     const derived = statsFromEvents(entries)
-    if (process.env.DSH_DEBUG) console.error("[dsh] stats restore", JSON.stringify({ projected: statsModel, derived }))
+    // Presence is judged on the projection shape, not its value: a session
+    // with a projected `steps: 0` is still authoritative over the derivation.
+    const hasProjection = Boolean(s || totals)
+    const turns = hasProjection && typeof s?.turns === "number" ? s.turns : derived.turns
+    const steps = hasProjection && typeof s?.steps === "number" ? s.steps : derived.steps
+    const llmMs = hasProjection && typeof s?.llmMs === "number" ? s.llmMs : derived.llmMs
+    const toolMs = hasProjection && typeof s?.toolMs === "number" ? s.toolMs : derived.toolMs
+    const inTokens = hasProjection && typeof totals?.uncachedInputTokens === "number" ? totals.uncachedInputTokens : derived.inTokens
+    const outTokens = hasProjection && typeof totals?.outputTokens === "number" ? totals.outputTokens : derived.outTokens
+    const cacheReadTokens = hasProjection && typeof totals?.cacheReadTokens === "number" ? totals.cacheReadTokens : derived.cacheReadTokens
+    const cacheWriteTokens = hasProjection && typeof totals?.cacheWriteTokens === "number" ? totals.cacheWriteTokens : derived.cacheWriteTokens
+    const reasoningTokens = hasProjection && typeof totals?.reasoningTokens === "number" ? totals.reasoningTokens : derived.reasoningTokens
+    const ttftSteps = hasProjection && typeof s?.ttftSteps === "number" ? s.ttftSteps : derived.firstTokenCount
+    const ttftMs = hasProjection && typeof s?.ttftMs === "number" ? s.ttftMs : derived.firstTokenSumMs
+    if (process.env.DSH_DEBUG) {
+      console.error(
+        "[dsh] stats restore",
+        JSON.stringify({ projected: { turns, steps, llmMs, toolMs, inTokens, outTokens, cacheReadTokens, cacheWriteTokens, reasoningTokens, ttftSteps, ttftMs }, derived }),
+      )
+    }
     statsModel = {
-      turns: statsModel.turns > 0 ? statsModel.turns : derived.turns,
-      steps: statsModel.steps > 0 ? statsModel.steps : derived.steps,
-      llmMs: statsModel.llmMs > 0 ? statsModel.llmMs : derived.llmMs,
-      toolMs: statsModel.toolMs > 0 ? statsModel.toolMs : derived.toolMs,
-      inTokens: statsModel.inTokens > 0 ? statsModel.inTokens : derived.inTokens,
-      outTokens: statsModel.outTokens > 0 ? statsModel.outTokens : derived.outTokens,
-      cacheReadTokens: statsModel.cacheReadTokens > 0 ? statsModel.cacheReadTokens : derived.cacheReadTokens,
-      cacheWriteTokens: statsModel.cacheWriteTokens > 0 ? statsModel.cacheWriteTokens : derived.cacheWriteTokens,
-      reasoningTokens: statsModel.reasoningTokens > 0 ? statsModel.reasoningTokens : derived.reasoningTokens,
-      firstTokenMs:
-        statsModel.firstTokenCount > 0
-          ? statsModel.firstTokenMs
-          : derived.firstTokenCount > 0
-            ? derived.firstTokenMs
-            : null,
-      firstTokenSumMs: statsModel.firstTokenSumMs > 0 ? statsModel.firstTokenSumMs : derived.firstTokenSumMs,
-      firstTokenCount: statsModel.firstTokenCount > 0 ? statsModel.firstTokenCount : derived.firstTokenCount,
+      turns,
+      steps,
+      llmMs,
+      toolMs,
+      inTokens,
+      outTokens,
+      cacheReadTokens,
+      cacheWriteTokens,
+      reasoningTokens,
+      firstTokenMs: ttftSteps > 0 ? ttftMs / ttftSteps : null,
+      firstTokenSumMs: ttftMs,
+      firstTokenCount: ttftSteps,
     }
     syncStats()
   }
@@ -1451,6 +1538,35 @@ export function createHarnessSession(
     }
   }
 
+  /** Full-text search across the workspace's sessions (host session-query). */
+  async function searchSessions(query: string): Promise<SessionSearchResult> {
+    try {
+      return await client.searchSessions(query)
+    } catch (e) {
+      // Distinguish "search is unavailable/disabled" from "no matches" so the
+      // UI can tell the user why instead of showing an empty list.
+      return { items: [], hasMore: false, error: e instanceof Error ? e.message : String(e) }
+    }
+  }
+
+  /**
+   * Export the current session's log archive to a local file. `targetPath`
+   * overrides the default (the harness-suggested filename inside the client's
+   * working directory). Subagent/fork descendants are included by default so a
+   * fork or delegation tree exports as one self-contained archive.
+   */
+  async function exportSession(targetPath?: string): Promise<{ ok: boolean; path?: string; error?: string }> {
+    if (!sessionId) return { ok: false, error: "请先开始会话再导出" }
+    try {
+      const { data, filename } = await client.exportSession(sessionId, { includeDescendants: true })
+      const destination = targetPath ?? join(process.cwd(), filename)
+      await writeFile(destination, data)
+      return { ok: true, path: destination }
+    } catch (e) {
+      return { ok: false, error: e instanceof Error ? e.message : String(e) }
+    }
+  }
+
   /** Read the session's model directory (current + available groups). */
   async function listModels(): Promise<ModelCatalog | null> {
     if (!sessionId) return null
@@ -1459,6 +1575,17 @@ export function createHarnessSession(
     } catch {
       return null
     }
+  }
+
+  /**
+   * Refresh the composer's model label from the session's durable model
+   * selection after a resume/fork. `resetSessionState` drops the label to the
+   * default and the live `request/context` event may lag; this closes the gap
+   * so the badge does not flash the wrong model in between.
+   */
+  async function refreshModelName(): Promise<void> {
+    const catalog = await listModels()
+    if (catalog?.current.model) setModelName(catalog.current.model)
   }
 
   /** Switch the session's LLM model; returns false on failure. */
@@ -1488,13 +1615,22 @@ export function createHarnessSession(
   async function forkSession(): Promise<string | null> {
     if (!sessionId) return null
     try {
+      // The parent keeps running if it had a turn in flight (fork does not
+      // cancel it); note that before the reset so the UI can warn after.
+      const previousSessionId = sessionId
+      const wasBusy = busy()
       const { sessionId: childId } = await client.forkSession(sessionId)
+      // A fork is a brand-new session: clear every session-scoped state so the
+      // child starts empty (its own stats/queue/caches) instead of inheriting
+      // the parent's in-memory counters and queued messages.
+      resetSessionState()
       sessionId = childId
-      setMessages([])
-      setPlanMode(false)
-      setPlanPending(false)
       void resyncFromHistory()
       void seedPlanFromHistory()
+      void refreshModelName()
+      if (wasBusy) {
+        setBackgroundNotice(`会话 ${previousSessionId.replace(/^s-/, "").slice(0, 8)} 仍在后台运行`)
+      }
       return childId
     } catch {
       return null
@@ -1631,6 +1767,10 @@ export function createHarnessSession(
     setError(null)
   }
 
+  function clearBackgroundNotice(): void {
+    setBackgroundNotice(null)
+  }
+
   function dispose(): void {
     if (stallTimer) {
       clearInterval(stallTimer)
@@ -1648,6 +1788,8 @@ export function createHarnessSession(
     statusText,
     question,
     error,
+    backgroundNotice,
+    clearBackgroundNotice,
     connected,
     modelName,
     planMode,
@@ -1666,6 +1808,7 @@ export function createHarnessSession(
     commands,
     commandsLoading,
     hasSession: () => sessionId !== null,
+    sessionId: () => sessionId,
     ensureSession,
     resumeSession,
     resumeLastSession,
@@ -1677,6 +1820,8 @@ export function createHarnessSession(
     runCommand,
     mirrorUserMessage: appendUserMessage,
     listSessions,
+    searchSessions,
+    exportSession,
     listModels,
     selectModel,
     renameSession,
