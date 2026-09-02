@@ -27,6 +27,8 @@ import {
   type ServerRequest,
   type SessionEvent,
   type SessionSearchResult,
+  type SettingsDescribeResult,
+  type SettingsUpdateResult,
   type SkillEntry,
   type SessionSummary,
 } from "./client"
@@ -82,6 +84,10 @@ export interface HarnessSessionApi {
   searchSessions: (query: string) => Promise<SessionSearchResult>
   /** Export the current session's log archive to a local file. */
   exportSession: (targetPath?: string) => Promise<{ ok: boolean; path?: string; error?: string }>
+  /** Read the harness settings (host-level, no session needed). */
+  settingsDescribe: () => Promise<SettingsDescribeResult>
+  /** Update a settings namespace; returns the new redacted view or null on failure. */
+  settingsUpdate: (ns: string, patch: Record<string, unknown>, expectedRevision?: number) => Promise<SettingsUpdateResult | null>
   listModels: () => Promise<ModelCatalog | null>
   selectModel: (provider: string, model: string, reasoningEffort?: string) => Promise<boolean>
   renameSession: (title: string) => Promise<boolean>
@@ -1570,6 +1576,28 @@ export function createHarnessSession(
     }
   }
 
+  /** Read the harness settings (host-level, no session needed). */
+  async function settingsDescribe(): Promise<SettingsDescribeResult> {
+    try {
+      return await client.settingsDescribe()
+    } catch {
+      return { writable: false, hasDocument: false, namespaces: [] }
+    }
+  }
+
+  /** Update a settings namespace; returns the new redacted view or null. */
+  async function settingsUpdate(
+    ns: string,
+    patch: Record<string, unknown>,
+    expectedRevision?: number,
+  ): Promise<SettingsUpdateResult | null> {
+    try {
+      return await client.settingsUpdate(ns, patch, expectedRevision)
+    } catch {
+      return null
+    }
+  }
+
   /** Read the session's model directory (current + available groups). */
   async function listModels(): Promise<ModelCatalog | null> {
     if (!sessionId) return null
@@ -1825,6 +1853,8 @@ export function createHarnessSession(
     listSessions,
     searchSessions,
     exportSession,
+    settingsDescribe,
+    settingsUpdate,
     listModels,
     selectModel,
     renameSession,

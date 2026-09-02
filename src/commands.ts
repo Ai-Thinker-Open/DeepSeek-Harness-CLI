@@ -31,6 +31,7 @@ export const LOCAL_COMMANDS: CommandItem[] = [
   { name: "resume", description: "浏览已保存的会话（只读列表）", kind: "local", behavior: "run" },
   { name: "search", description: "跨会话全文搜索历史记录", kind: "local", input: { hint: "<关键词>" }, behavior: "fill" },
   { name: "export", description: "导出会话日志到本地文件", kind: "local", input: { hint: "[路径]" }, behavior: "run" },
+  { name: "settings", description: "查看 harness 配置（设置）", kind: "local", input: { hint: "[设置项名称]" }, behavior: "fill" },
   { name: "model", description: "切换当前会话的 LLM 模型", kind: "local", behavior: "run" },
   { name: "rename", description: "重命名当前会话", kind: "local", input: { hint: "<标题>" }, behavior: "fill" },
   { name: "fork", description: "从当前会话分叉出新会话", kind: "local", behavior: "run" },

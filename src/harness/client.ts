@@ -242,6 +242,28 @@ export interface QuestionItem {
 }
 
 /** The subset of HarnessClient the session driver depends on (test seam). */
+/** One settings namespace view returned by settings.describe. */
+export interface SettingsNamespaceView {
+  ns: string
+  schema: unknown
+  value: unknown
+  base?: unknown
+  user?: unknown
+  applies: "live" | "restart"
+  secrets: Array<{ path: string[]; set: boolean }>
+  revision: number
+}
+
+/** settings.describe response. */
+export interface SettingsDescribeResult {
+  writable: boolean
+  hasDocument: boolean
+  namespaces: SettingsNamespaceView[]
+}
+
+/** settings.update response (redacted namespace view). */
+export type SettingsUpdateResult = SettingsNamespaceView
+
 export interface HarnessClientLike {
   describe(): Promise<HostDescribe>
   createSession(cwd?: string, agentPreset?: string, sessionId?: string): Promise<{ sessionId: string; agentPreset?: string }>
@@ -265,6 +287,8 @@ export interface HarnessClientLike {
   updateQueue(sessionId: string, itemId: string, action: QueueAction): Promise<{ accepted: boolean }>
   credentialsDescribe(refs: string[]): Promise<Record<string, CredentialView>>
   credentialsSet(ref: string, value: string): Promise<void>
+  settingsDescribe(): Promise<SettingsDescribeResult>
+  settingsUpdate(ns: string, patch: Record<string, unknown>, expectedRevision?: number): Promise<SettingsUpdateResult>
   eventStream(signal?: AbortSignal): AsyncGenerator<ServerRequest>
 }
 
@@ -467,6 +491,18 @@ export class HarnessClient implements HarnessClientLike {
 
   credentialsSet(ref: string, value: string): Promise<void> {
     return this.call("credentials.set", { ref, value }).then(() => undefined)
+  }
+
+  settingsDescribe(): Promise<SettingsDescribeResult> {
+    return this.call("settings.describe", {})
+  }
+
+  settingsUpdate(ns: string, patch: Record<string, unknown>, expectedRevision?: number): Promise<SettingsUpdateResult> {
+    return this.call("settings.update", {
+      ns,
+      patch,
+      ...(expectedRevision !== undefined ? { expectedRevision } : {}),
+    })
   }
 
   /** Discover the effective slash commands for a session's agent. */

@@ -449,6 +449,27 @@ export function App(
       else showToast(res.error ?? "导出失败", "error")
       return null
     }
+    if (name === "settings") {
+      const res = await session.settingsDescribe()
+      const arg = line.trim().slice("/settings".length).trim()
+      if (!res.namespaces.length) {
+        return { title: "设置", rows: ["无法读取 harness 设置（可能未提供）"] }
+      }
+      if (arg) {
+        const ns = res.namespaces.find((n) => n.ns === arg)
+        if (!ns) {
+          return { title: "设置", rows: [`未找到命名空间 "${arg}"`, `可用：${res.namespaces.map((n) => n.ns).join("、")}`] }
+        }
+        return { title: `设置 ${ns.ns}`, rows: JSON.stringify(ns.value ?? {}, null, 2).split("\n").slice(0, 60) }
+      }
+      const rows = res.namespaces.map((ns) => ({
+        text: `${ns.applies === "live" ? "●" : "○"} ${ns.ns}${ns.secrets?.length ? ` · ${ns.secrets.length} 个密钥` : ""}`,
+        onClick: () => {
+          setResultOverride({ title: `设置 ${ns.ns}`, rows: JSON.stringify(ns.value ?? {}, null, 2).split("\n").slice(0, 60) })
+        },
+      }))
+      return { title: `harness 设置（${res.namespaces.length}）· 点击查看`, rows }
+    }
     // Host commands need a live session: create one on demand so commands
     // still reach the harness when issued from the home screen.
     let createdSession = false

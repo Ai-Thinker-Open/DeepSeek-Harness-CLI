@@ -88,6 +88,14 @@ class FakeClient implements HarnessClientLike {
     return { data: new Uint8Array([80, 75, 3, 4]), filename: "dsh-session-test.zip" }
   }
 
+  async settingsDescribe() {
+    return { writable: true, hasDocument: true, namespaces: [] }
+  }
+
+  async settingsUpdate(_ns: string, _patch: Record<string, unknown>) {
+    return { ns: _ns, schema: {}, value: _patch, applies: "live" as const, secrets: [], revision: 1 }
+  }
+
   async commandList() {
     return []
   }
