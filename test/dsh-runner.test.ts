@@ -80,10 +80,10 @@ test("tui-runner fails loud without webServer or appExit", () => {
 test("tui-runner Config schema accepts defaults and the tuiStartup shape", () => {
   const empty = Config({})
   expect(empty.startup?.host).toBe("127.0.0.1")
-  expect(empty.startup?.port).toBe(3080)
+  expect(empty.startup?.port).toBe(3081)
   expect(empty.startup?.continueLast).toBe(false)
   expect(empty.startup?.cwd).toBeUndefined()
-  expect(Config({ startup: { host: "127.0.0.1", port: 3080, cwd: undefined, continueLast: false } })).toEqual(empty)
+  expect(Config({ startup: { host: "127.0.0.1", port: 3081, cwd: undefined, continueLast: false } })).toEqual(empty)
   const full = Config({
     startup: { host: "127.0.0.1", port: 0, cwd: "/ws", continueLast: true },
   })

@@ -35,7 +35,7 @@ export interface TuiRunnerConfig {
 export const Config: Schema<TuiRunnerConfig> = Schema.object({
   startup: Schema.object({
     host: Schema.string().default("127.0.0.1"),
-    port: Schema.number().default(3080),
+    port: Schema.number().default(3081),
     cwd: Schema.string(),
     continueLast: Schema.boolean().default(false),
   }),

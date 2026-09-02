@@ -282,7 +282,7 @@ export class HarnessError extends Error {
   }
 }
 
-export const DEFAULT_HARNESS_URL = "http://127.0.0.1:3080"
+export const DEFAULT_HARNESS_URL = "http://127.0.0.1:3081"
 
 export class HarnessClient implements HarnessClientLike {
   constructor(
@@ -529,6 +529,24 @@ export class HarnessClient implements HarnessClientLike {
     let closed = false
     let socketError: Error | null = null
 
+    // Heartbeat: keep the downlink — and any WSL2 localhost forwarding / NAT
+    // hop between the client and harness — from being silently closed during a
+    // long idle gap, and surface a peer-side drop on the next send. Bun's
+    // WebSocket exposes ping(); the harness answers at the protocol level, so
+    // no application-level frame is required.
+    const HEARTBEAT_MS = 10_000
+    const heartbeat = setInterval(() => {
+      try {
+        // `ping` is a Bun extension on WebSocket (absent from the lib dom
+        // type); guard + cast so the standard type still compiles.
+        const withPing = ws as WebSocket & { ping?(data?: unknown): void }
+        if (ws.readyState === WebSocket.OPEN) withPing.ping?.()
+        else ws.close()
+      } catch {
+        // The socket is already gone; onerror/onclose will surface it.
+      }
+    }, HEARTBEAT_MS)
+
     const drain = () => {
       while (waiters.length) {
         const w = waiters.shift() as (r: IteratorResult<ServerRequest>) => void
@@ -587,6 +605,7 @@ export class HarnessClient implements HarnessClientLike {
         }
       }
     } finally {
+      clearInterval(heartbeat)
       signal?.removeEventListener("abort", onAbort)
       try {
         ws.close()

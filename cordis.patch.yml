@@ -79,7 +79,7 @@
       inject: [tuiStartup]
       config:
         host: !!js ctx.tuiStartup.host ?? '127.0.0.1'
-        port: !!js ctx.tuiStartup.port ?? 3080
+        port: !!js ctx.tuiStartup.port ?? 3081
 
     # Host-side /api binding: HTTP bridge + WebSocket downlink (events.mux).
     - id: connection

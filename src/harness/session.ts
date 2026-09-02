@@ -140,7 +140,7 @@ export function describeHarnessError(e: unknown): string {
 }
 
 export function createHarnessSession(
-  client: HarnessClientLike = new HarnessClient(process.env.DSH_URL ?? "http://127.0.0.1:3080"),
+  client: HarnessClientLike = new HarnessClient(process.env.DSH_URL ?? "http://127.0.0.1:3081"),
   cwd = process.env.DSH_CWD ?? process.cwd(),
   options: { stallResyncMs?: number; minToolRunningMs?: number } = {},
 ): HarnessSessionApi {
@@ -971,8 +971,11 @@ export function createHarnessSession(
     if (stallTimer) return
     stallTimer = setInterval(() => {
       if (abortController.signal.aborted) return
-      const streaming = model.some((m) => m.streaming)
-      if (!streaming) return
+      // Only act when the downlink is genuinely gone (connected() false). A
+      // long reasoning phase legitimately produces no business frames while the
+      // socket stays open, so the frame gap alone must not be read as "connection
+      // lost" — that is what caused mid-think "连接中断" flashes.
+      if (connected()) return
       const now = Date.now()
       if (lastFrameAt > 0 && now - lastFrameAt > stallResyncMs && now - lastResyncAt > stallResyncMs) {
         lastResyncAt = now

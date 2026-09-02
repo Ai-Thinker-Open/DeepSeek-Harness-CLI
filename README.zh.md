@@ -40,7 +40,7 @@ npm install -g @ai-thinker/deepseek-harness-cli
 这一条命令安装插件本体，并随依赖带上固定版本 Bun 1.3.14 与 OpenTUI 各平台原生库。`@deepseek-ai/dsh`（harness）、`pnpm`（harness 搭建 profile 需要）与 `tui` profile 会在首次启动时自动补齐/注册。装完即可直接运行，无需任何手动配置：
 
 ```sh
-dsh-cli              # 自动探测 http://127.0.0.1:3080 上的 harness
+dsh-cli              # 自动探测 http://127.0.0.1:3081 上的 harness
                      # 没有则自动拉起 dsh --profile tui
 dsh-cli -c           # 恢复最近一次会话并直接进入
 ```
@@ -127,7 +127,7 @@ bun link             # 可选：把 bin/dsh-cli 装到全局
 然后直接运行：
 
 ```sh
-dsh-cli              # 自动探测 http://127.0.0.1:3080 上的 harness
+dsh-cli              # 自动探测 http://127.0.0.1:3081 上的 harness
                      # 没有则自动安装 tui profile 并拉起 dsh --profile tui
 dsh-cli -c           # 恢复最近一次会话并直接进入
 ```
@@ -160,14 +160,14 @@ dsh --profile tui -c                     # 恢复最近会话
 | 选项 | 说明 |
 |---|---|
 | `--host <host>` | 绑定地址，仅允许回环 `127.0.0.1`（默认值） |
-| `--port <port>` | 监听端口，`0` 表示由系统分配（默认 `3080`） |
+| `--port <port>` | 监听端口，`0` 表示由系统分配（默认 `3081`） |
 | `--cwd <dir>` | 新会话的工作目录（默认调用目录） |
 | `-c, --continue` | 启动时恢复最近一次会话 |
 | `-h, --help` | 显示帮助 |
 
 > `dsh-cli -c` 也会把 `--continue` 转发给客户端。
 
-> 支持多终端实例并存：默认端口 `3080` 已被占用时（包括 Windows 侧实例经
+> 支持多终端实例并存：默认端口 `3081` 已被占用时（包括 Windows 侧实例经
 > WSL2 localhost 转发「镜像」进 WSL 的隐形占用），新的 `dsh --profile tui`
 > 会自动改用空闲端口并提示，而不是报 `EADDRINUSE` 失败；显式 `--port` 始终
 > 优先。再开一个 `dsh-cli` 则会直接复用已在运行的 harness。
@@ -176,7 +176,7 @@ dsh --profile tui -c                     # 恢复最近会话
 
 | 变量 | 说明 |
 |---|---|
-| `DSH_URL` | harness 地址（默认 `http://127.0.0.1:3080`） |
+| `DSH_URL` | harness 地址（默认 `http://127.0.0.1:3081`） |
 | `DSH_CWD` | 会话工作目录（默认当前目录） |
 | `DSH_DEBUG` | 置 `1` 时输出协议与调试日志 |
 | `DSH_HOME` | harness 数据目录（默认 `~/.dsh`） |

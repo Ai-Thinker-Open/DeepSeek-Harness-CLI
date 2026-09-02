@@ -76,7 +76,7 @@ Run the DeepSeek Harness terminal client (dsh-cli) on top of the official dsh ba
 
 Options:
   --host <host>   bind host (loopback only; default 127.0.0.1)
-  --port <port>   listen port; pass 0 to let the OS pick a free one (default 3080)
+  --port <port>   listen port; pass 0 to let the OS pick a free one (default 3081)
   --cwd <dir>     workspace directory for new sessions (default: invoking directory)
   -c, --continue  resume the last session instead of starting a new one
   -h, --help      show this help
@@ -176,15 +176,16 @@ export function apply(ctx: DshContext): void {
   }
 
   // Multiple terminal instances are the normal case (one per terminal
-  // window). When the user did not ask for a specific port and the default
-  // 3080 is already taken — including by an instance on the Windows side
-  // shadowed into WSL by localhost forwarding — fall back to a free port
-  // instead of failing with EADDRINUSE. An explicit --port is always honored.
-  let resolvedPort = port ?? 3080
+  // window). The TUI surface deliberately avoids the web channel's 3080, so
+  // its default is 3081; when that is already taken — including by an instance
+  // on the Windows side shadowed into WSL by localhost forwarding — fall back
+  // to a free port instead of failing with EADDRINUSE. An explicit --port is
+  // always honored.
+  let resolvedPort = port ?? 3081
   if (port === undefined && resolvedPort !== 0 && internals.portProbe(resolvedPort)) {
     resolvedPort = nextFreePort(resolvedPort + 1, internals.portProbe)
     internals.stderr.write(
-      `[dsh-cli] 127.0.0.1:${port ?? 3080} 已被其他实例占用，自动改用端口 ${resolvedPort}（多实例并存时新实例自动避让；也可显式指定 --port <N>）\n`,
+      `[dsh-cli] 127.0.0.1:${port ?? 3081} 已被其他实例占用，自动改用端口 ${resolvedPort}（多实例并存时新实例自动避让；也可显式指定 --port <N>）\n`,
     )
   }
 

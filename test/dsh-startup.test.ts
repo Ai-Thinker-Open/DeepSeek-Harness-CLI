@@ -50,13 +50,13 @@ test("tui-startup provides loopback defaults", () => {
   const { ctx, exitCalls } = fakeCtx([])
   setupProbe(() => false)
   apply(ctx)
-  expect(ctx.get<TuiStartupValues>(TUI_STARTUP_SERVICE)).toEqual({ host: "127.0.0.1", port: 3080, cwd: undefined, continueLast: false })
+  expect(ctx.get<TuiStartupValues>(TUI_STARTUP_SERVICE)).toEqual({ host: "127.0.0.1", port: 3081, cwd: undefined, continueLast: false })
   expect(exitCalls).toEqual([])
 })
 
-test("tui-startup falls back to a free port when the default 3080 is busy", () => {
+test("tui-startup falls back to a free port when the default 3081 is busy", () => {
   capture()
-  const busy = new Set([3080, 3081, 3082])
+  const busy = new Set([3081, 3082])
   setupProbe((port) => busy.has(port))
   const { ctx, exitCalls } = fakeCtx([])
   apply(ctx)

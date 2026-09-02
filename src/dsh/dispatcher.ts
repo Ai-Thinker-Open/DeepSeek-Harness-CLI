@@ -16,7 +16,7 @@ import { portableSpawnOptions, portableSpawnSyncOptions, resolveBun } from "./po
 export { applyPendingUpdates } from "./silent-update"
 export { bootstrapAll } from "./bootstrap"
 
-export const DEFAULT_HARNESS_URL = "http://127.0.0.1:3080"
+export const DEFAULT_HARNESS_URL = "http://127.0.0.1:3081"
 export const PROFILE_NAME = "tui"
 
 /** Locate the package root from a source or built module location. */
@@ -318,7 +318,7 @@ export async function run(args: readonly string[]): Promise<number> {
     return exitCodeOf(child)
   }
 
-  const urlPort = Number(new URL(url).port) || 3080
+  const urlPort = Number(new URL(url).port) || 3081
   if (await isPortInUse(urlPort)) {
     process.stderr.write(
       `[dsh-cli] ${url} is already in use by another process, but it does not look like a reachable harness. Stop that process (e.g. fuser -k ${urlPort}/tcp) or run with --port 0 to pick a free port.\n`,

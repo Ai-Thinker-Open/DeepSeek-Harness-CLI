@@ -50,7 +50,7 @@ profile are provisioned automatically on first launch. After install you can
 run `dsh-cli` directly — no manual setup needed:
 
 ```sh
-dsh-cli              # probes http://127.0.0.1:3080 for a running harness;
+dsh-cli              # probes http://127.0.0.1:3081 for a running harness;
                      # otherwise boots dsh --profile tui
 dsh-cli -c           # resume the most recent session and jump straight in
 ```
@@ -166,7 +166,7 @@ bun link             # optional: expose bin/dsh-cli globally
 Then just run:
 
 ```sh
-dsh-cli              # probes http://127.0.0.1:3080 for a running harness;
+dsh-cli              # probes http://127.0.0.1:3081 for a running harness;
                      # otherwise installs the tui profile and boots dsh --profile tui
 dsh-cli -c           # resume the most recent session and jump straight in
 ```
@@ -200,14 +200,14 @@ Once started, the `tui-runner` plugin reads the bound web-server address, spawns
 | Option | Description |
 |---|---|
 | `--host <host>` | Bind address; loopback `127.0.0.1` only (default) |
-| `--port <port>` | Listen port; `0` lets the OS pick one (default `3080`) |
+| `--port <port>` | Listen port; `0` lets the OS pick one (default `3081`) |
 | `--cwd <dir>` | Working directory for new sessions (default: invoking directory) |
 | `-c, --continue` | Resume the most recent session on startup |
 | `-h, --help` | Show help |
 
 > `dsh-cli -c` forwards `--continue` to the client as well.
 
-> Multiple terminal instances are supported: when the default port `3080` is
+> Multiple terminal instances are supported: when the default port `3081` is
 > already taken (including by an instance on the Windows side shadowed into
 > WSL by localhost forwarding), a new `dsh --profile tui` automatically picks
 > a free port and prints a notice instead of failing with `EADDRINUSE`. An
@@ -218,7 +218,7 @@ Once started, the `tui-runner` plugin reads the bound web-server address, spawns
 
 | Variable | Description |
 |---|---|
-| `DSH_URL` | Harness address (default `http://127.0.0.1:3080`) |
+| `DSH_URL` | Harness address (default `http://127.0.0.1:3081`) |
 | `DSH_CWD` | Session working directory (default: current directory) |
 | `DSH_DEBUG` | Set to `1` for protocol / debug logging |
 | `DSH_HOME` | Harness data directory (default `~/.dsh`) |

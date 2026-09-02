@@ -252,7 +252,7 @@ test("reconnect clears the interrupted status once frames flow again", async () 
   expect(calls).toBeGreaterThanOrEqual(2)
 })
 
-test("a wedged stream recovers: the watchdog re-syncs from durable history", async () => {
+test("a long reasoning gap with the socket open is not a lost connection", async () => {
   const client = new FakeClient()
   client.history = (async () => ({
     events: [
@@ -267,8 +267,8 @@ test("a wedged stream recovers: the watchdog re-syncs from durable history", asy
     ],
     hasMore: false,
   })) as unknown as typeof client.history
-  // The first stream yields one turn/start frame, then wedges silently — no
-  // close, no error — which would otherwise leave the ▍ cursor forever.
+  // The first stream yields one turn/start frame, then stays silent — no
+  // close, no error — exactly what a long thinking phase looks like.
   let calls = 0
   client.eventStream = (async function* (signal?: AbortSignal) {
     calls += 1
@@ -282,15 +282,14 @@ test("a wedged stream recovers: the watchdog re-syncs from durable history", asy
   await session.start("hello")
   await tick()
 
-  // Turn started and the message is stuck streaming.
   expect(session.statusText()).toBe("Deep diving")
   expect(session.messages().some((m) => m.streaming)).toBe(true)
 
-  // After the silence threshold the watchdog reconnects and history wins.
-  await new Promise((resolve) => setTimeout(resolve, 350))
-  expect(session.messages().map((m) => m.content)).toEqual(["hello", "finalized reply"])
-  expect(session.messages().some((m) => m.streaming)).toBe(false)
-  expect(session.statusText()).toBe("")
+  // The socket stays open (connected() true) but no business frames arrive:
+  // the watchdog must NOT treat this gap as a connection loss mid-think.
+  await new Promise((resolve) => setTimeout(resolve, 400))
+  expect(session.messages().some((m) => m.streaming)).toBe(true)
+  expect(session.statusText()).toBe("Deep diving")
   session.dispose()
 })
 
