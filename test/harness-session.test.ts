@@ -1265,6 +1265,39 @@ test("questions are surfaced and answers are sent back to the harness", async ()
   expect(session.question()).toBeNull()
 })
 
+test("multiple ask-user questions are answered one at a time and all sent back", async () => {
+  const client = new FakeClient()
+  const session = createHarnessSession(client, "/tmp")
+  await session.start("hello")
+
+  client.push(
+    frame("question/requested", {
+      sessionId: "s-1",
+      questions: [
+        { id: "q1", question: "第一个问题？", options: [{ label: "A" }, { label: "B" }] },
+        { id: "q2", question: "第二个问题？", options: [{ label: "C" }, { label: "D" }] },
+      ],
+    }),
+  )
+  await tick()
+  // Only the first question is surfaced; the second is held pending.
+  expect(session.question()?.id).toBe("q1")
+  expect(session.question()?.kind).toBe("ask-user")
+  expect(session.question()?.options).toEqual(["A", "B"])
+
+  await session.answer("A")
+  // Second question is now surfaced; nothing has been responded yet.
+  expect(session.question()?.id).toBe("q2")
+  expect(client.responded).toEqual([])
+
+  await session.answer("C")
+  // Both answers go out in a single respond (the harness is satisfied).
+  expect(client.responded).toEqual([
+    { rpcId: expect.any(String), sessionId: "s-1", answers: [{ id: "q1", selected: ["A"] }, { id: "q2", selected: ["C"] }] },
+  ])
+  expect(session.question()).toBeNull()
+})
+
 test("permission questions surface every request and answer as one multi-select", async () => {
   const client = new FakeClient()
   const session = createHarnessSession(client, "/tmp")
