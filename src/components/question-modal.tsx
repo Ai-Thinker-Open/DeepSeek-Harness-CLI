@@ -58,8 +58,13 @@ export function QuestionModal(props: {
       } else if (key.name === "l") {
         const latest = requests[requests.length - 1]
         setChecked(latest ? [latest.id] : [])
-      } else if (isEnter(key)) props.onAnswerMany?.(checked())
-      else if (key.name === "escape") props.onAnswerMany?.([])
+      } else if (isEnter(key)) {
+        props.onAnswerMany?.(checked())
+        key.preventDefault?.()
+      } else if (key.name === "escape") {
+        props.onAnswerMany?.([])
+        key.preventDefault?.()
+      }
       return
     }
     if (q.approval) {
