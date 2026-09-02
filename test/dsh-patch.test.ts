@@ -42,6 +42,22 @@ test("bundle patch declares the terminal surface over dsh-base", () => {
   expect(String(byId.get("system-prompt")?.config?.persona)).toContain("{{model}}")
 })
 
+test("patch declares the standard host services a full surface composes", () => {
+  const byId = new Map(rows().map((r) => [r.id, r]))
+  const expected: Array<[string, string]> = [
+    ["session-reference", "@deepseek-ai/dsh-session-reference"],
+    ["file-reference-local", "@deepseek-ai/dsh-file-reference-local"],
+    ["session-stats", "@deepseek-ai/dsh-session-stats"],
+    ["message-feedback", "@deepseek-ai/dsh-message-feedback"],
+    ["session-projection-cache", "@deepseek-ai/dsh-session-projection-cache"],
+    ["plugin-inventory", "@deepseek-ai/dsh-host-plugin-inventory"],
+    ["cordis-host-runner", "@deepseek-ai/dsh-cordis-host-runner"],
+  ]
+  for (const [id, pkg] of expected) {
+    expect(byId.get(id)?.name, `missing host row ${id}`).toBe(pkg)
+  }
+})
+
 test("bundle manifest resolves the patch and exports", () => {
   const manifest = JSON.parse(readFileSync(join(root, "package.json"), "utf8")) as {
     dsh?: { bundle?: { patch?: string } }

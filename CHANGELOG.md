@@ -1,5 +1,46 @@
 # Changelog
 
+## Unreleased
+
+### 会话真实隔离与状态安全
+
+- 新增统一的 `resetSessionState()`：新建/恢复/分叉会话时清空所有会话级状态（消息、统计、队列、各缓存、流式瞬时状态），杜绝会话间上下文泄漏。
+- 修复恢复空白会话时旧会话消息残留、统计用「旧值优先」导致的跨会话继承；恢复/分叉后的统计改为从持久投影 + 事件推导干净重建。
+- 分叉/恢复后主动刷新技能目录与模型名，避免界面显示上一会话的残留。
+
+### 跨会话记录查询与导出
+
+- 新增 `searchSessions` RPC 与 `/search <关键词>` 命令：跨会话全文搜索（启用 harness `session-query` SQLite FTS5 索引，`openAt: first-search`），命中可点击回链恢复会话。
+- 新增 `exportSession` 与 `/export [路径]` 命令：拉取 `GET /api/session.export` 归档写本地，**默认包含 subagent/fork 子会话**；无会话时给出明确提示。
+- `describeHarnessError` 识别 `SessionCwdConflict`，跨工作区恢复时给出准确的「工作区不匹配」提示而非笼统的「无法连接」。
+
+### 并发与输入体验
+
+- 切换会话时若旧会话仍有 turn 在后台运行，toast 提示「会话 x 仍在后台运行」，避免无感知地占用 key 配额。
+- 发送历史（↑/↓ 召回）记录来源会话，跨会话召回时标注来源并警示。
+- 会话日志导出、`/search`、`/export` 统一进 `/` 命令菜单。
+
+### Think 流式与计划渲染
+
+- Think 推理块标题改为单行 `✺ Think · <流式内容>`：取内容**最新部分**随流式滚动（解决超宽截断后开头固定、看不到新内容的问题），点击展开查看完整推理。
+- `exit_plan_mode` 计划卡片自动展开并**完整渲染计划 markdown**（去除 300 字符截断），批准/执行前可完整查看。
+
+### 静默更新与重启提示
+
+- 静默更新仍自动执行，升级成功后客户端启动时 toast 提示「已更新 · 重启 dsh-cli 后生效」（此前用户会无感知地继续用旧版）。
+- 该提示同时覆盖 `dsh-cli` 独立 CLI 与 `dsh --profile tui` 两条启动路径（后者由 runner 在拉起客户端前应用更新）；`applyPendingUpdates` 改为同步并返回实际升级清单。
+- 覆盖 dsh-cli 自身与全局 harness（`@deepseek-ai/dsh`）的更新检查。
+
+### 连接保活与独立端口
+
+- 为 `events.mux` WebSocket 增加 10s 心跳（`ping`），避免 WSL2 localhost 转发/长闲置下静默断线，并加速断线感知。
+- 看门狗改为基于 WebSocket 连接健康（`connected()`）而非「无业务帧」，消除 LLM 长思考被误判为「连接中断」的问题。
+- dsh-cli / tui profile **默认端口从 3080 改为 3081**，与 web 通道（保留 3080）隔离，避免端口冲突；`--port` 仍可覆盖，端口被占自动避让。
+
+### 补齐标准插件宿主服务
+
+- 在 `cordis.patch.yml` 补齐 web 表面同样组合的宿主服务：`session-reference` + `file-reference-local`（`@` 引用）、`session-stats`（权威统计投影）、`message-feedback`（消息反馈）、`session-projection-cache`（投影缓存）、`plugin-inventory` + `cordis-host-runner`（插件/cordis 表面）。均为插件加载契约内的宿主行，不新增客户端依赖。
+
 ## v0.3.5 — 2026-08-30
 
 更新改为「静默强制后台更新」：启动时不再弹出更新确认窗，改由后台在每次 `dsh-cli` 启动时静默暂存新包，下次启动自动安装并直接运行最新版。
