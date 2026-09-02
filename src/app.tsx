@@ -560,12 +560,14 @@ export function App(
             planMode={session.planMode}
             planPending={session.planPending}
             question={session.question}
+            askQuestions={session.askQuestions}
             onSend={handleSubmit}
             onCancel={() => {
               void session.abort()
               showToast("已取消当前执行")
             }}
             onQuestion={session.answer}
+            onQuestionBatch={(answers) => void session.answerBatch(answers)}
             onQuestionMany={(ids) => void session.answerPermission(ids)}
             onApproval={(outcome) => void session.answerApproval(outcome)}
             onApprovalAllowSession={() => void session.answerApprovalAllowSession()}

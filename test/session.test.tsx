@@ -33,7 +33,9 @@ async function renderSession(opts: {
   planPending?: () => boolean
   height?: number
   question?: () => HarnessQuestion | null
+  askQuestions?: () => HarnessQuestion[]
   onQuestion?: (choice: string) => void
+  onQuestionBatch?: (answers: Array<{ id: string; selected: string[] }>) => void
   onQuestionMany?: (ids: string[]) => void
   onApproval?: (outcome: "allowed-once" | "rejected") => void
   onApprovalAllowSession?: () => void
@@ -60,11 +62,13 @@ async function renderSession(opts: {
         planMode={opts.planMode ?? (() => false)}
         planPending={opts.planPending ?? (() => false)}
         question={opts.question ?? (() => null)}
+        askQuestions={opts.askQuestions}
         onSend={opts.onSend ?? (() => {})}
         onNotice={opts.onNotice}
         clipboard={opts.clipboard}
         onCancel={opts.onCancel ?? (() => {})}
         onQuestion={opts.onQuestion ?? (() => {})}
+        onQuestionBatch={opts.onQuestionBatch}
         onQuestionMany={opts.onQuestionMany}
         onApproval={opts.onApproval}
         onApprovalAllowSession={opts.onApprovalAllowSession}
@@ -1500,6 +1504,79 @@ test("permission modal escape denies every request", async () => {
   expect(app.captureCharFrame()).not.toContain("Permission")
 })
 
+test("multi-question ask-user batch pages and confirms all at once", async () => {
+  const questions: HarnessQuestion[] = [
+    { rpcId: "rpc-1", id: "q1", title: "第一个问题？", options: ["A", "B"], kind: "ask-user" },
+    { rpcId: "rpc-1", id: "q2", title: "第二个问题？", options: ["C", "D"], kind: "ask-user" },
+  ]
+  const submitted: Array<Array<{ id: string; selected: string[] }>> = []
+  const app = await renderSession({
+    messages: [userMsg("你好")],
+    question: () => questions[0] ?? null,
+    askQuestions: () => questions,
+    onQuestionBatch: (answers) => {
+      submitted.push(answers)
+    },
+  })
+  await app.renderOnce()
+
+  expect(app.captureCharFrame()).toContain("第 1/2 题")
+  expect(app.captureCharFrame()).toContain("第一个问题？")
+
+  // Enter records A and auto-advances to the second question.
+  app.mockInput.pressEnter()
+  await new Promise((resolve) => setTimeout(resolve, 30))
+  await app.renderOnce()
+  expect(app.captureCharFrame()).toContain("第 2/2 题")
+  expect(app.captureCharFrame()).toContain("第二个问题？")
+  expect(submitted).toEqual([])
+
+  // Review: pressing ← returns to question 1 with its recorded answer kept.
+  app.mockInput.pressArrow("left")
+  await new Promise((resolve) => setTimeout(resolve, 30))
+  await app.renderOnce()
+  expect(app.captureCharFrame()).toContain("第 1/2 题")
+  expect(app.captureCharFrame()).toContain("✓ A")
+
+  // Re-answer question 1 and auto-advance back to the last question.
+  app.mockInput.pressArrow("right")
+  await new Promise((resolve) => setTimeout(resolve, 30))
+  await app.renderOnce()
+  app.mockInput.pressEnter()
+  await new Promise((resolve) => setTimeout(resolve, 30))
+  await app.renderOnce()
+  // Recording the last question opens the footer on "确认全部" (no submit yet).
+  expect(app.captureCharFrame()).toContain("确认全部")
+  expect(submitted).toEqual([])
+
+  app.mockInput.pressEnter()
+  await new Promise((resolve) => setTimeout(resolve, 30))
+  await app.renderOnce()
+  expect(submitted).toEqual([[{ id: "q1", selected: ["A"] }, { id: "q2", selected: ["C"] }]])
+})
+
+test("multi-question ask-user batch escape rejects every question", async () => {
+  const questions: HarnessQuestion[] = [
+    { rpcId: "rpc-1", id: "q1", title: "问题一", options: ["A", "B"], kind: "ask-user" },
+    { rpcId: "rpc-1", id: "q2", title: "问题二", options: ["Yes", "No"], kind: "ask-user" },
+  ]
+  const submitted: Array<Array<{ id: string; selected: string[] }>> = []
+  const app = await renderSession({
+    messages: [userMsg("你好")],
+    question: () => questions[0] ?? null,
+    askQuestions: () => questions,
+    onQuestionBatch: (answers) => {
+      submitted.push(answers)
+    },
+  })
+  await app.renderOnce()
+
+  app.mockInput.pressEscape()
+  await new Promise((resolve) => setTimeout(resolve, 30))
+  await app.renderOnce()
+  expect(submitted).toEqual([[{ id: "q1", selected: ["B"] }, { id: "q2", selected: ["No"] }]])
+})
+
 test("approval modal allows once on Enter and rejects on escape", async () => {
   const [current, setCurrent] = createSignal<HarnessQuestion | null>({
     rpcId: "rpc-ap",
@@ -1627,7 +1704,6 @@ test("plan review modal renders the harness options and answers them", async () 
   await app.renderOnce()
 
   const frame = app.captureCharFrame()
-  expect(frame).toContain("Plan review")
   expect(frame).toContain("Approve this plan and leave plan mode?")
   expect(frame).toContain("Approve")
   expect(frame).toContain("Keep planning")
@@ -1680,7 +1756,7 @@ test("composer draft survives a plan review question", async () => {
     kind: "plan-approval",
   })
   await app.renderOnce()
-  expect(app.captureCharFrame()).toContain("Plan review")
+  expect(app.captureCharFrame()).toContain("Approve this plan and leave plan mode?")
 
   // Press Enter while the review is open: the modal answers; the composer's
   // buffer must be untouched.

@@ -14,14 +14,16 @@ interface KeyLike {
   raw: string
 }
 
-const KEY_UP = new Set(["up", "kpup", "arrowup"])
-const KEY_DOWN = new Set(["down", "kpdown", "arrowdown"])
-const KEY_ENTER = new Set(["return", "linefeed", "enter"])
+const KEY_UP = new Set(["up", "kpup", "arrowup", "ArrowUp"])
+const KEY_DOWN = new Set(["down", "kpdown", "arrowdown", "ArrowDown"])
+const KEY_ENTER = new Set(["return", "linefeed", "enter", "Enter"])
+const KEY_SPACE = new Set(["space", "spacebar", " "])
 
 // CSI-u key codes: left=57350, right=57351, up=57352, down=57353, return=57345.
 const UP_RAW = [/^\x1b\[A$/, /^\x1bOA$/, /^\x1b\[57352u(?:$|;)/]
 const DOWN_RAW = [/^\x1b\[B$/, /^\x1bOB$/, /^\x1b\[57353u(?:$|;)/]
 const ENTER_RAW = [/^\r$/, /^\n$/, /^\x1b\[57345u(?:$|;)/]
+const SPACE_RAW = [/^ $/, /^\x20$/, /^[ ]$/]
 
 export const isUp = (key: KeyLike): boolean =>
   KEY_UP.has(key.name) || UP_RAW.some((re) => re.test(key.raw))
@@ -31,3 +33,6 @@ export const isDown = (key: KeyLike): boolean =>
 
 export const isEnter = (key: KeyLike): boolean =>
   KEY_ENTER.has(key.name) || ENTER_RAW.some((re) => re.test(key.raw))
+
+export const isSpace = (key: KeyLike): boolean =>
+  KEY_SPACE.has(key.name) || SPACE_RAW.some((re) => re.test(key.raw))

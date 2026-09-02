@@ -1265,7 +1265,7 @@ test("questions are surfaced and answers are sent back to the harness", async ()
   expect(session.question()).toBeNull()
 })
 
-test("multiple ask-user questions are answered one at a time and all sent back", async () => {
+test("multiple ask-user questions are held as one batch and submitted in one respond", async () => {
   const client = new FakeClient()
   const session = createHarnessSession(client, "/tmp")
   await session.start("hello")
@@ -1280,20 +1280,98 @@ test("multiple ask-user questions are answered one at a time and all sent back",
     }),
   )
   await tick()
-  // Only the first question is surfaced; the second is held pending.
+  // The whole batch is preserved; the first question stays pinned so the modal
+  // can page through them before a single respond.
   expect(session.question()?.id).toBe("q1")
+  expect(session.askQuestions().map((qq) => qq.id)).toEqual(["q1", "q2"])
   expect(session.question()?.kind).toBe("ask-user")
   expect(session.question()?.options).toEqual(["A", "B"])
+  expect(session.askQuestions()[1]?.options).toEqual(["C", "D"])
 
-  await session.answer("A")
-  // Second question is now surfaced; nothing has been responded yet.
-  expect(session.question()?.id).toBe("q2")
-  expect(client.responded).toEqual([])
-
-  await session.answer("C")
-  // Both answers go out in a single respond (the harness is satisfied).
+  await session.answerBatch([
+    { id: "q2", selected: ["C"] },
+    { id: "q1", selected: ["A"] },
+  ])
+  // Answers go out once, in batch order regardless of the input order.
   expect(client.responded).toEqual([
     { rpcId: expect.any(String), sessionId: "s-1", answers: [{ id: "q1", selected: ["A"] }, { id: "q2", selected: ["C"] }] },
+  ])
+  expect(session.question()).toBeNull()
+})
+
+test("single ask-user question is answered immediately", async () => {
+  const client = new FakeClient()
+  const session = createHarnessSession(client, "/tmp")
+  await session.start("hello")
+
+  client.push(
+    frame("question/requested", {
+      sessionId: "s-1",
+      questions: [{ id: "q1", question: "继续？", options: [{ label: "A" }, { label: "B" }] }],
+    }),
+  )
+  await tick()
+
+  expect(session.askQuestions().map((qq) => qq.id)).toEqual(["q1"])
+  await session.answer("A")
+  expect(client.responded).toEqual([{ rpcId: expect.any(String), sessionId: "s-1", answers: [{ id: "q1", selected: ["A"] }] }])
+  expect(session.question()).toBeNull()
+})
+
+test("answerBatch fills missing answers with the deny option", async () => {
+  const client = new FakeClient()
+  const session = createHarnessSession(client, "/tmp")
+  await session.start("hello")
+
+  client.push(
+    frame("question/requested", {
+      sessionId: "s-1",
+      questions: [
+        { id: "q1", question: "问题一", options: [{ label: "A" }, { label: "B" }] },
+        { id: "q2", question: "问题二", options: [{ label: "Yes" }, { label: "No" }] },
+        { id: "q3", question: "问题三", options: [{ label: "是" }] },
+      ],
+    }),
+  )
+  await tick()
+
+  await session.answerBatch([
+    { id: "q2", selected: ["Yes"] },
+    { id: "q1", selected: ["A"] },
+  ])
+  expect(client.responded).toEqual([
+    {
+      rpcId: expect.any(String),
+      sessionId: "s-1",
+      answers: [
+        { id: "q1", selected: ["A"] },
+        { id: "q2", selected: ["Yes"] },
+        { id: "q3", selected: ["是"] },
+      ],
+    },
+  ])
+  expect(session.question()).toBeNull()
+})
+
+test("cancelQuestion rejects every question in a batch in one respond", async () => {
+  const client = new FakeClient()
+  const session = createHarnessSession(client, "/tmp")
+  await session.start("hello")
+
+  client.push(
+    frame("question/requested", {
+      sessionId: "s-1",
+      questions: [
+        { id: "q1", question: "问题一", options: [{ label: "A" }, { label: "B" }] },
+        { id: "q2", question: "问题二", options: [{ label: "Yes" }, { label: "No" }] },
+      ],
+    }),
+  )
+  await tick()
+
+  await session.cancelQuestion()
+  expect(client.responded).toEqual([
+    { rpcId: expect.any(String), sessionId: "s-1", answers: [{ id: "q1", selected: ["B"] }, { id: "q2", selected: ["No"] }] },
   ])
   expect(session.question()).toBeNull()
 })

@@ -70,8 +70,9 @@ export function DirectoryRiskModal(props: {
         <box
           width={80}
           border
+          borderStyle="rounded"
           borderColor={props.highRisk ? theme.error : theme.accent}
-          backgroundColor={theme.backgroundPanel}
+          backgroundColor={theme.backgroundCard}
           paddingLeft={2}
           paddingRight={2}
           paddingTop={1}

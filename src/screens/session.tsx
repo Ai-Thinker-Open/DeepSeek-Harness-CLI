@@ -29,12 +29,14 @@ export function SessionScreen(props: {
   planMode: () => boolean
   planPending: () => boolean
   question: () => HarnessQuestion | null
+  askQuestions?: () => HarnessQuestion[]
   onSend: (content: PromptContentPart[]) => void
   onNotice?: (text: string, kind?: "success" | "error") => void
   imageLimits?: () => ImageLimits
   clipboard?: ClipboardReadLike
   onCancel: () => void
   onQuestion: (choice: string) => void
+  onQuestionBatch?: (answers: Array<{ id: string; selected: string[] }>) => void
   onQuestionMany?: (ids: string[]) => void
   onApproval?: (outcome: "allowed-once" | "rejected") => void
   onApprovalAllowSession?: () => void
@@ -160,21 +162,23 @@ export function SessionScreen(props: {
             <QueueDock queue={props.queue ?? (() => [])} onAction={props.onQueueAction ?? (() => {})} />
           </box>
         </Show>
+        <Show when={props.question()}>
+          <QuestionModal
+            question={props.question}
+            askQuestions={props.askQuestions}
+            onAnswer={props.onQuestion}
+            onAnswerBatch={props.onQuestionBatch}
+            onAnswerMany={props.onQuestionMany}
+            onApproval={props.onApproval}
+            onApprovalAllowSession={props.onApprovalAllowSession}
+          />
+        </Show>
         {promptNode()}
         <StatsBar stats={props.stats} />
       </box>
 
       <Footer />
       <Toast toast={props.toast} />
-      <Show when={props.question()}>
-        <QuestionModal
-          question={props.question}
-          onAnswer={props.onQuestion}
-          onAnswerMany={props.onQuestionMany}
-          onApproval={props.onApproval}
-          onApprovalAllowSession={props.onApprovalAllowSession}
-        />
-      </Show>
     </box>
   )
 }

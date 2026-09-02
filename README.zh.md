@@ -253,7 +253,7 @@ MOCK_SLOW=1 bun scripts/mock-dsh-server.mjs  # 放大时序便于观察流式动
 DSH_URL=http://127.0.0.1:3080 bun run dev
 ```
 
-mock 服务器实现了 DSH 协议（`/api/<method>` 一元 RPC、`events.mux` WebSocket 下行、`/api/respond`），收到 "ask …" 会触发权限提问（"ask multi permission" 会一次抛三条请求，方便验证多选弹窗），其余消息会按关键词回放一轮带工具调用的脚本回合（bash / read / grep / edit），方便观察工具卡片的闪光动画。
+mock 服务器实现了 DSH 协议（`/api/<method>` 一元 RPC、`events.mux` WebSocket 下行、`/api/respond`），收到 "ask …" 会触发权限提问（"ask multi permission" 会一次抛三条请求，方便验证多选弹窗）；消息里含 "问卷" / "ask-user" / "调研" 会一次抛出三道 ask-user 问题，用来验证分页审阅（Enter 记录并自动翻到下一题、←/→ 回看、最后一题按 Enter 后底部出现"确认全部"、再按一次 Enter 才提交、Esc 整批拒绝）；其余消息会按关键词回放一轮带工具调用的脚本回合（bash / read / grep / edit），方便观察工具卡片的闪光动画。
 
 ## 架构概览
 

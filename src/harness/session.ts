@@ -94,6 +94,8 @@ export interface HarnessSessionApi {
   forkSession: () => Promise<string | null>
   listSkills: () => Promise<SkillEntry[]>
   question: () => HarnessQuestion | null
+  /** The full ask-user / plan-review batch (empty for permission / approval). */
+  askQuestions: () => HarnessQuestion[]
   error: () => string | null
   /** One-shot notice that the previous session is still running (background). */
   backgroundNotice: () => string | null
@@ -109,6 +111,8 @@ export interface HarnessSessionApi {
   /** Harness-reported image upload limits (defaults when unknown). */
   imageLimits: () => ImageLimits
   answer: (choice: string) => Promise<void>
+  /** Submit every question in the current ask-user / plan-review batch at once. */
+  answerBatch: (answers: Array<{ id: string; selected: string[] }>) => Promise<void>
   answerPermission: (checkedIds: string[]) => Promise<void>
   answerApproval: (outcome: "allowed-once" | "rejected") => Promise<void>
   answerApprovalAllowSession: () => Promise<void>
@@ -170,11 +174,12 @@ export function createHarnessSession(
 
   let sessionId: string | null = null
   let listening = false
-  /** Pending independent ask-user / plan-review questions beyond the one shown
-   *  (answered one at a time; all are answered before responding). */
-  let pendingAsks: Array<{ id: string; question: string; options: string[]; detail?: string }> = []
-  /** Answers collected across a multi-question ask-user / plan-review turn. */
-  let answeredAsks: Array<{ id: string; selected: string[] }> = []
+  /** A batch of independent ask-user / plan-review questions raised in one
+   *  `question/requested` frame. The batch is resolved atomically: the user
+   *  reviews/questions it one page at a time, then all answers are submitted in
+   *  a single respond (or all rejected on Esc). `question()` holds the first
+   *  batch item so the modal stays mounted for the whole batch. */
+  let askBatch: HarnessQuestion[] = []
   let abortController = new AbortController()
   let model: ChatMessage[] = []
   let statsModel: SessionStats = { ...EMPTY_STATS }
@@ -294,8 +299,7 @@ export function createHarnessSession(
     setCommands([])
     setQueue([])
     setImageLimits(DEFAULT_IMAGE_LIMITS)
-    pendingAsks = []
-    answeredAsks = []
+    askBatch = []
   }
 
   function appendUserMessage(text: string, images?: ChatImage[]): void {
@@ -937,24 +941,19 @@ export function createHarnessSession(
       return
     }
     // ask-user / plan-review may carry several independent questions the
-    // harness waits on EACH. Surface them one at a time and respond with ALL
-    // answers at the end — previously only questions[0] was surfaced and the
-    // rest stayed pending forever, wedging the harness.
-    pendingAsks = questions.slice(1).map((item) => ({
+    // harness waits on EACH. Keep the whole batch (one page per question, all
+    // answered before a single respond) so the user can page back and forth to
+    // review before confirming — previously only questions[0] was surfaced and
+    // the rest stayed pending forever, wedging the harness.
+    askBatch = questions.map((item) => ({
+      rpcId: frame.rpcId,
       id: item.id,
-      question: item.question,
+      title: item.question,
       detail: item.detail ?? item.header,
       options: item.options?.length ? item.options.map((o) => o.label) : ["Yes", "No"],
-    }))
-    answeredAsks = []
-    setQuestion({
-      rpcId: frame.rpcId,
-      id: q.id,
-      title: q.question,
-      detail: q.detail ?? q.header,
-      options,
       kind,
-    })
+    }))
+    setQuestion(askBatch[0]!)
   }
 
   function onApprovalRequested(frame: ServerRequest): void {
@@ -1711,26 +1710,34 @@ export function createHarnessSession(
   async function answer(choice: string): Promise<void> {
     const q = question()
     if (!q || !sessionId) return
-    answeredAsks.push({ id: q.id, selected: [choice] })
-    // Multi-question ask-user / plan-review: surface the next pending question
-    // and keep collecting; only respond with every answer once they are done.
-    if (pendingAsks.length > 0) {
-      const next = pendingAsks.shift() as { id: string; question: string; options: string[]; detail?: string }
-      setQuestion({
-        rpcId: q.rpcId,
-        id: next.id,
-        title: next.question,
-        detail: next.detail,
-        options: next.options,
-        kind: q.kind,
-      })
-      setStatusText("")
-      return
-    }
+    askBatch = []
     setQuestion(null)
     setStatusText("")
     try {
-      await client.respond(q.rpcId, sessionId, answeredAsks)
+      // Single ask-user / plan-review question: answer it immediately and let
+      // the harness move on. Batch (N>1) questions go through `answerBatch`.
+      await client.respond(q.rpcId, sessionId, [{ id: q.id, selected: [choice] }])
+    } catch {
+      // answering is best-effort; the harness will time out if it fails
+    }
+  }
+
+  /** Submit every question in the current ask-user / plan-review batch at once,
+   *  in the order the harness raised them. Missing answers default to the last
+   *  (deny) option so each id is answered exactly once in a single respond. */
+  async function answerBatch(answers: Array<{ id: string; selected: string[] }>): Promise<void> {
+    const q = askBatch[0]
+    if (!q || !sessionId) return
+    const byId = new Map(answers.map((a) => [a.id, a.selected]))
+    const ordered = askBatch.map((item) => ({
+      id: item.id,
+      selected: byId.get(item.id) ?? [item.options[item.options.length - 1] ?? ""],
+    }))
+    askBatch = []
+    setQuestion(null)
+    setStatusText("")
+    try {
+      await client.respond(q.rpcId, sessionId, ordered)
     } catch {
       // answering is best-effort; the harness will time out if it fails
     }
@@ -1796,17 +1803,15 @@ export function createHarnessSession(
       return
     }
     if (q?.options.length) {
-      // Multi-question ask-user / plan-review: Esc rejects every pending and
-      // already-answered question at once (with its last option) so the harness
-      // is satisfied in a single respond, instead of walking them one by one.
-      if (pendingAsks.length > 0 || answeredAsks.length > 0) {
-        const last = q.options[q.options.length - 1] as string
-        const all = [
-          ...answeredAsks.map((a) => ({ id: a.id, selected: [a.selected[a.selected.length - 1] ?? last] })),
-          ...pendingAsks.map((a) => ({ id: a.id, selected: [a.options[a.options.length - 1] ?? last] })),
-        ]
-        pendingAsks = []
-        answeredAsks = []
+      // Multi-question ask-user / plan-review: Esc rejects every question in
+      // the batch at once (with its last option) so the harness is satisfied in
+      // a single respond, instead of walking them one by one.
+      if (askBatch.length > 1) {
+        const all = askBatch.map((item) => ({
+          id: item.id,
+          selected: [item.options[item.options.length - 1] ?? ""],
+        }))
+        askBatch = []
         setQuestion(null)
         setStatusText("")
         try {
@@ -1874,6 +1879,7 @@ export function createHarnessSession(
     busy,
     statusText,
     question,
+    askQuestions: () => askBatch,
     error,
     backgroundNotice,
     clearBackgroundNotice,
@@ -1887,6 +1893,7 @@ export function createHarnessSession(
     sendContent,
     imageLimits,
     answer,
+    answerBatch,
     answerPermission,
     answerApproval,
     answerApprovalAllowSession,

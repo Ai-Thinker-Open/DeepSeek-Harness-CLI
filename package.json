@@ -1,6 +1,6 @@
 {
   "name": "@ai-thinker/deepseek-harness-cli",
-  "version": "0.3.5",
+  "version": "0.3.6",
   "description": "DeepSeek Harness - OpenTUI terminal interface",
   "type": "module",
   "license": "MIT",

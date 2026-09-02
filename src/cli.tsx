@@ -18,7 +18,12 @@ const renderer = await createCliRenderer({
   // protocol active signals an image-only paste with the Ctrl+V *release*
   // (`ESC [ 118;5:3u`), which the composer uses as a clipboard-read trigger.
   useKittyKeyboard: { events: true },
-  useThread: false,
+  // OpenTUI historically forced threading OFF on Linux (an unshipped
+  // `useThread=false` override), which left main-thread rendering unable to
+  // repaint after the first frame. We patch that override out of the installed
+  // core (README: "patch: enable threading on Linux", the upstream PR #624 fix)
+  // and enable the threaded renderer here, so Linux repaints correctly.
+  useThread: true,
   onDestroy: () => {
     // OpenTUI restores the terminal (raw mode, cursor, alternate screen,
     // DECCKM, kitty protocol) before this callback runs. Give any trailing
@@ -31,6 +36,7 @@ const renderer = await createCliRenderer({
 // Ctrl+C (exitOnCtrlC). These handlers are a belt-and-braces fallback for
 // environments where a signal arrives before the renderer's own listeners are
 // installed; destroy() is idempotent and finalizes on the next frame.
+
 const shutdown = () => {
   try {
     renderer.destroy()

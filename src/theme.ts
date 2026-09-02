@@ -13,6 +13,8 @@ export type Theme = {
   background: RGBA
   backgroundPanel: RGBA
   backgroundElement: RGBA
+  backgroundCard: RGBA
+  backgroundCardActive: RGBA
   border: RGBA
   borderActive: RGBA
   borderSubtle: RGBA
@@ -31,6 +33,8 @@ export const theme: Theme = {
   background: RGBA.fromHex("#0A0A0A"),
   backgroundPanel: RGBA.fromHex("#141414"),
   backgroundElement: RGBA.fromHex("#1E1E1E"),
+  backgroundCard: RGBA.fromHex("#262626"),
+  backgroundCardActive: RGBA.fromHex("#3D4552"),
   border: RGBA.fromHex("#484848"),
   borderActive: RGBA.fromHex("#606060"),
   borderSubtle: RGBA.fromHex("#3C3C3C"),

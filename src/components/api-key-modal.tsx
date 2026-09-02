@@ -80,8 +80,9 @@ export function ApiKeyModal(props: {
         <box
           width={72}
           border
+          borderStyle="rounded"
           borderColor={theme.border}
-          backgroundColor={theme.backgroundPanel}
+          backgroundColor={theme.backgroundCard}
           paddingLeft={2}
           paddingRight={2}
           paddingTop={1}

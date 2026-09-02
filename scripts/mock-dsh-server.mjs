@@ -94,6 +94,22 @@ function askQuestion(sessionId, rpcId, questions) {
   })
 }
 
+/** Ask several independent single-choice ask-user questions in one frame. */
+function askUserQuestions(sessionId, rpcId, questions) {
+  return new Promise((resolve) => {
+    pendingQuestions.set(rpcId, { resolve })
+    emit("question/requested", {
+      sessionId,
+      questions: questions.map((q) => ({
+        id: q.id,
+        question: q.question,
+        ...(q.header ? { header: q.header } : {}),
+        options: q.options.map((label) => ({ label })),
+      })),
+    })
+  })
+}
+
 /** Ask a sandbox-escalation approval (the real harness's approval/requested frame). */
 function askApproval(sessionId, rpcId, approvalId, toolName, callId, reason) {
   return new Promise((resolve) => {
@@ -245,7 +261,27 @@ async function runTurn(sessionId, text, firstTurn, imageCount = 0) {
     if (await pauseForCancel(sessionId, 0, turn)) return
   }
 
-  if (/ask/i.test(text)) {
+  // Multi-question ask-user batch: exercise the paginated review (←/→ page,
+  // Enter records, Tab → footer → "确认全部" submits). Triggered by a prompt
+  // like "问卷" / "ask-user" / "调研".
+  if (/问卷|ask-user|ask user|多问题|调研|分页/i.test(text)) {
+    const answers = await askUserQuestions(sessionId, `au-${turn}`, [
+      { id: `au-${turn}-1`, question: "第一步先做什么？", options: ["只读探查", "直接改代码", "先跑测试"] },
+      { id: `au-${turn}-2`, question: "偏好的回复语言？", options: ["中文", "English", "双语"] },
+      { id: `au-${turn}-3`, question: "需要生成验收清单吗？", options: ["要", "不要"] },
+    ])
+    const picked = (answers ?? []).map((a, i) => `${i + 1}) ${a.selected?.[0] ?? "未选"}`).join(" ｜ ")
+    emitEvent(sessionId, {
+      type: "assistant/chunk",
+      seq: nextSeq(),
+      time: now(),
+      data: {
+        turn,
+        step: 1,
+        chunk: { type: "text-delta", text: `已收齐 ${(answers ?? []).length} 道题：${picked}。` },
+      },
+    })
+  } else if (/ask/i.test(text)) {
     const multi = /multi|permission|多条/i.test(text)
     const questions = multi
       ? [

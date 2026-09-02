@@ -317,7 +317,7 @@ MOCK_SLOW=1 bun scripts/mock-dsh-server.mjs  # slower streaming to watch animati
 DSH_URL=http://127.0.0.1:3080 bun run dev
 ```
 
-The mock speaks the DSH protocol (`/api/<method>` unary RPC, `events.mux` WebSocket downlink, `/api/respond`). Prompts containing "ask …" trigger a permission question ("ask multi permission" raises three requests at once to exercise the multi-select modal); anything else replays a scripted turn with a tool call (bash / read / grep / edit) so the tool-card shine animation is visible across tool kinds.
+The mock speaks the DSH protocol (`/api/<method>` unary RPC, `events.mux` WebSocket downlink, `/api/respond`). Prompts containing "ask …" trigger a permission question ("ask multi permission" raises three requests at once to exercise the multi-select modal); prompts containing "问卷" / "ask-user" / "调研" raise a three-question ask-user batch to exercise the paginated review (Enter records and auto-advances, ←/→ review, on the last question Enter reveals "确认全部" and a second Enter submits, Esc rejects all); anything else replays a scripted turn with a tool call (bash / read / grep / edit) so the tool-card shine animation is visible across tool kinds.
 
 ## Architecture
 
