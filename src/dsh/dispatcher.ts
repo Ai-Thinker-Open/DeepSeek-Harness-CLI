@@ -34,11 +34,12 @@ const PKG_ROOT = findRoot(dirname(fileURLToPath(import.meta.url)))
 const TUI_CLI = join(PKG_ROOT, "dist", "cli.js")
 const SILENT_UPDATE_AGENT = join(PKG_ROOT, "dist", "silent-update-agent.js")
 
-function readManifest(): { name?: string } {
-  return JSON.parse(readFileSync(join(PKG_ROOT, "package.json"), "utf8")) as { name?: string }
+function readManifest(): { name?: string; version?: string } {
+  return JSON.parse(readFileSync(join(PKG_ROOT, "package.json"), "utf8")) as { name?: string; version?: string }
 }
 
 const PKG_NAME = readManifest().name ?? "@ai-thinker/deepseek-harness-cli"
+const PKG_VERSION = readManifest().version ?? "0.0.0"
 
 /**
  * Bundle names that pointed at this package before renames. Profiles created
@@ -52,6 +53,18 @@ const LEGACY_BUNDLE_NAMES = new Set(["deepseek-harness-cli"])
 function profileDir(): string {
   const home = process.env.DSH_HOME ?? join(homedir(), ".dsh")
   return join(home, "profiles", PROFILE_NAME)
+}
+
+/** Version of the dsh-cli bundle installed inside the tui profile, or null. */
+function installedProfileBundleVersion(dir: string): string | null {
+  try {
+    const manifest = join(dir, "node_modules", PKG_NAME, "package.json")
+    if (!existsSync(manifest)) return null
+    const parsed = JSON.parse(readFileSync(manifest, "utf8")) as { version?: string }
+    return typeof parsed.version === "string" ? parsed.version : null
+  } catch {
+    return null
+  }
 }
 
 /**
@@ -268,6 +281,7 @@ function stageUpdates(): void {
   const child = internals.spawn(process.execPath, [SILENT_UPDATE_AGENT], {
     stdio: "ignore",
     detached: true,
+    windowsHide: true,
     ...portableSpawnOptions({}),
   })
   child.unref()
@@ -326,14 +340,34 @@ export async function run(args: readonly string[]): Promise<number> {
   }
 
   const dsh = resolveDsh()
+  if (dsh.bin === "npx") {
+    // The npx fallback downloads @deepseek-ai/dsh on first use; make the
+    // implicit network fetch visible so a fresh install doesn't look stuck.
+    process.stderr.write(
+      "[dsh-cli] 未检测到全局 dsh，将通过 npx 下载 @deepseek-ai/dsh（首次联网，可能需要几分钟）；或先执行 npm install -g @deepseek-ai/dsh 以加速启动\n",
+    )
+  }
   const profileRegistered = normalizeProfileBundles()
+  // The running CLI comes from the tui profile bundle, a separate copy of this
+  // package. A plain `npm install -g` (and the silent-updater) only update the
+  // global package, leaving the profile copy on the old version — so the launcher
+  // never shows the version it just installed. Detect a version mismatch and
+  // re-register the bundle (rebuild from the current global package) so the
+  // profile and the installed package stay in sync.
+  const installedBundleVersion = installedProfileBundleVersion(profileDir())
+  const profileStale = profileRegistered && installedBundleVersion !== null && installedBundleVersion !== PKG_VERSION
+  if (profileStale) {
+    process.stderr.write(
+      `[dsh-cli] 检测到 dsh-cli 版本已更新（tui profile 内 ${installedBundleVersion} → ${PKG_VERSION}），正在刷新 profile…\n`,
+    )
+  }
   // Repair the pnpm build allowlist even when the profile is already
   // registered: an upgraded dsh-cli must flip placeholders left behind by
   // older versions (pnpm 11 fills unapproved packages with
   // "set this to true or false", which fails the install with
   // ERR_PNPM_IGNORED_BUILDS). Idempotent, so it is safe on every boot.
   allowProfileBuilds()
-  if (!profileRegistered) {
+  if (!profileRegistered || profileStale) {
     if (process.env.DSH_DEBUG === "1") process.stderr.write(`[dsh-cli] registering the tui profile bundle (${PKG_NAME})\n`)
     // Profile setup is forwarded to pnpm by dsh; auto-install it when missing
     // so first run works even if the package postinstall was skipped.

@@ -72,6 +72,11 @@ function warn(message: string): void {
   process.stderr.write(`[dsh-cli] bootstrap: ⚠ ${message}\n`)
 }
 
+/** Startup-progress line, always visible (no DSH_DEBUG needed). */
+function notice(message: string): void {
+  process.stderr.write(`[dsh-cli] ${message}\n`)
+}
+
 function dshHome(): string {
   return process.env.DSH_HOME ?? join(homedir(), ".dsh")
 }
@@ -175,7 +180,7 @@ async function ensureSkills(): Promise<void> {
   const repoRoot = join(skillsRoot, "ai-thinker-src")
   const url = process.env.AT_SKILLS_URL ?? DEFAULT_SKILLS_URL
   if (!existsSync(join(repoRoot, ".git"))) {
-    info(`cloning Ai-Thinker skills -> ${repoRoot}`)
+    notice(`首次准备 Ai-Thinker 技能：git clone ${url}（DSH_NO_SKILLS=1 可跳过）`)
     const result = internals.spawnSync("git", ["clone", "--depth", "1", url, repoRoot], portableSpawnSyncOptions({ stdio: "ignore" }))
     if (result.status !== 0) {
       warn("skills clone failed; run it manually or retry next launch")
@@ -183,6 +188,7 @@ async function ensureSkills(): Promise<void> {
     }
   }
   const linked = linkSkillBundles(skillsRoot, repoRoot)
+  if (linked > 0) notice(`链接技能目录：${linked} 个新 skills → ${skillsRoot}`)
   info(`skills ready (${linked} bundles linked into ${skillsRoot})`)
 }
 
@@ -203,6 +209,7 @@ async function installFlashkey(): Promise<boolean> {
     ["uv", "tool", "install", "--reinstall", installUrl],
   )
   for (const args of attempts) {
+    notice(`安装 flashkey-mcp：${args[0]} ${args.slice(1).join(" ")}  （DSH_NO_FLASHKEY=1 可跳过）`)
     info(`installing flashkey-mcp: ${args[0]} ${args.slice(1).join(" ")}`)
     const result = internals.spawnSync(args[0]!, args.slice(1), portableSpawnSyncOptions({ stdio: "ignore" }))
     if (result.status === 0) return true
@@ -246,6 +253,7 @@ async function ensureSseDaemon(port: number): Promise<void> {
     args = ["-m", "flashkey_mcp.server", "--sse", "--host", "127.0.0.1", "--port", String(port)]
     env = { ...process.env, PYTHONPATH: join(internals.bundledFlashkey, "src") }
   }
+  notice(`启动 FlashKey SSE 服务：${command} ${args.join(" ")}`)
   info(`starting FlashKey SSE daemon on :${port}`)
   try {
     const child: ChildProcess = internals.spawn(

@@ -84,7 +84,7 @@ function installGlobal(pkgName: string, version: string): { status: number; stde
   const npm = process.platform === "win32" ? "npm.cmd" : "npm"
   try {
     const result = internals.spawnSync(npm, ["install", "-g", `${pkgName}@${version}`], {
-      ...portableSpawnSyncOptions({ stdio: ["ignore", "ignore", "pipe"] }),
+      ...portableSpawnSyncOptions({ stdio: ["ignore", "ignore", "pipe"], windowsHide: true }),
     })
     return { status: result.status ?? 1, stderr: result.stderr == null ? "" : String(result.stderr) }
   } catch (error) {
@@ -142,7 +142,7 @@ function stageIntoPrefix(pkgName: string, version: string): boolean {
     const installed = internals.spawnSync(
       npmBinary(),
       ["install", "-g", "--prefix", staging, `${pkgName}@${version}`],
-      portableSpawnSyncOptions({ stdio: "ignore" }),
+      portableSpawnSyncOptions({ stdio: "ignore", windowsHide: true }),
     )
     if (installed.status !== 0) return false
     const manifest = join(staging, "node_modules", pkgName, "package.json")

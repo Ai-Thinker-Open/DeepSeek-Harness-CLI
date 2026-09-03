@@ -109,6 +109,35 @@ test("dispatcher boots dsh --profile tui when the profile already has the bundle
   expect(syncCalls.map((c) => c.args[0])).not.toContain("plugin")
 })
 
+test("dispatcher refreshes the tui profile when its bundle version is stale", async () => {
+  const { calls, children } = installSpawn()
+  const { calls: syncCalls } = installSpawnSync({ "--help": { status: 0 }, plugin: { status: 0 } })
+  dispatcherInternals.probe = async () => false
+  profileHome = mkdtempSync(join(tmpdir(), "dsh-cli-test-"))
+  process.env.DSH_HOME = profileHome
+  const dir = join(profileHome, "profiles", PROFILE_NAME)
+  mkdirSync(join(dir, "node_modules", "@ai-thinker", "deepseek-harness-cli"), { recursive: true })
+  // Simulate an old bundle copy still inside the profile (the diagnosed cause).
+  writeFileSync(
+    join(dir, "node_modules", "@ai-thinker", "deepseek-harness-cli", "package.json"),
+    JSON.stringify({ version: "0.0.1" }),
+  )
+  writeFileSync(join(dir, "package.json"), JSON.stringify({ dsh: { profile: { bundles: ["@ai-thinker/deepseek-harness-cli"] } } }))
+
+  const pending = run([])
+  await settle()
+  children[0]?.emit("exit", 0)
+  await expect(pending).resolves.toBe(0)
+
+  // A stale profile bundle forces a re-register (`dsh plugin --profile tui add`)
+  // before booting, so the profile copy is rebuilt from the current package.
+  const pluginCall = syncCalls.find((c) => c.args[0] === "plugin")
+  expect(pluginCall).toBeDefined()
+  expect(pluginCall?.args.slice(0, 4)).toEqual(["plugin", "--profile", "tui", "add"])
+  expect(calls[0]?.command).toBe("dsh")
+  expect(calls[0]?.args).toEqual(["--profile", "tui"])
+})
+
 test("dispatcher initializes the tui profile before booting it", async () => {
   const { calls, children } = installSpawn()
   const { calls: syncCalls } = installSpawnSync({ "--help": { status: 0 }, plugin: { status: 0 } })
