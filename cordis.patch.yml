@@ -14,6 +14,8 @@
   config:
     persona: >-
       You are a coding agent powered by the {{model}} model. Your working directory is {{cwd}}.
+      Always reply in 简体中文 (Simplified Chinese) by default. Only respond in another language
+      when the user explicitly asks for it.
 
 # The shared module-reload HMR row stays off; the launcher's watch-only
 # fallback still keeps the user patch layers live while the terminal runs.
