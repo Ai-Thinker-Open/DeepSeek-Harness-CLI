@@ -1,5 +1,6 @@
-import { For, Show, createMemo, createSignal } from "solid-js"
+import { For, Show, createEffect, createMemo, createSignal, onCleanup } from "solid-js"
 import { useKeyboard } from "@opentui/solid"
+import type { ScrollBoxRenderable } from "@opentui/core"
 import { Footer } from "../components/footer"
 import { MessageView } from "../components/message-view"
 import { Prompt } from "../components/prompt"
@@ -52,6 +53,25 @@ export function SessionScreen(props: {
   active?: () => boolean
 }) {
   const [commandOpen, setCommandOpen] = createSignal(false)
+  const [showJump, setShowJump] = createSignal(false)
+  let scrollRef: ScrollBoxRenderable | undefined
+  const syncJump = () => {
+    const sb = scrollRef
+    if (!sb) return
+    const atBottom = sb.scrollTop + sb.height >= sb.scrollHeight - 1
+    setShowJump(!atBottom)
+  }
+  // Poll a few times a second so manual scrolling (not a message change) still
+  // flips the button, and re-check whenever messages change (streaming appends).
+  const jumpTimer = setInterval(syncJump, 120)
+  createEffect(() => {
+    props.messages()
+    syncJump()
+  })
+  onCleanup(() => clearInterval(jumpTimer))
+  const jumpToLatest = () => {
+    if (scrollRef) scrollRef.scrollTo(scrollRef.scrollHeight)
+  }
   /**
    * The composer must survive any SessionScreen re-render (question opens or
    * closes, busy flips, status changes): those re-renders would otherwise hand
@@ -110,6 +130,9 @@ export function SessionScreen(props: {
       visible={props.visible ?? true}
     >
       <scrollbox
+        ref={(sb: ScrollBoxRenderable) => {
+          scrollRef = sb
+        }}
         flexGrow={1}
         minHeight={0}
         width="100%"
@@ -138,7 +161,7 @@ export function SessionScreen(props: {
         paddingTop={1}
         flexShrink={0}
       >
-        <Show when={props.statusText() || props.planMode() || props.planPending() || props.busy()}>
+        <Show when={props.statusText() || props.planMode() || props.planPending() || props.busy() || showJump()}>
           <box flexDirection="row" width="100%" paddingBottom={1} alignItems="center">
             <box flexGrow={1} minWidth={0}>
               <Show when={props.statusText()}>
@@ -153,6 +176,19 @@ export function SessionScreen(props: {
             </Show>
             <Show when={props.planMode() && !props.busy()}>
               <text fg={theme.textMuted}>Esc 退出计划模式</text>
+            </Show>
+            <Show when={showJump()}>
+              <box
+                marginLeft={1}
+                backgroundColor={theme.primary}
+                paddingLeft={1}
+                paddingRight={1}
+                onMouse={(evt) => {
+                  if (evt.type === "down" && evt.button === 0) jumpToLatest()
+                }}
+              >
+                <text fg={theme.background}>↓ 回到新消息</text>
+              </box>
             </Show>
             <PlanModeBadge active={props.planMode} pending={props.planPending} />
           </box>

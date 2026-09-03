@@ -1,6 +1,7 @@
 /** @jsxImportSource @opentui/solid */
 import { expect, test } from "bun:test"
 import { testRender } from "@opentui/solid"
+import { ScrollBoxRenderable, type Renderable } from "@opentui/core"
 import { createSignal } from "solid-js"
 import { mkdtempSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
@@ -23,6 +24,16 @@ const assistantMsg = (content: string, extra: Partial<ChatMessage> = {}): ChatMe
 
 const promptText = (content: PromptContentPart[]): string =>
   content.filter((b) => b.type === "text").map((b) => b.text).join("")
+
+function findScrollBox(node: Renderable): ScrollBoxRenderable | undefined {
+  if (node instanceof ScrollBoxRenderable) return node
+  for (const child of node.getChildren?.() ?? []) {
+    const found = findScrollBox(child)
+    if (found) return found
+  }
+  return undefined
+}
+
 
 async function renderSession(opts: {
   messages?: ChatMessage[]
@@ -2364,4 +2375,34 @@ test("image tags highlight across CJK by display columns, not UTF-16 units", asy
   const fg = tag!.fg.buffer
   expect(fg[0]).toBeLessThan(180)
   expect(fg[2]).toBeGreaterThan(200)
+})
+
+test("jump-to-latest pill shows in the status bar when scrolled away and returns to the bottom", async () => {
+  const messages: ChatMessage[] = Array.from({ length: 60 }, (_, i) => ({
+    id: `m-${i}`,
+    role: "user",
+    content: `消息 ${i} ${"x".repeat(40)}`,
+    createdAt: i,
+  }))
+  const app = await renderSession({ messages, height: 24 })
+  await app.renderOnce()
+  await new Promise((resolve) => setTimeout(resolve, 300))
+  await app.renderOnce()
+  // Sticky-bottom keeps us at the latest, so the button is hidden.
+  expect(app.captureCharFrame()).not.toContain("回到新消息")
+
+  const sb = findScrollBox(app.renderer.root as unknown as Renderable)
+  expect(sb).toBeDefined()
+  // Scroll away from the bottom (user scrolled up).
+  sb!.scrollTop = 0
+  await new Promise((resolve) => setTimeout(resolve, 300))
+  await app.renderOnce()
+  expect(app.captureCharFrame()).toContain("回到新消息")
+
+  // The pill's click runs the same scrollTo; jump back to the bottom.
+  sb!.scrollTo(sb!.scrollHeight)
+  await new Promise((resolve) => setTimeout(resolve, 300))
+  await app.renderOnce()
+  expect(sb!.scrollTop + sb!.height).toBeGreaterThanOrEqual(sb!.scrollHeight - 1)
+  expect(app.captureCharFrame()).not.toContain("回到新消息")
 })
