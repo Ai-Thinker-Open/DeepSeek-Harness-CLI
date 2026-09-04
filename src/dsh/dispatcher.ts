@@ -449,7 +449,11 @@ export async function run(args: readonly string[]): Promise<number> {
   const bunProbe = internals.spawnSync(bunBin, ["--version"], portableSpawnSyncOptions({ stdio: ["ignore", "pipe", "ignore"] }))
   if (bunProbe.status !== 0) {
     process.stderr.write(
-      '[dsh-cli] bun is required to run the terminal client. Install it with "npm install -g bun" (or from https://bun.sh).\n',
+      '[dsh-cli] bun is required to run the terminal client, but no bun binary was found.\n' +
+        'This package normally ships bun as the `@oven/bun-*` optional dependency; a reinstall that keeps ' +
+        'optional deps (`npm i -g @ai-thinker/deepseek-harness-cli` without `--no-optional`) usually ' +
+        'restores it. Otherwise install bun yourself:\n' +
+        '  npm i -g bun        (or follow https://bun.sh/install)\n',
     )
     return 1
   }

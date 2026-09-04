@@ -35,6 +35,14 @@ auto-provisioned on first launch. Only source builds additionally need
 [Bun](https://bun.sh). A local DeepSeek Harness instance is optional
 everywhere: `dsh-cli` probes for one and boots it when missing.
 
+> Bun is shipped as an **optional dependency** (`@oven/bun-*`), so a normal
+> `npm install -g` needs **no separate Bun install**. When that optional dep is
+> skipped (`--omit=optional`/`--no-optional`, an unusual platform/arch, or a
+> mirror that cannot fetch the binary), `dsh-cli` falls back to `~/.bun/bin`
+> then `PATH`; if neither exists it fails with a clear "bun is required"
+> message — in that case install Bun yourself (`npm i -g bun`, or follow
+> https://bun.sh/install).
+
 ## Installation
 
 ### One command (recommended)

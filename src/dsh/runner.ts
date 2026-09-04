@@ -162,7 +162,13 @@ export function apply(ctx: DshContext, config: TuiRunnerConfig = {}): void {
   // client mid-session (bun 1.4+ segfaults the OpenTUI renderer on Windows).
   const bunProbe = internals.spawnSync(bunBin, ["--version"], portableSpawnSyncOptions({ stdio: ["ignore", "pipe", "ignore"] }))
   if (bunProbe.status !== 0) {
-    process.stderr.write("tui-runner: bun is required to run the terminal client (dist/cli.js). Install bun and re-run dsh --profile tui.\n")
+    process.stderr.write(
+      "tui-runner: bun is required to run the terminal client, but no bun binary was found.\n" +
+        "This package normally ships bun as the `@oven/bun-*` optional dependency; a reinstall that " +
+        "keeps optional deps (`npm i -g @ai-thinker/deepseek-harness-cli` without --no-optional, or " +
+        "`pnpm install`) usually restores it. Otherwise install bun yourself and re-run `dsh --profile tui`:\n" +
+        "  npm i -g bun        (or follow https://bun.sh/install)\n",
+    )
     exit(1)
     return
   }

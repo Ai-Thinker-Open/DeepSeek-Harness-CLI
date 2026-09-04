@@ -29,6 +29,8 @@
 
 需要 [Node.js](https://nodejs.org) 22+（推荐 LTS）：harness 的 MCP 客户端用到了 `Promise.withResolvers()`，该 API 从 Node 22 起才可用。安装包自带固定版本 Bun 1.3.14（作为 `@oven/bun-*` 平台包随 npm 安装），harness 与 pnpm 在首次启动时自动补齐；只有从源码构建才额外需要 [Bun](https://bun.sh)。本地 DeepSeek Harness 实例在所有安装方式下都是可选的：`dsh-cli` 会自动探测并拉起。
 
+> Bun 以**可选依赖**（`@oven/bun-*`）随包分发，所以普通 `npm install -g` **无需再单独安装 Bun**。如果该可选依赖被跳过（`--omit=optional`/`--no-optional`、平台/架构太特殊、或内网镜像拉不到对应二进制），`dsh-cli` 会依次回退到 `~/.bun/bin` 再回退到 `PATH`；若两者都没有，会在启动时报出明确的 "bun is required" 提示——这时需自行安装 Bun（`npm i -g bun`，或按 https://bun.sh/install 安装）。
+
 ## 安装
 
 ### 一条命令安装（推荐）
