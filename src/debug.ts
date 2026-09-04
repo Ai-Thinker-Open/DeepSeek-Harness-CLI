@@ -30,7 +30,9 @@ function logPath(): string {
 export function debug(...parts: unknown[]): void {
   if (!process.env.DSH_DEBUG) return
   try {
-    appendFileSync(logPath(), parts.map((p) => (typeof p === "string" ? p : JSON.stringify(p))).join(" ") + "\n")
+    // `mode: 0o600` so the log (which can carry auth cookies and session/tool
+    // content) is not readable by other users on a shared machine.
+    appendFileSync(logPath(), parts.map((p) => (typeof p === "string" ? p : JSON.stringify(p))).join(" ") + "\n", { mode: 0o600 })
   } catch {
     /* best effort — debug logging must never break the client */
   }

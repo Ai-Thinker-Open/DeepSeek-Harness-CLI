@@ -311,13 +311,18 @@ function toEndpoint(method: string): string {
 }
 
 /**
+ * Endpoints whose wire `args` are `{}` (no-arg reads).
+ */
+const NO_ARGS_ENDPOINTS = new Set(["session/modelCatalog", "session/canOpenWorkspacePath"])
+
+/**
  * Build the wire `args` object for a unary RPC. dsh's Typert gateway expects
  * the request envelope to carry `payload.args`, keyed by the remote method's
  * parameter names:
+ *  - no-arg reads (`session/modelCatalog`, `session/canOpenWorkspacePath`) -> `{}`;
+ *  - `session/list` -> `{ _request: payload }`;
  *  - single `request`-param controllers (session/skills) -> `{ request: payload }`
  *    (the payload IS the request object);
- *  - `session/list` -> `{ _request: payload }`;
- *  - no-arg reads (`session/modelCatalog`, `session/canOpenWorkspacePath`) -> `{}`;
  *  - named-param controllers (`credentials/set`, `settings/update`, ...) -> the
  *    payload fields are the wire args directly (`{ ref, value }`, `{ ns, patch }`).
  * Sending the bare payload caused `Remote payload must contain exactly one
@@ -328,8 +333,8 @@ function wrapArgs(endpoint: string, payload: unknown): Record<string, unknown> {
     throw new HarnessError(`RPC endpoint ${endpoint} requires an object payload`, "bad-args")
   }
   const p = payload as Record<string, unknown>
+  if (NO_ARGS_ENDPOINTS.has(endpoint)) return {}
   if (endpoint === "session/list") return { _request: p }
-  if (endpoint === "session/modelCatalog" || endpoint === "session/canOpenWorkspacePath") return {}
   if (endpoint.startsWith("session/") || endpoint.startsWith("skills/")) return { request: p }
   return p
 }
@@ -371,9 +376,12 @@ export class HarnessClient implements HarnessClientLike {
       if (!authUrl) return null
       try {
         const res = await fetch(authUrl, { method: "GET", redirect: "manual" })
-        const first = (res.headers.get("set-cookie") ?? "").split(";")[0]?.trim()
+        const setCookie = res.headers.get("set-cookie") ?? ""
+        const first = setCookie.split(";")[0]?.trim()
         if (process.env.DSH_DEBUG === "1") {
-          debug(`[dsh-cli] auth exchange GET ${authUrl} status=${res.status} set-cookie=${JSON.stringify(res.headers.get("set-cookie") ?? "")}`)
+          // Deliberately log only presence, never the raw cookie value: it is a
+          // bearer credential and must not land in a (now 0600) log file.
+          debug(`[dsh-cli] auth exchange GET ${authUrl} status=${res.status} set-cookie=${setCookie ? "set" : "none"}`)
         }
         if (first && first.startsWith("dsh-auth-")) {
           this.authCookie = first
@@ -389,12 +397,11 @@ export class HarnessClient implements HarnessClientLike {
   }
 
   private async post<T>(path: string, body: unknown, signal?: AbortSignal): Promise<T> {
-    const cookie = await this.ensureAuth()
-    const headers: Record<string, string> = { "content-type": "application/json" }
-    if (cookie) headers.cookie = cookie
-    let res: Response
-    try {
-      res = await fetch(`${this.baseUrl.replace(/\/$/, "")}${path}`, {
+    const url = `${this.baseUrl.replace(/\/$/, "")}${path}`
+    const requestOnce = async (cookie: string | null): Promise<Response> => {
+      const headers: Record<string, string> = { "content-type": "application/json" }
+      if (cookie) headers.cookie = cookie
+      const res = await fetch(url, {
         method: "POST",
         headers,
         body: JSON.stringify(body),
@@ -402,6 +409,20 @@ export class HarnessClient implements HarnessClientLike {
       })
       if (process.env.DSH_DEBUG === "1") {
         debug(`[dsh-cli] POST ${path} status=${res.status} cookie=${cookie ? "yes" : "no"}`)
+      }
+      return res
+    }
+    let cookie = await this.ensureAuth()
+    let res: Response
+    try {
+      res = await requestOnce(cookie)
+      if (res.status === 401 && cookie) {
+        // The launch-token cookie expired or was revoked mid-session; re-mint it
+        // once and retry instead of surfacing a confusing 401 on a long session.
+        this.authCookie = null
+        this.authReady = null
+        cookie = await this.ensureAuth()
+        if (cookie) res = await requestOnce(cookie)
       }
     } catch (e) {
       if ((e as Error).name === "TimeoutError" || (e as Error).name === "AbortError") {

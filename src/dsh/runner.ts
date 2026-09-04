@@ -7,6 +7,7 @@
 
 import { spawn, spawnSync, type ChildProcess } from "node:child_process"
 import { existsSync } from "node:fs"
+import { createRequire } from "node:module"
 import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
 import Schema from "@deepseek-ai/schemastery"
@@ -143,6 +144,19 @@ export function apply(ctx: DshContext, config: TuiRunnerConfig = {}): void {
 
   // Forward the continue flag so the client attaches to the last session.
   const cliArgs = startup?.continueLast ? ["--continue"] : []
+  // The terminal client bundle keeps `ws` external (scripts/build.ts), so it is
+  // NOT self-contained: a missing `ws` fails at module load with a cryptic
+  // "Cannot find package 'ws'". Check resolution from the client's directory
+  // and fail fast with a friendly hint instead.
+  try {
+    createRequire(cliPath).resolve("ws")
+  } catch {
+    process.stderr.write(
+      "tui-runner: the terminal client needs the `ws` package, but it is not installed in this profile.\nRun `pnpm install` (or `bun install`) here and then re-run `dsh --profile tui`.\n",
+    )
+    exit(1)
+    return
+  }
   const bunBin = resolveBun()
   // Refuse known-bad bun binaries up front instead of crashing the terminal
   // client mid-session (bun 1.4+ segfaults the OpenTUI renderer on Windows).
