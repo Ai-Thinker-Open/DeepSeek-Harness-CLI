@@ -16,7 +16,7 @@ import type { TuiStartupValues } from "./startup"
 import { bunVersionProblemFor } from "./node-version"
 import { applyPendingUpdates } from "./silent-update"
 import { portableSpawnOptions, portableSpawnSyncOptions, resolveBun } from "./portable"
-import { debug } from "../debug"
+import { debug, isDebugEnabled } from "../debug"
 
 export const name = "tui-runner"
 
@@ -96,13 +96,13 @@ export function apply(ctx: DshContext, config: TuiRunnerConfig = {}): void {
     if (connection?.authenticatedUrl) {
       authUrl = connection.authenticatedUrl(url)
     } else if (connection === undefined) {
-      if (process.env.DSH_DEBUG === "1") debug("[dsh-cli] runner: connection service not found")
+      if (isDebugEnabled()) debug("[dsh-cli] runner: connection service not found")
     }
   } catch (e) {
-    if (process.env.DSH_DEBUG === "1") debug(`[dsh-cli] runner: authenticatedUrl threw: ${(e as Error).message}`)
+    if (isDebugEnabled()) debug(`[dsh-cli] runner: authenticatedUrl threw: ${(e as Error).message}`)
     authUrl = undefined
   }
-  if (process.env.DSH_DEBUG === "1") {
+  if (isDebugEnabled()) {
     debug(
       authUrl
         ? `[dsh-cli] runner minted launch-token URL (${url} -> ${authUrl})`
@@ -131,14 +131,14 @@ export function apply(ctx: DshContext, config: TuiRunnerConfig = {}): void {
           respond.end("<!doctype html><title>dsh-cli</title>")
         },
       })
-      if (process.env.DSH_DEBUG === "1") debug("[dsh-cli] runner registered / auth index route")
+      if (isDebugEnabled()) debug("[dsh-cli] runner registered / auth index route")
     }
   } catch (e) {
-    if (process.env.DSH_DEBUG === "1") debug(`[dsh-cli] runner could not register / auth index route: ${(e as Error).message}`)
+    if (isDebugEnabled()) debug(`[dsh-cli] runner could not register / auth index route: ${(e as Error).message}`)
   }
   const cwd = startup?.cwd ?? process.cwd()
   const cliPath = join(packageRoot(dirname(fileURLToPath(import.meta.url))), "dist", "cli.js")
-  if (process.env.DSH_DEBUG) {
+  if (isDebugEnabled()) {
     debug(`[dsh-cli] runner loaded from ${import.meta.url}, client at ${cliPath}`)
   }
 

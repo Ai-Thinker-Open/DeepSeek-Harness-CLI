@@ -32,7 +32,7 @@ import { homedir } from "node:os"
 import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { portableSpawnOptions, portableSpawnSyncOptions } from "./portable"
-import { debug } from "../debug"
+import { debug, isDebugEnabled } from "../debug"
 
 const MCP_ROW_ID = "mcp-flashkey"
 const DEFAULT_SKILLS_URL = "https://github.com/Ai-Thinker-Open/skills.git"
@@ -66,7 +66,7 @@ export const internals: {
 
 function info(message: string): void {
   // Normal startup progress is invisible by default; `DSH_DEBUG=1` shows it.
-  if (process.env.DSH_DEBUG === "1") debug(`[dsh-cli] bootstrap: ${message}`)
+  if (isDebugEnabled()) debug(`[dsh-cli] bootstrap: ${message}`)
 }
 
 function warn(message: string): void {

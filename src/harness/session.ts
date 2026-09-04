@@ -1,7 +1,7 @@
 import { writeFile } from "node:fs/promises"
 import { join } from "node:path"
 import { createSignal } from "solid-js"
-import { debug } from "../debug"
+import { debug, isDebugEnabled } from "../debug"
 import {
   DEEP_DIVING_STATUS,
   EMPTY_STATS,
@@ -130,6 +130,7 @@ export type ResumeResult =
   | { status: "failed"; reason: string }
 
 const RECONNECT_DELAY_MS = 1500
+const RECONNECT_MAX_DELAY_MS = 30_000
 
 export function describeHarnessError(e: unknown): string {
   const message = e instanceof Error ? e.message : String(e)
@@ -719,7 +720,7 @@ export function createHarnessSession(
 
   function onToolCall(ev: SessionEvent): void {
     const data = ev.data as { callId?: string; name?: string; arguments?: string; step?: number; turn?: number }
-    if (process.env.DSH_DEBUG) debug("[dsh] tool/call", JSON.stringify(data))
+    if (isDebugEnabled()) debug("[dsh] tool/call", JSON.stringify(data))
     if (!data.callId || !data.name) return
     const args = tryParseArgs(data.arguments ?? "")
     const last = model[model.length - 1]
@@ -762,7 +763,7 @@ export function createHarnessSession(
 
   function onToolResult(ev: SessionEvent): void {
     const block = (ev.data as { message?: { content?: Block[] } }).message?.content?.[0]
-    if (process.env.DSH_DEBUG) debug("[dsh] tool/result", JSON.stringify(ev.data))
+    if (isDebugEnabled()) debug("[dsh] tool/result", JSON.stringify(ev.data))
     if (!block || block.type !== "tool-result" || !block.toolCallId) return
     const callId = block.toolCallId
     if (pendingSettles.has(callId)) return
@@ -1038,6 +1039,11 @@ export function createHarnessSession(
   }
 
   async function listenLoop(): Promise<void> {
+    // Exponential backoff between reconnect attempts: starts at the base delay
+    // and doubles on each consecutive failure up to the cap, so a downed
+    // gateway is not hammered in a tight loop. Reset to the base as soon as a
+    // frame arrives (the link is healthy again).
+    let reconnectDelay = RECONNECT_DELAY_MS
     while (!abortController.signal.aborted) {
       const streamAbortController = new AbortController()
       streamAbort = streamAbortController
@@ -1050,6 +1056,7 @@ export function createHarnessSession(
           if (!connected()) {
             setConnected(true)
             setStatusText("")
+            reconnectDelay = RECONNECT_DELAY_MS
           }
           try {
             onFrame(frame)
@@ -1069,9 +1076,10 @@ export function createHarnessSession(
       // healthy again, don't flash a stale "连接中断" status on top of it.
       const justResynced = Date.now() - lastResyncAt < stallResyncMs
       if (!justResynced || model.some((m) => m.streaming)) {
-        setStatusText("连接中断，重连中…")
+        setStatusText(`连接中断，${(reconnectDelay / 1000).toFixed(1)}s 后重连…`)
       }
-      await new Promise((r) => setTimeout(r, RECONNECT_DELAY_MS))
+      await new Promise((r) => setTimeout(r, reconnectDelay))
+      reconnectDelay = Math.min(reconnectDelay * 2, RECONNECT_MAX_DELAY_MS)
     }
     listening = false
   }
@@ -1269,16 +1277,16 @@ export function createHarnessSession(
     setCommandsLoading(true)
     try {
       const list = await client.commandList(sessionId)
-      if (process.env.DSH_DEBUG) debug("[dsh] command.list", JSON.stringify(list))
+      if (isDebugEnabled()) debug("[dsh] command.list", JSON.stringify(list))
       setCommands(list)
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e)
-      if (/not found|404/i.test(message) && !process.env.DSH_DEBUG) {
+      if (/not found|404/i.test(message) && !isDebugEnabled()) {
         // A harness without the commands service exposes no /api/commands.*.
         setCommands([])
         return
       }
-      if (process.env.DSH_DEBUG) debug("[dsh] command.list failed", e)
+      if (isDebugEnabled()) debug("[dsh] command.list failed", e)
       // Keep the last known directory; a reconnect or commands/change will retry.
     } finally {
       setCommandsLoading(false)
@@ -1448,7 +1456,7 @@ export function createHarnessSession(
     const reasoningTokens = hasProjection && typeof totals?.reasoningTokens === "number" ? totals.reasoningTokens : derived.reasoningTokens
     const ttftSteps = hasProjection && typeof s?.ttftSteps === "number" ? s.ttftSteps : derived.firstTokenCount
     const ttftMs = hasProjection && typeof s?.ttftMs === "number" ? s.ttftMs : derived.firstTokenSumMs
-    if (process.env.DSH_DEBUG) {
+    if (isDebugEnabled()) {
       debug(
         "[dsh] stats restore",
         JSON.stringify({ projected: { turns, steps, llmMs, toolMs, inTokens, outTokens, cacheReadTokens, cacheWriteTokens, reasoningTokens, ttftSteps, ttftMs }, derived }),

@@ -23,7 +23,7 @@ import pkg from "../../package.json"
 import { HARNESS_PKG, installedHarnessVersion } from "./harness-update"
 import { isNewerVersion } from "../update"
 import { portableSpawnSyncOptions } from "./portable"
-import { debug } from "../debug"
+import { debug, isDebugEnabled } from "../debug"
 
 export interface PendingUpdate {
   pkg: string
@@ -116,7 +116,7 @@ export function applyPendingUpdates(
     const { status, stderr } = installGlobal(entry.pkg, entry.version)
     if (status === 0) {
       updated.push({ pkg: entry.pkg, version: entry.version })
-      if (env.DSH_DEBUG === "1") debug(`[dsh-cli] updated ${entry.pkg} → ${entry.version}`)
+      if (isDebugEnabled()) debug(`[dsh-cli] updated ${entry.pkg} → ${entry.version}`)
       continue
     }
     const detail = stderr.trim().split("\n").slice(-1)[0]?.trim() ?? ""

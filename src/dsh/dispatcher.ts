@@ -13,7 +13,7 @@ import { dirname, join } from "node:path"
 import { fileURLToPath, pathToFileURL } from "node:url"
 import { bunVersionProblemFor, nodeVersionProblem } from "./node-version"
 import { portableSpawnOptions, portableSpawnSyncOptions, resolveBun } from "./portable"
-import { debug } from "../debug"
+import { debug, isDebugEnabled } from "../debug"
 export { applyPendingUpdates } from "./silent-update"
 export { bootstrapAll } from "./bootstrap"
 
@@ -421,7 +421,7 @@ export function repairProfileDuplicates(): {
  */
 function stageUpdates(): void {
   if (!existsSync(SILENT_UPDATE_AGENT)) return
-  if (process.env.DSH_DEBUG === "1") debug("[dsh-cli] staging background updates (silent-update-agent)")
+  if (isDebugEnabled()) debug("[dsh-cli] staging background updates (silent-update-agent)")
   const child = internals.spawn(process.execPath, [SILENT_UPDATE_AGENT], {
     stdio: "ignore",
     detached: true,
@@ -467,7 +467,7 @@ export async function run(args: readonly string[]): Promise<number> {
 
   if (await internals.probe(url)) {
     // An instance is already serving: run the terminal client directly.
-    if (process.env.DSH_DEBUG === "1") debug(`[dsh-cli] harness reachable at ${url}; launching terminal client`)
+    if (isDebugEnabled()) debug(`[dsh-cli] harness reachable at ${url}; launching terminal client`)
     const child = internals.spawn(bunBin, [TUI_CLI, ...args], {
       stdio: "inherit",
       env: { ...process.env, DSH_URL: url, DSH_CWD: process.cwd() },
@@ -512,7 +512,7 @@ export async function run(args: readonly string[]): Promise<number> {
   // ERR_PNPM_IGNORED_BUILDS). Idempotent, so it is safe on every boot.
   allowProfileBuilds()
   if (!profileRegistered || profileStale) {
-    if (process.env.DSH_DEBUG === "1") debug(`[dsh-cli] registering the tui profile bundle (${PKG_NAME})`)
+    if (isDebugEnabled()) debug(`[dsh-cli] registering the tui profile bundle (${PKG_NAME})`)
     // Profile setup is forwarded to pnpm by dsh; auto-install it when missing
     // so first run works even if the package postinstall was skipped.
     const pnpmProbe = runPortable("pnpm", ["--version"])
@@ -568,7 +568,7 @@ export async function run(args: readonly string[]): Promise<number> {
     }
   }
 
-  if (process.env.DSH_DEBUG === "1") {
+  if (isDebugEnabled()) {
     debug("[dsh-cli] starting harness (dsh --profile tui); the terminal client will take over this screen")
   }
   // Pre-flight: compose the profile tree and de-duplicate loader-entry ids
@@ -582,7 +582,7 @@ export async function run(args: readonly string[]): Promise<number> {
     } catch (error) {
       // The pre-flight must never take the launcher down; if it throws for any
       // reason, degrade to a normal boot and let dsh report the real problem.
-      if (process.env.DSH_DEBUG === "1") debug(`[dsh-cli] profile repair preflight skipped: ${(error as Error).message}`)
+      if (isDebugEnabled()) debug(`[dsh-cli] profile repair preflight skipped: ${(error as Error).message}`)
     }
     if (duplicates.length > 0) {
       const ids = duplicates.map((item) => item.id).join("、")

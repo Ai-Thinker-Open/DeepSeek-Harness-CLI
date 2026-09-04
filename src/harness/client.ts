@@ -10,7 +10,7 @@
  */
 
 import WebSocket from "ws"
-import { debug } from "../debug"
+import { debug, isDebugEnabled } from "../debug"
 
 export interface RpcResult<T = unknown> {
   ok: boolean
@@ -349,11 +349,27 @@ export class HarnessError extends Error {
 
 export const DEFAULT_HARNESS_URL = "http://127.0.0.1:3081"
 
+/** Loopback hostnames never leave this machine, so plain http/ws is fine there. */
+function isLoopbackHost(host: string): boolean {
+  return host === "127.0.0.1" || host === "localhost" || host === "::1" || host === "0.0.0.0" || host === "[::1]"
+}
+
 export class HarnessClient implements HarnessClientLike {
   constructor(
     readonly baseUrl: string,
     public timeoutMs = 60_000,
-  ) {}
+  ) {
+    // The base URL drives the /api RPC base and the websocket URL (ws/wss).
+    // Credentials (the dsh-auth cookie) and session content cross it in
+    // cleartext, so refuse a non-loopback harness unless it is https/wss.
+    const url = new URL(baseUrl)
+    if (!isLoopbackHost(url.hostname) && url.protocol !== "https:") {
+      throw new HarnessError(
+        `refusing to talk to a non-loopback harness over plain ${url.protocol}// (${baseUrl}); use an https:// URL`,
+        "insecure",
+      )
+    }
+  }
 
   private authCookie: string | null = null
   private authReady: Promise<string | null> | null = null
@@ -378,7 +394,7 @@ export class HarnessClient implements HarnessClientLike {
         const res = await fetch(authUrl, { method: "GET", redirect: "manual" })
         const setCookie = res.headers.get("set-cookie") ?? ""
         const first = setCookie.split(";")[0]?.trim()
-        if (process.env.DSH_DEBUG === "1") {
+        if (isDebugEnabled()) {
           // Deliberately log only presence, never the raw cookie value: it is a
           // bearer credential and must not land in a (now 0600) log file.
           debug(`[dsh-cli] auth exchange GET ${authUrl} status=${res.status} set-cookie=${setCookie ? "set" : "none"}`)
@@ -389,7 +405,7 @@ export class HarnessClient implements HarnessClientLike {
         }
         return null
       } catch (e) {
-        if (process.env.DSH_DEBUG === "1") debug(`[dsh-cli] auth exchange failed: ${(e as Error).message}`)
+        if (isDebugEnabled()) debug(`[dsh-cli] auth exchange failed: ${(e as Error).message}`)
         return null
       }
     })()
@@ -407,7 +423,7 @@ export class HarnessClient implements HarnessClientLike {
         body: JSON.stringify(body),
         signal: signal ?? AbortSignal.timeout(this.timeoutMs),
       })
-      if (process.env.DSH_DEBUG === "1") {
+      if (isDebugEnabled()) {
         debug(`[dsh-cli] POST ${path} status=${res.status} cookie=${cookie ? "yes" : "no"}`)
       }
       return res
@@ -711,7 +727,7 @@ export class HarnessClient implements HarnessClientLike {
       }
     })
 
-    if (process.env.DSH_DEBUG === "1") {
+    if (isDebugEnabled()) {
       debug(`[dsh-cli] WS ${wsUrl} opening cookie=${cookie ? "yes" : "no"} session=${sessionId ?? ""}`)
     }
 
@@ -804,12 +820,12 @@ export class HarnessClient implements HarnessClientLike {
     })
     ws.on("error", (err) => {
       socketError = new HarnessError("remote.mux socket error", "socket")
-      if (process.env.DSH_DEBUG === "1") debug(`[dsh-cli] WS error ${(err as Error).message}`)
+      if (isDebugEnabled()) debug(`[dsh-cli] WS error ${(err as Error).message}`)
       drain()
     })
     ws.on("close", (code, reason) => {
       closed = true
-      if (process.env.DSH_DEBUG === "1") {
+      if (isDebugEnabled()) {
         debug(`[dsh-cli] WS closed code=${code} reason=${JSON.stringify(String(reason ?? ""))}`)
       }
       drain()

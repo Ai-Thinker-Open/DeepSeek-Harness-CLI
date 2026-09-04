@@ -26,9 +26,22 @@ function logPath(): string {
   return resolved
 }
 
+/**
+ * Whether debug logging is enabled.
+ *
+ * Treats a set DSH_DEBUG as enabled unless it is an explicit off value, so
+ * `DSH_DEBUG=0` (a common "disable" gesture) does not silently turn logging on.
+ */
+export function isDebugEnabled(): boolean {
+  const v = process.env.DSH_DEBUG
+  if (!v) return false
+  const s = v.trim().toLowerCase()
+  return s !== "0" && s !== "false" && s !== "no" && s !== "off"
+}
+
 /** Append one debug line (parts joined by a space) to the debug log file. */
 export function debug(...parts: unknown[]): void {
-  if (!process.env.DSH_DEBUG) return
+  if (!isDebugEnabled()) return
   try {
     // `mode: 0o600` so the log (which can carry auth cookies and session/tool
     // content) is not readable by other users on a shared machine.
