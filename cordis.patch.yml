@@ -46,20 +46,9 @@
     - id: code-runtime
       name: '@deepseek-ai/dsh-code-runtime-worker-thread'
 
-    # Storage backends the workspace row consumes (composed the same way the
-    # web surface composes them).
-    - id: storage
-      name: '@deepseek-ai/dsh-storage'
-
-    - id: storage-json
-      name: '@deepseek-ai/dsh-storage-json'
-      config:
-        root: !!js dshHomePath('storages')
-
-    - id: storage-domain
-      name: '@deepseek-ai/dsh-storage-domain'
-      config:
-        backend: json
+    # storage / storage-json / storage-domain are composed by dsh-base (a newer
+    # dsh provides them), so this bundle must not re-insert them — that would
+    # collide with the base row like `duplicate loader entry id: storage`.
 
     # Feature host services the web surface also composes. They are host-plane
     # rows the terminal client benefits from even without a browser UI:
@@ -80,11 +69,8 @@
       config:
         maxNoteBytes: 8192
 
-    - id: session-projection-cache
-      name: '@deepseek-ai/dsh-session-projection-cache'
-      config:
-        writeEveryEvents: 200
-        writeIntervalMs: 5000
+    # session-projection-cache is composed by dsh-base too; keep the comment
+    # intent but do not re-insert the row.
 
     - id: plugin-inventory
       name: '@deepseek-ai/dsh-host-plugin-inventory'
@@ -103,9 +89,9 @@
       name: '@ai-thinker/deepseek-harness-cli/startup'
 
     # The API gateway: the transport-agnostic dispatch face every client shape
-    # shares (the same gateway the web surface proxies).
-    - id: api-gateway
-      name: '@deepseek-ai/dsh-host-apiproxy'
+    # shares. Since dsh 0.1.2-rc.1 the host API gateway lives in dsh-base
+    # (`@deepseek-ai/dsh-api-gateway`); `@deepseek-ai/dsh-host-apiproxy` was
+    # removed upstream, so the surface should not declare its own row.
 
     - id: webserver
       name: '@deepseek-ai/dsh-host-webserver'

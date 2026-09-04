@@ -361,23 +361,16 @@ export function removeListItemById(text: string, id: string): { text: string; re
 
 /**
  * Pre-flight: compose the tui profile tree and detect duplicate loader-entry
- * ids (e.g. `storage`). For each duplicate the launcher drops the copy it
- * controls and that an earlier layer already provides, so exactly one provider
- * stays:
- *  - a duplicate row in this profile's own cordis.patch.yml (the latest layer,
- *    so the earlier provider wins), or
- *  - a duplicate insert row in this package's installed bundle patch (when
- *    dsh-base or another bundle already ships the same id, e.g. a newer dsh
- *    whose base composes `storage` — the base copy is kept).
- * Duplicates the launcher cannot safely resolve are reported with precise
- * instructions instead of being edited.
+ * ids (e.g. `storage`). Detection is read-only — the launcher never edits a
+ * patch file, because editing an installed bundle (or a pnpm-store copy) is
+ * fragile and can corrupt YAML. Instead it reports exactly which layers each
+ * duplicate comes from so the user can drop the redundant row by hand.
  */
 export function repairProfileDuplicates(): {
-  repaired: Array<{ id: string; source: "profile" | "bundle" }>
-  unfixable: Array<{ id: string; layers: string[] }>
+  duplicates: Array<{ id: string; layers: string[] }>
 } {
   const dir = profileDir()
-  const empty = () => ({ repaired: [], unfixable: [] as Array<{ id: string; layers: string[] }> })
+  const empty = () => ({ duplicates: [] })
   if (!existsSync(join(dir, "package.json"))) return empty()
   // Composing via the npx fallback would trigger a second silent download;
   // skip the check and let the real boot surface any error.
@@ -411,79 +404,13 @@ export function repairProfileDuplicates(): {
   const duplicates = [...counts.keys()].filter((id) => (counts.get(id) ?? 0) > 1)
   if (duplicates.length === 0) return empty()
 
-  const profilePatch = join(dir, "cordis.patch.yml")
-  let originalPatch = ""
-  try {
-    originalPatch = existsSync(profilePatch) ? readFileSync(profilePatch, "utf8") : ""
-  } catch {
-    return empty()
+  // Read-only: report every duplicate id with the layers that contribute it.
+  return {
+    duplicates: duplicates.map((id) => ({
+      id,
+      layers: [...(layers.get(id) ?? new Set())].filter((l): l is string => typeof l === "string"),
+    })),
   }
-  let patchText = originalPatch
-
-  // This package's installed bundle patch is what dsh actually loads; it may be
-  // signed into the pnpm store, so edits are best-effort and only when a real
-  // duplicate exists (an earlier layer already provides the id).
-  const bundleDir = join(dir, "node_modules", PKG_NAME)
-  let bundlePatch = ""
-  try {
-    const manifest = JSON.parse(readFileSync(join(bundleDir, "package.json"), "utf8")) as { dsh?: { bundle?: { patch?: string } } }
-    bundlePatch = manifest.dsh?.bundle?.patch ?? "./cordis.patch.yml"
-  } catch {
-    bundlePatch = "./cordis.patch.yml"
-  }
-  const bundlePatchPath = join(bundleDir, bundlePatch)
-  let originalBundle = ""
-  try {
-    originalBundle = existsSync(bundlePatchPath) ? readFileSync(bundlePatchPath, "utf8") : ""
-  } catch {
-    return empty()
-  }
-  let bundleText = originalBundle
-
-  const repaired: Array<{ id: string; source: "profile" | "bundle" }> = []
-  const unfixable: Array<{ id: string; layers: string[] }> = []
-  for (const id of duplicates) {
-    const contribs = [...(layers.get(id) ?? new Set())].filter((l): l is string => typeof l === "string")
-    const dropped = removeListItemById(patchText, id)
-    if (dropped.removed) {
-      patchText = dropped.text
-      repaired.push({ id, source: "profile" })
-      continue
-    }
-    // Not in the profile patch: if an earlier layer (base / another bundle)
-    // already composes this id, the redundant copy lives in our bundle.
-    if (contribs.includes(PKG_NAME)) {
-      const fromBundle = removeListItemById(bundleText, id)
-      if (fromBundle.removed) {
-        bundleText = fromBundle.text
-        repaired.push({ id, source: "bundle" })
-        continue
-      }
-    }
-    unfixable.push({ id, layers: contribs.length ? contribs : ["(unknown layer)"] })
-  }
-
-  if (patchText !== originalPatch) {
-    try {
-      writeFileSync(profilePatch, patchText)
-    } catch (error) {
-      process.stderr.write(`[dsh-cli] could not rewrite ${profilePatch}: ${(error as Error).message}\n`)
-    }
-  }
-  if (bundleText !== originalBundle) {
-    try {
-      writeFileSync(bundlePatchPath, bundleText)
-    } catch (error) {
-      process.stderr.write(`[dsh-cli] could not rewrite ${bundlePatchPath}: ${(error as Error).message}\n`)
-      // If we cannot edit the installed bundle (read-only pnpm store), pretend
-      // it was never repaired so the caller gives precise instructions.
-      for (const item of repaired) {
-        if (item.source === "bundle") unfixable.push({ id: item.id, layers: [`${PKG_NAME} + ${[...(layers.get(item.id) ?? [])].join(" + ")}`] })
-      }
-      return { repaired: repaired.filter((item) => item.source !== "bundle"), unfixable }
-    }
-  }
-  return { repaired, unfixable }
 }
 
 /**
@@ -646,31 +573,28 @@ export async function run(args: readonly string[]): Promise<number> {
   // (e.g. `storage`) before booting. A stale/duplicate layer otherwise aborts
   // dsh with `duplicate loader entry id` and a stack that hides the real fix.
   if (process.env.DSH_NO_PROFILE_REPAIR !== "1") {
-    let repaired: Array<{ id: string; source: "profile" | "bundle" }> = []
-    let unfixable: Array<{ id: string; layers: string[] }> = []
+    let duplicates: Array<{ id: string; layers: string[] }> = []
     try {
       const result = repairProfileDuplicates()
-      repaired = result.repaired
-      unfixable = result.unfixable
+      duplicates = result.duplicates
     } catch (error) {
       // The pre-flight must never take the launcher down; if it throws for any
       // reason, degrade to a normal boot and let dsh report the real problem.
       if (process.env.DSH_DEBUG === "1") process.stderr.write(`[dsh-cli] profile repair preflight skipped: ${(error as Error).message}\n`)
     }
-    if (repaired.length > 0) {
-      const profile = repaired.filter((item) => item.source === "profile").map((item) => item.id)
-      const bundle = repaired.filter((item) => item.source === "bundle").map((item) => item.id)
-      const detail: string[] = []
-      if (profile.length) detail.push(`profile 的 cordis.patch.yml 去掉 ${profile.join("、")}`)
-      if (bundle.length) detail.push(`本 bundle（node_modules/${PKG_NAME}）去掉与基础层重复的 ${bundle.join("、")}`)
-      process.stderr.write(`[dsh-cli] 已修复 tui profile 中的重复插件条目：${detail.join("；")}（同名 id 已由更早的层提供）。\n`)
-    }
-    if (unfixable.length > 0) {
-      for (const item of unfixable) {
+    if (duplicates.length > 0) {
+      const ids = duplicates.map((item) => item.id).join("、")
+      process.stderr.write(
+        `[dsh-cli] ⚠ 检测到 tui profile 中有重复的插件条目 id（说明 dsh-base 与 dsh-cli bundle 版本不匹配）：${ids}\n`,
+      )
+      for (const item of duplicates) {
         process.stderr.write(
-          `[dsh-cli] ⚠ 检测到重复的插件条目 id: ${item.id}，来自：${item.layers.join(" + ")}。请检查 ~/.dsh/profiles/tui 的 package.json（dsh.profile.bundles）和 cordis.patch.yml，删掉多余的一个；或先执行 “dsh --profile tui --dump-config | grep -n '^# ==\\|id: ${item.id}'” 定位。\n`,
+          `  - ${item.id}：来自 ${item.layers.join(" + ") || "(未知层)"}\n`,
         )
       }
+      process.stderr.write(
+        `[dsh-cli] 修复方法：这些行是 dsh 新版 base 已经提供的，请到 %USERPROFILE%\\.dsh\\profiles\\tui\\node_modules\\@ai-thinker\\deepseek-harness-cli\\cordis.patch.yml，把 - insert: 下与 base 重复的上面列出 id 删掉（保留 base 那份），再重试；或先用 “dsh --profile tui --dump-config” 查看完整层归属。\n`,
+      )
       return 1
     }
   }

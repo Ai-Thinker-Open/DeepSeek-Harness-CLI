@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.3.11
+
+### 修复与 dsh 0.1.2-rc.1 的兼容
+
+- `cordis.patch.yml`：不再重复声明 dsh-base 已提供的行（`storage` / `storage-json` / `storage-domain` / `session-projection-cache`），并移除指向 `@deepseek-ai/dsh-host-apiproxy` 的 `api-gateway` 行（该包在 dsh `0.1.2-rc.1` 已移除，改由 dsh-base 的 `@deepseek-ai/dsh-api-gateway` 提供）。
+- `package.json`：把 bundle 引用的 11 个 host 插件（`dsh-workspace`、`dsh-host-webserver`、`dsh-client-connection`、`dsh-code-runtime-worker-thread`、`dsh-host-directory-picker-auto`、`dsh-host-plugin-inventory`、`dsh-cordis-host-runner`、`dsh-file-reference-local`、`dsh-message-feedback`、`dsh-session-reference`、`dsh-session-stats`）声明为 `^0.1.2-rc.1` 依赖，安装进 profile，避免启动时 `ERR_MODULE_NOT_FOUND: Cannot find module '@deepseek-ai/dsh-host-apiproxy'`。
+- 启动预检改为**只读**：只检测并打印重复的 plugin id 与所在层，不再自动改动任何配置文件，避免把 YAML 改坏；`DSH_NO_PROFILE_REPAIR=1` 可跳过。
+
 ## 0.3.10
 
 ### 启动修复：重复插件条目自动检测与修复

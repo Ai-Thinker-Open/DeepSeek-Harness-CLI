@@ -69,14 +69,23 @@ test("removeListItemById never removes an id that is absent", () => {
   expect(out).toBe(text)
 })
 
-test("the shipped bundle patch can shed a duplicate storage row and stay valid YAML", () => {
+test("the shipped bundle patch can shed a host row and stay valid YAML", () => {
   const root = join(import.meta.dir, "..")
   const patch = readFileSync(join(root, "cordis.patch.yml"), "utf8")
-  const { text: out, removed } = removeListItemById(patch, "storage")
+  const { text: out, removed } = removeListItemById(patch, "workspace")
   expect(removed).toBe(true)
-  expect(/^\s*- id: storage\s*$/m.test(out)).toBe(false)
-  expect(/^\s*- id: storage-json\s*$/m.test(out)).toBe(true)
+  expect(/^\s*- id: workspace\s*$/m.test(out)).toBe(false)
+  expect(/^\s*- id: webserver\s*$/m.test(out)).toBe(true)
   expect(() => parseYaml(out.replace(/!!js\s+/g, ""))).not.toThrow()
+})
+
+test("the shipped bundle patch defers base-provided rows to dsh-base", () => {
+  const root = join(import.meta.dir, "..")
+  const patch = readFileSync(join(root, "cordis.patch.yml"), "utf8")
+  for (const id of ["storage", "storage-json", "storage-domain", "session-projection-cache", "api-gateway", "dsh-host-apiproxy"]) {
+    const re = new RegExp(`^(\\s*)- id:\\s*${id}\\s*$`, "m")
+    expect(re.test(patch), `bundle must not declare base-provided/removed row ${id}`).toBe(false)
+  }
 })
 
 test("detects a storage duplicate between a newer dsh-base and the bundle", () => {

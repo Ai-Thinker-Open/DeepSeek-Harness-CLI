@@ -31,7 +31,7 @@ function rows(): PatchEntry[] {
 
 test("bundle patch declares the terminal surface over dsh-base", () => {
   const byId = new Map(rows().map((r) => [r.id, r]))
-  for (const id of ["code-runtime", "tui-startup", "api-gateway", "webserver", "connection", "tui-runner"]) {
+  for (const id of ["code-runtime", "tui-startup", "webserver", "connection", "tui-runner"]) {
     expect(byId.get(id), `missing row ${id}`).toBeDefined()
   }
   expect(byId.get("tui-startup")?.name).toBe("@ai-thinker/deepseek-harness-cli/startup")
@@ -40,6 +40,11 @@ test("bundle patch declares the terminal surface over dsh-base", () => {
   expect(byId.get("tui-runner")?.inject).toEqual(["tuiStartup", "webServer"])
   expect(byId.get("hmr")?.disabled).toBe(true)
   expect(String(byId.get("system-prompt")?.config?.persona)).toContain("{{model}}")
+  // dsh-base already composes these (and `dsh-host-apiproxy` was removed in
+  // dsh 0.1.2-rc.1); re-declaring them would collide or fail to resolve.
+  expect(byId.get("api-gateway")).toBeUndefined()
+  expect(byId.get("storage")).toBeUndefined()
+  expect(byId.get("session-projection-cache")).toBeUndefined()
 })
 
 test("patch declares the standard host services a full surface composes", () => {
@@ -49,7 +54,6 @@ test("patch declares the standard host services a full surface composes", () => 
     ["file-reference-local", "@deepseek-ai/dsh-file-reference-local"],
     ["session-stats", "@deepseek-ai/dsh-session-stats"],
     ["message-feedback", "@deepseek-ai/dsh-message-feedback"],
-    ["session-projection-cache", "@deepseek-ai/dsh-session-projection-cache"],
     ["plugin-inventory", "@deepseek-ai/dsh-host-plugin-inventory"],
     ["cordis-host-runner", "@deepseek-ai/dsh-cordis-host-runner"],
   ]
@@ -80,7 +84,7 @@ test("manifest declares standard npm dependencies and no install-time mutation",
     dependencies?: Record<string, string>
     optionalDependencies?: Record<string, string>
   }
-  expect(manifest.version).toBe("0.3.10")
+  expect(manifest.version).toBe("0.3.11")
   expect(manifest.scripts?.postinstall).toBeUndefined()
   expect(manifest.files ?? []).not.toContain("scripts/ensure-runtime.mjs")
   expect(manifest.dependencies?.["@opentui/core"]).toBe("0.5.9")
