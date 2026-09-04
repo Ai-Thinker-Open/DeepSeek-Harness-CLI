@@ -271,6 +271,211 @@ export const internals: {
   stageUpdates: typeof stageUpdates
 } = { probe, spawn, spawnSync, stageUpdates }
 
+interface ComposedRow {
+  id: string
+  layer: string | null
+}
+
+/**
+ * Parse `dsh --profile tui --dump-config` output into (id, layer) rows. Each
+ * `# == <label>` comment marks the current patch layer; every `- id:` line
+ * belongs to the nearest preceding label. Rows appear in load order, so the
+ * first occurrence of an id is the layer that wins.
+ */
+export function parseComposedLayerIds(dump: string): ComposedRow[] {
+  const rows: ComposedRow[] = []
+  let layer: string | null = null
+  for (const line of dump.split(/\r?\n/)) {
+    const header = line.match(/^# ==\s*(.*)$/)
+    if (header) {
+      layer = (header[1] ?? "").trim()
+      continue
+    }
+    // Only top-level `- id:` rows are loader entries. Indented `- id:` lines
+    // inside a config value must not count, or a config list would read as a
+    // duplicate loader entry.
+    const ident = line.match(/^- id:\s*(\S+)\s*$/)
+    if (ident && ident[1] !== undefined) rows.push({ id: ident[1], layer })
+  }
+  return rows
+}
+
+/**
+ * Remove one YAML list item (`- id: <id>` plus its indented continuation
+ * lines) from a patch file's text, at any indentation. Returns whether an
+ * item was removed. Surrounding blank lines are collapsed so the rest of the
+ * list stays valid YAML. Used to drop a redundant duplicate row from the
+ * profile's own cordis.patch.yml (never from a bundle in node_modules).
+ */
+export function removeListItemById(text: string, id: string): { text: string; removed: boolean } {
+  const lines = text.split(/\r?\n/)
+  let start = -1
+  // Prefer the deepest (most-indented) `- id:` occurrence: overrides sit at the
+  // top level (indent 0) and merge into an existing row, so they never cause a
+  // duplicate id; only nested `- insert:` items actually add a second row.
+  let itemIndent = -1
+  for (let i = 0; i < lines.length; i++) {
+    const m = (lines[i] ?? "").match(/^(\s*)-\s+id:\s*(\S+)\s*$/)
+    if (m && m[2] === id && (m[1]?.length ?? 0) > itemIndent) {
+      start = i
+      itemIndent = (m[1] ?? "").length
+    }
+  }
+  if (start === -1) return { text, removed: false }
+  // The item block ends at the next non-blank line that dedents to the same
+  // or a shallower indentation (a sibling item or the list's parent key).
+  let end = start + 1
+  for (let j = start + 1; j < lines.length; j++) {
+    const line = lines[j] ?? ""
+    if (line.trim() === "") continue
+    const indent = (line.match(/^(\s*)/)?.[1] ?? "").length
+    if (indent <= itemIndent) {
+      end = j
+      break
+    }
+    end = j + 1
+  }
+  const kept: string[] = []
+  for (let i = 0; i < lines.length; i++) {
+    if (i >= start && i < end) continue
+    kept.push(lines[i] ?? "")
+  }
+  // Collapse runs of blank lines so removing a mid-list item never leaves
+  // three-plus blank lines behind (still-valid YAML, just tidy).
+  const result: string[] = []
+  let blanks = 0
+  for (const line of kept) {
+    if (line.trim() === "") {
+      blanks++
+      continue
+    }
+    if (blanks > 1) blanks = 1
+    while (blanks > 0) {
+      result.push("")
+      blanks--
+    }
+    result.push(line)
+  }
+  return { text: result.join("\n"), removed: true }
+}
+
+/**
+ * Pre-flight: compose the tui profile tree and detect duplicate loader-entry
+ * ids (e.g. `storage`). For each duplicate the launcher drops the copy it
+ * controls and that an earlier layer already provides, so exactly one provider
+ * stays:
+ *  - a duplicate row in this profile's own cordis.patch.yml (the latest layer,
+ *    so the earlier provider wins), or
+ *  - a duplicate insert row in this package's installed bundle patch (when
+ *    dsh-base or another bundle already ships the same id, e.g. a newer dsh
+ *    whose base composes `storage` — the base copy is kept).
+ * Duplicates the launcher cannot safely resolve are reported with precise
+ * instructions instead of being edited.
+ */
+export function repairProfileDuplicates(): {
+  repaired: Array<{ id: string; source: "profile" | "bundle" }>
+  unfixable: Array<{ id: string; layers: string[] }>
+} {
+  const dir = profileDir()
+  const empty = () => ({ repaired: [], unfixable: [] as Array<{ id: string; layers: string[] }> })
+  if (!existsSync(join(dir, "package.json"))) return empty()
+  // Composing via the npx fallback would trigger a second silent download;
+  // skip the check and let the real boot surface any error.
+  const dsh = resolveDsh()
+  if (dsh.bin === "npx") return empty()
+  let dump: ReturnType<typeof spawnSync> | null = null
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      dump = internals.spawnSync(
+        dsh.bin,
+        [...dsh.prefix, "--profile", PROFILE_NAME, "--dump-config"],
+        portableSpawnSyncOptions({ stdio: ["ignore", "pipe", "pipe"] }),
+      )
+    } catch {
+      return empty()
+    }
+    // The first `--dump-config` on a brand-new profile may only prepare the
+    // profile (write cordis.yml) and print nothing; retry once before giving up.
+    if (dump.status === 0 && dump.stdout) break
+  }
+  if (dump === null || dump.status !== 0 || !dump.stdout) return empty()
+
+  const rows = parseComposedLayerIds(String(dump.stdout))
+  const counts = new Map<string, number>()
+  const layers = new Map<string, Set<string | null>>()
+  for (const row of rows) {
+    counts.set(row.id, (counts.get(row.id) ?? 0) + 1)
+    if (!layers.has(row.id)) layers.set(row.id, new Set())
+    layers.get(row.id)!.add(row.layer)
+  }
+  const duplicates = [...counts.keys()].filter((id) => (counts.get(id) ?? 0) > 1)
+  if (duplicates.length === 0) return empty()
+
+  const profilePatch = join(dir, "cordis.patch.yml")
+  const originalPatch = existsSync(profilePatch) ? readFileSync(profilePatch, "utf8") : ""
+  let patchText = originalPatch
+
+  // This package's installed bundle patch is what dsh actually loads; it may be
+  // signed into the pnpm store, so edits are best-effort and only when a real
+  // duplicate exists (an earlier layer already provides the id).
+  const bundleDir = join(dir, "node_modules", PKG_NAME)
+  let bundlePatch = ""
+  try {
+    const manifest = JSON.parse(readFileSync(join(bundleDir, "package.json"), "utf8")) as { dsh?: { bundle?: { patch?: string } } }
+    bundlePatch = manifest.dsh?.bundle?.patch ?? "./cordis.patch.yml"
+  } catch {
+    bundlePatch = "./cordis.patch.yml"
+  }
+  const bundlePatchPath = join(bundleDir, bundlePatch)
+  const originalBundle = existsSync(bundlePatchPath) ? readFileSync(bundlePatchPath, "utf8") : ""
+  let bundleText = originalBundle
+
+  const repaired: Array<{ id: string; source: "profile" | "bundle" }> = []
+  const unfixable: Array<{ id: string; layers: string[] }> = []
+  for (const id of duplicates) {
+    const contribs = [...(layers.get(id) ?? new Set())].filter((l): l is string => typeof l === "string")
+    const dropped = removeListItemById(patchText, id)
+    if (dropped.removed) {
+      patchText = dropped.text
+      repaired.push({ id, source: "profile" })
+      continue
+    }
+    // Not in the profile patch: if an earlier layer (base / another bundle)
+    // already composes this id, the redundant copy lives in our bundle.
+    if (contribs.includes(PKG_NAME)) {
+      const fromBundle = removeListItemById(bundleText, id)
+      if (fromBundle.removed) {
+        bundleText = fromBundle.text
+        repaired.push({ id, source: "bundle" })
+        continue
+      }
+    }
+    unfixable.push({ id, layers: contribs.length ? contribs : ["(unknown layer)"] })
+  }
+
+  if (patchText !== originalPatch) {
+    try {
+      writeFileSync(profilePatch, patchText)
+    } catch (error) {
+      process.stderr.write(`[dsh-cli] could not rewrite ${profilePatch}: ${(error as Error).message}\n`)
+    }
+  }
+  if (bundleText !== originalBundle) {
+    try {
+      writeFileSync(bundlePatchPath, bundleText)
+    } catch (error) {
+      process.stderr.write(`[dsh-cli] could not rewrite ${bundlePatchPath}: ${(error as Error).message}\n`)
+      // If we cannot edit the installed bundle (read-only pnpm store), pretend
+      // it was never repaired so the caller gives precise instructions.
+      for (const item of repaired) {
+        if (item.source === "bundle") unfixable.push({ id: item.id, layers: [`${PKG_NAME} + ${[...(layers.get(item.id) ?? [])].join(" + ")}`] })
+      }
+      return { repaired: repaired.filter((item) => item.source !== "bundle"), unfixable }
+    }
+  }
+  return { repaired, unfixable }
+}
+
 /**
  * Spawn the background silent-update agent (fire-and-forget, never blocks
  * startup, reuses the running process's node so no PATH probe is needed).
@@ -426,6 +631,28 @@ export async function run(args: readonly string[]): Promise<number> {
 
   if (process.env.DSH_DEBUG === "1") {
     process.stderr.write("[dsh-cli] starting harness (dsh --profile tui); the terminal client will take over this screen\n")
+  }
+  // Pre-flight: compose the profile tree and de-duplicate loader-entry ids
+  // (e.g. `storage`) before booting. A stale/duplicate layer otherwise aborts
+  // dsh with `duplicate loader entry id` and a stack that hides the real fix.
+  if (process.env.DSH_NO_PROFILE_REPAIR !== "1") {
+    const { repaired, unfixable } = repairProfileDuplicates()
+    if (repaired.length > 0) {
+      const profile = repaired.filter((item) => item.source === "profile").map((item) => item.id)
+      const bundle = repaired.filter((item) => item.source === "bundle").map((item) => item.id)
+      const detail: string[] = []
+      if (profile.length) detail.push(`profile 的 cordis.patch.yml 去掉 ${profile.join("、")}`)
+      if (bundle.length) detail.push(`本 bundle（node_modules/${PKG_NAME}）去掉与基础层重复的 ${bundle.join("、")}`)
+      process.stderr.write(`[dsh-cli] 已修复 tui profile 中的重复插件条目：${detail.join("；")}（同名 id 已由更早的层提供）。\n`)
+    }
+    if (unfixable.length > 0) {
+      for (const item of unfixable) {
+        process.stderr.write(
+          `[dsh-cli] ⚠ 检测到重复的插件条目 id: ${item.id}，来自：${item.layers.join(" + ")}。请检查 ~/.dsh/profiles/tui 的 package.json（dsh.profile.bundles）和 cordis.patch.yml，删掉多余的一个；或先执行 “dsh --profile tui --dump-config | grep -n '^# ==\\|id: ${item.id}'” 定位。\n`,
+        )
+      }
+      return 1
+    }
   }
   const child = internals.spawn(dsh.bin, [...dsh.prefix, "--profile", PROFILE_NAME, ...args], {
     stdio: "inherit",

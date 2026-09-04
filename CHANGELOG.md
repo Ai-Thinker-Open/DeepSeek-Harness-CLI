@@ -1,17 +1,24 @@
 # Changelog
 
+## 0.3.10
+
+### 启动修复：重复插件条目自动检测与修复
+
+- 启动前先 `dsh --profile tui --dump-config` 组合 profile，检测任何重复的 loader 条目 id（例如 `storage`、`storage-json`、`storage-domain`，以及 `workspace` / `api-gateway` / `webserver` / `connection` 等宿主服务行）。
+- 当更早的层（`dsh-base` / 其它 bundle）已提供同名 id 时，自动去掉本 bundle（`node_modules/@ai-thinker/deepseek-harness-cli`）里重复且冗余的那一份，保留更早层的一份，然后正常启动。修复只作用于「确实重复」的 id，旧版 `dsh-base`（不提供这些行）不受影响。
+- 无法安全自动修复的重叠（例如两个 bundle 都声明同一 id）会打印「来自哪两层、怎么删」的明确提示，并以清晰错误退出，不再只甩一屏堆栈；`DSH_NO_PROFILE_REPAIR=1` 可跳过预检。
+- 修复「较新的 `@deepseek-ai/dsh`（其 `dsh-base` 自带 `storage` 等宿主服务行）搭配旧版 `dsh-cli` bundle 时启动报 `duplicate loader entry id: storage`」的版本错配问题。
+
+### 对话语言
+
+- 默认系统提示词改为**默认使用简体中文回复**（除非用户明确要求其它语言），修复模型默认倾向英文的问题。
+
 ## 0.3.9
 
 ### 交互与安装
 
 - 「回到最新消息」改为状态栏"Esc 取消"右侧的蓝色「↓ 回到新消息」药丸按钮：仅当向上滚动离开底部时出现，点击跳回最新并自动隐藏。
 - 移除 `@deepseek-ai/dsh` 硬依赖：`npm install -g dsh-cli` 不再下载整个 harness（修复安装卡住）；dsh 改为首次启动可见提示获取、并继续由静默更新器保持更新。
-
-## Unreleased
-
-### 对话语言
-
-- 默认系统提示词改为**默认使用简体中文回复**（除非用户明确要求其它语言），修复模型默认倾向英文的问题。
 
 ## 0.3.8
 
