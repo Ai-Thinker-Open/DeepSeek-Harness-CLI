@@ -412,7 +412,12 @@ export function repairProfileDuplicates(): {
   if (duplicates.length === 0) return empty()
 
   const profilePatch = join(dir, "cordis.patch.yml")
-  const originalPatch = existsSync(profilePatch) ? readFileSync(profilePatch, "utf8") : ""
+  let originalPatch = ""
+  try {
+    originalPatch = existsSync(profilePatch) ? readFileSync(profilePatch, "utf8") : ""
+  } catch {
+    return empty()
+  }
   let patchText = originalPatch
 
   // This package's installed bundle patch is what dsh actually loads; it may be
@@ -427,7 +432,12 @@ export function repairProfileDuplicates(): {
     bundlePatch = "./cordis.patch.yml"
   }
   const bundlePatchPath = join(bundleDir, bundlePatch)
-  const originalBundle = existsSync(bundlePatchPath) ? readFileSync(bundlePatchPath, "utf8") : ""
+  let originalBundle = ""
+  try {
+    originalBundle = existsSync(bundlePatchPath) ? readFileSync(bundlePatchPath, "utf8") : ""
+  } catch {
+    return empty()
+  }
   let bundleText = originalBundle
 
   const repaired: Array<{ id: string; source: "profile" | "bundle" }> = []
@@ -636,7 +646,17 @@ export async function run(args: readonly string[]): Promise<number> {
   // (e.g. `storage`) before booting. A stale/duplicate layer otherwise aborts
   // dsh with `duplicate loader entry id` and a stack that hides the real fix.
   if (process.env.DSH_NO_PROFILE_REPAIR !== "1") {
-    const { repaired, unfixable } = repairProfileDuplicates()
+    let repaired: Array<{ id: string; source: "profile" | "bundle" }> = []
+    let unfixable: Array<{ id: string; layers: string[] }> = []
+    try {
+      const result = repairProfileDuplicates()
+      repaired = result.repaired
+      unfixable = result.unfixable
+    } catch (error) {
+      // The pre-flight must never take the launcher down; if it throws for any
+      // reason, degrade to a normal boot and let dsh report the real problem.
+      if (process.env.DSH_DEBUG === "1") process.stderr.write(`[dsh-cli] profile repair preflight skipped: ${(error as Error).message}\n`)
+    }
     if (repaired.length > 0) {
       const profile = repaired.filter((item) => item.source === "profile").map((item) => item.id)
       const bundle = repaired.filter((item) => item.source === "bundle").map((item) => item.id)
