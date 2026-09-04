@@ -4,10 +4,13 @@
  * Implements the DSH `/api` client contract:
  * - unary RPC: POST /api/<method> with a `client-request` envelope, answered
  *   by a `server-response` envelope `{ result: { ok, value | error } }`;
- * - downlink: /api/events.mux as a WebSocket stream of `server-request`
+ * - downlink: /api/remote.mux as a multiplexed Remote-stream WebSocket
  *   envelopes (session events, questions, host status);
  * - responses to pending questions: POST /api/respond.
  */
+
+import WebSocket from "ws"
+import { debug } from "../debug"
 
 export interface RpcResult<T = unknown> {
   ok: boolean
@@ -289,13 +292,46 @@ export interface HarnessClientLike {
   credentialsSet(ref: string, value: string): Promise<void>
   settingsDescribe(): Promise<SettingsDescribeResult>
   settingsUpdate(ns: string, patch: Record<string, unknown>, expectedRevision?: number): Promise<SettingsUpdateResult>
-  eventStream(signal?: AbortSignal): AsyncGenerator<ServerRequest>
+  eventStream(signal?: AbortSignal, sessionId?: string | null): AsyncGenerator<ServerRequest>
 }
 
 function rpcId(): string {
   return typeof crypto !== "undefined" && "randomUUID" in crypto
     ? crypto.randomUUID()
     : `rpc-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`
+}
+
+/**
+ * Translate a legacy dot-notation RPC method ("session.list") into the
+ * slash-notation endpoint ("session/list") the 0.1.x Typert gateway claims.
+ * Calls that already use slash notation ("commands/list") pass through.
+ */
+function toEndpoint(method: string): string {
+  return method.includes(".") ? method.replaceAll(".", "/") : method
+}
+
+/**
+ * Build the wire `args` object for a unary RPC. dsh's Typert gateway expects
+ * the request envelope to carry `payload.args`, keyed by the remote method's
+ * parameter names:
+ *  - single `request`-param controllers (session/skills) -> `{ request: payload }`
+ *    (the payload IS the request object);
+ *  - `session/list` -> `{ _request: payload }`;
+ *  - no-arg reads (`session/modelCatalog`, `session/canOpenWorkspacePath`) -> `{}`;
+ *  - named-param controllers (`credentials/set`, `settings/update`, ...) -> the
+ *    payload fields are the wire args directly (`{ ref, value }`, `{ ns, patch }`).
+ * Sending the bare payload caused `Remote payload must contain exactly one
+ * plain-object args field` on every 0.1.2 call.
+ */
+function wrapArgs(endpoint: string, payload: unknown): Record<string, unknown> {
+  if (payload === null || typeof payload !== "object" || Array.isArray(payload)) {
+    throw new HarnessError(`RPC endpoint ${endpoint} requires an object payload`, "bad-args")
+  }
+  const p = payload as Record<string, unknown>
+  if (endpoint === "session/list") return { _request: p }
+  if (endpoint === "session/modelCatalog" || endpoint === "session/canOpenWorkspacePath") return {}
+  if (endpoint.startsWith("session/") || endpoint.startsWith("skills/")) return { request: p }
+  return p
 }
 
 export class HarnessError extends Error {
@@ -314,15 +350,59 @@ export class HarnessClient implements HarnessClientLike {
     public timeoutMs = 60_000,
   ) {}
 
+  private authCookie: string | null = null
+  private authReady: Promise<string | null> | null = null
+  /** `clientId` of the current `$events` mux stream generation (for answering
+   *  forwarded Remote events via `$events/result`). */
+  private eventsClientId: string | null = null
+
+  /**
+   * dsh >= 0.1.2-rc.1 guards the `/api` surface behind browser launch-token
+   * auth: the launcher hands us a one-time `DSH_AUTH_URL` (a `/?token=` root).
+   * GETting it mints a signed `dsh-auth-*` cookie, which every subsequent
+   * `/api` request (RPC and the remote.mux socket) must carry. Older dsh sets
+   * no such URL, so this resolves to null and the client stays unauthenticated.
+   */
+  private async ensureAuth(): Promise<string | null> {
+    if (this.authCookie !== null) return this.authCookie
+    if (this.authReady) return this.authReady
+    this.authReady = (async () => {
+      const authUrl = process.env.DSH_AUTH_URL
+      if (!authUrl) return null
+      try {
+        const res = await fetch(authUrl, { method: "GET", redirect: "manual" })
+        const first = (res.headers.get("set-cookie") ?? "").split(";")[0]?.trim()
+        if (process.env.DSH_DEBUG === "1") {
+          debug(`[dsh-cli] auth exchange GET ${authUrl} status=${res.status} set-cookie=${JSON.stringify(res.headers.get("set-cookie") ?? "")}`)
+        }
+        if (first && first.startsWith("dsh-auth-")) {
+          this.authCookie = first
+          return first
+        }
+        return null
+      } catch (e) {
+        if (process.env.DSH_DEBUG === "1") debug(`[dsh-cli] auth exchange failed: ${(e as Error).message}`)
+        return null
+      }
+    })()
+    return this.authReady
+  }
+
   private async post<T>(path: string, body: unknown, signal?: AbortSignal): Promise<T> {
+    const cookie = await this.ensureAuth()
+    const headers: Record<string, string> = { "content-type": "application/json" }
+    if (cookie) headers.cookie = cookie
     let res: Response
     try {
       res = await fetch(`${this.baseUrl.replace(/\/$/, "")}${path}`, {
         method: "POST",
-        headers: { "content-type": "application/json" },
+        headers,
         body: JSON.stringify(body),
         signal: signal ?? AbortSignal.timeout(this.timeoutMs),
       })
+      if (process.env.DSH_DEBUG === "1") {
+        debug(`[dsh-cli] POST ${path} status=${res.status} cookie=${cookie ? "yes" : "no"}`)
+      }
     } catch (e) {
       if ((e as Error).name === "TimeoutError" || (e as Error).name === "AbortError") {
         throw new HarnessError(`harness request timed out after ${this.timeoutMs}ms`, "timeout")
@@ -341,43 +421,64 @@ export class HarnessClient implements HarnessClientLike {
 
   /** Unary RPC: POST /api/<method>, returns the business value (throws on ok:false). */
   async call<T>(method: string, payload: unknown, signal?: AbortSignal): Promise<T> {
+    const endpoint = toEndpoint(method)
     const resp = await this.post<ServerResponse<T>>(
-      `/api/${method}`,
+      `/api/${endpoint}`,
       {
         type: "client-request",
         rpcId: rpcId(),
-        method,
-        payload,
+        method: endpoint,
+        payload: { args: wrapArgs(endpoint, payload) },
       },
       signal,
     )
     if (!resp.result?.ok) {
       const err = resp.result?.error
-      throw new HarnessError(err?.message ?? `harness ${method} failed`, err?.code)
+      throw new HarnessError(err?.message ?? `harness ${endpoint} failed`, err?.code)
     }
     return resp.result.value as T
   }
 
   /** Answer a pending question (permission / ask_user / plan review). */
   async respond(rpcIdToAnswer: string, sessionId: string, answers: Array<{ id: string; selected: string[] }>): Promise<void> {
-    await this.post("/api/respond", {
-      type: "client-response",
-      rpcId: rpcIdToAnswer,
-      result: { ok: true, value: { sessionId, answer: { answers } } },
+    const clientId = this.eventsClientId
+    if (!clientId) throw new HarnessError("events stream is not open — cannot answer a question", "not-connected")
+    await this.call("$events/result", {
+      clientId,
+      eventId: rpcIdToAnswer,
+      outcome: { kind: "result", value: { answers } },
     })
   }
 
   /** Decide a pending sandbox-escalation approval (`approval/requested`). */
   async respondApproval(rpcIdToAnswer: string, sessionId: string, approvalId: string, outcome: "allowed-once" | "rejected"): Promise<void> {
-    await this.post("/api/respond", {
-      type: "client-response",
-      rpcId: rpcIdToAnswer,
-      result: { ok: true, value: { sessionId, approvalId, outcome } },
+    const clientId = this.eventsClientId
+    if (!clientId) throw new HarnessError("events stream is not open — cannot decide an approval", "not-connected")
+    await this.call("$events/result", {
+      clientId,
+      eventId: rpcIdToAnswer,
+      outcome: { kind: "result", value: outcome },
     })
   }
 
-  describe(): Promise<HostDescribe> {
-    return this.call<HostDescribe>("host.describe", {})
+  /** Host platform facts. dsh removed the `host.describe` remote in 0.1.2; this
+   *  derives the model/path facts from the still-present namespace remotes and
+   *  leaves `cwd` undefined so `harnessCwdFor` falls back to the client cwd. */
+  async describe(): Promise<HostDescribe> {
+    let model: string | undefined
+    let canOpenPath = false
+    try {
+      const catalog = await this.call<ModelCatalog>("session/modelCatalog", {})
+      model = catalog.current?.model
+    } catch {
+      // The model name is refreshed later by listModels(); not fatal here.
+    }
+    try {
+      canOpenPath = (await this.call<boolean>("session/canOpenWorkspacePath", {})) === true
+    } catch {
+      // Path opening is a nice-to-have; default to false.
+    }
+    return { version: "", cwd: "", provider: undefined, model, attachedSessions: 0, canOpenPath }
   }
 
   listSessions(): Promise<{ items: SessionSummary[] }> {
@@ -434,6 +535,9 @@ export class HarnessClient implements HarnessClientLike {
 
   prompt(sessionId: string, content: PromptContentPart[], mode: "queue" | "steer" = "queue"): Promise<{ accepted: boolean }> {
     return this.call("session.prompt", {
+      // The 0.1.2 SessionPromptRequest schema requires a requestId; the host
+      // uses it as the source rpcId that the reply/event stream correlates to.
+      requestId: rpcId(),
       sessionId,
       mode,
       content,
@@ -455,11 +559,18 @@ export class HarnessClient implements HarnessClientLike {
     hasMore: boolean
     projections?: Record<string, unknown>
   }> {
-    return this.call("session.history", { sessionId, ...(maxMessages ? { maxMessages } : {}) })
+    return this.call<{ records: Array<{ event: SessionEvent }>; hasMore: boolean }>("session/page", {
+      address: { kind: "session", sessionId } as const,
+      throughSeq: -1,
+      ...(maxMessages ? { maxMessages } : {}),
+    }).then((page) => ({
+      events: page.records.map((record) => ({ event: record.event })),
+      hasMore: page.hasMore,
+    }))
   }
 
   listModels(sessionId: string): Promise<ModelCatalog> {
-    return this.call("session.models", { sessionId })
+    return this.call<ModelCatalog>("session/modelCatalog", {})
   }
 
   selectModel(sessionId: string, provider: string, model: string, reasoningEffort?: string): Promise<{ selected: ModelCatalog["current"] }> {
@@ -484,9 +595,7 @@ export class HarnessClient implements HarnessClientLike {
   }
 
   credentialsDescribe(refs: string[]): Promise<Record<string, CredentialView>> {
-    return this.call<{ credentials: Record<string, CredentialView> }>("credentials.describe", { refs }).then(
-      (res) => res.credentials,
-    )
+    return this.call<Record<string, CredentialView>>("credentials.describe", { refs })
   }
 
   credentialsSet(ref: string, value: string): Promise<void> {
@@ -507,16 +616,9 @@ export class HarnessClient implements HarnessClientLike {
 
   /** Discover the effective slash commands for a session's agent. */
   async commandList(sessionId: string): Promise<CommandDescriptor[]> {
-    try {
-      // The commands service is a Typert Remote (`commands/list`): the
-      // gateway resolves the agent from `args.agentId`.
-      return await this.call<CommandDescriptor[]>("commands/list", { args: { agentId: sessionId } })
-    } catch (e) {
-      if (e instanceof HarnessError && e.code === "not-found") {
-        return this.call<CommandDescriptor[]>("commands.list", { agentId: sessionId })
-      }
-      throw e
-    }
+    // The commands service is a Typert Remote (`commands/list`): the gateway
+    // resolves the agent from the `agentId` wire field.
+    return this.call<CommandDescriptor[]>("commands/list", { agentId: sessionId })
   }
 
   /**
@@ -531,57 +633,134 @@ export class HarnessClient implements HarnessClientLike {
     // Newer harnesses require `images` (composer attachments, empty for a
     // plain invocation) alongside agentId/line.
     const args = { agentId: sessionId, line, images }
-    try {
-      return await this.call<CommandExecutionResult | undefined>("commands/execute", { args })
-    } catch (e) {
-      if (e instanceof HarnessError && e.code === "not-found") {
-        return this.call<CommandExecutionResult | undefined>("commands.execute", { args })
-      }
-      throw e
-    }
+    return this.call<CommandExecutionResult | undefined>("commands/execute", args)
   }
 
   /** Apply an edit/remove/steer operation to a pending queue occurrence. */
   async updateQueue(sessionId: string, itemId: string, action: QueueAction): Promise<{ accepted: boolean }> {
-    try {
-      return await this.call<{ accepted: boolean }>("session.updateQueue", { sessionId, itemId, action })
-    } catch (e) {
-      if (e instanceof HarnessError && e.code === "not-found") {
-        return this.call<{ accepted: boolean }>("sessions.updateQueue", { sessionId, itemId, action })
-      }
-      throw e
-    }
+    return this.call<{ accepted: boolean }>("session/updateQueue", { sessionId, itemId, action })
   }
 
   /**
-   * Open the mux event stream (WebSocket downlink). Yields decoded
-   * `server-request` envelopes until the socket closes or the signal aborts.
+   * Open the Remote-stream mux WebSocket downlink. 0.1.2 moved live events to
+   * a multiplexed `/api/remote.mux` protocol: the client first sends
+   * `{ type:"open", streamId, endpoint, payload }` for each logical stream
+   * (`$events`, `session/follow`), then the server pushes
+   * `{ type:"item", streamId, value }` frames. We translate `$events` and
+   * `session/follow` items into the `server-request` envelopes the driver
+   * consumes, and remember the `$events` `clientId` used to answer
+   * user-questions / approvals via `$events/result`.
    */
-  async *eventStream(signal?: AbortSignal): AsyncGenerator<ServerRequest> {
-    const wsUrl = `${this.baseUrl.replace(/^http/, "ws").replace(/\/$/, "")}/api/events.mux`
-    const ws = new WebSocket(wsUrl)
+  async *eventStream(signal?: AbortSignal, sessionId?: string | null): AsyncGenerator<ServerRequest> {
+    const cookie = await this.ensureAuth()
+    // In dsh 0.1.2 the Remote-stream mux WebSocket moved from the legacy
+    // `/api/events.mux` to `/api/remote.mux`; connecting to the old path gets a
+    // non-101 upgrade reply and the socket drops immediately.
+    const wsUrl = `${this.baseUrl.replace(/^http/, "ws").replace(/\/$/, "")}/api/remote.mux`
+    // Node's global WebSocket (undici) takes only (url, protocols) and silently
+    // drops a `headers` option, so the launch-token cookie never reaches the
+    // upgrade and the gateway answers 401. The `ws` package forwards the
+    // `Cookie` on the handshake and auto-pongs the gateway heartbeat.
+    const ws = new WebSocket(wsUrl, [], cookie ? { headers: { Cookie: cookie } } : undefined)
     const queue: ServerRequest[] = []
     const waiters: Array<(r: IteratorResult<ServerRequest>) => void> = []
     let closed = false
     let socketError: Error | null = null
 
-    // Heartbeat: keep the downlink — and any WSL2 localhost forwarding / NAT
-    // hop between the client and harness — from being silently closed during a
-    // long idle gap, and surface a peer-side drop on the next send. Bun's
-    // WebSocket exposes ping(); the harness answers at the protocol level, so
-    // no application-level frame is required.
-    const HEARTBEAT_MS = 10_000
-    const heartbeat = setInterval(() => {
+    const EVENTS_STREAM = "s:events"
+    const FOLLOW_STREAM = "s:follow"
+    const openMessage = (streamId: string, endpoint: string, payload: unknown): string =>
+      JSON.stringify({ type: "open", streamId, endpoint, payload })
+
+    // dsh's Remote-stream mux is a text-protocol WebSocket; each `open` message
+    // declares one logical stream. The server heartbeats with control-frame
+    // pings, which the implementation answers automatically.
+    ws.on("open", () => {
       try {
-        // `ping` is a Bun extension on WebSocket (absent from the lib dom
-        // type); guard + cast so the standard type still compiles.
-        const withPing = ws as WebSocket & { ping?(data?: unknown): void }
-        if (ws.readyState === WebSocket.OPEN) withPing.ping?.()
-        else ws.close()
+        ws.send(openMessage(EVENTS_STREAM, "$events", { args: {} }))
+        if (sessionId) {
+          ws.send(
+            openMessage(FOLLOW_STREAM, "session/follow", {
+              args: { request: { address: { kind: "session", sessionId } } },
+            }),
+          )
+        }
       } catch {
-        // The socket is already gone; onerror/onclose will surface it.
+        ws.close()
       }
-    }, HEARTBEAT_MS)
+    })
+
+    if (process.env.DSH_DEBUG === "1") {
+      debug(`[dsh-cli] WS ${wsUrl} opening cookie=${cookie ? "yes" : "no"} session=${sessionId ?? ""}`)
+    }
+
+    const push = (frame: ServerRequest): void => {
+      if (waiters.length) (waiters.shift() as (r: IteratorResult<ServerRequest>) => void)({ value: frame, done: false })
+      else queue.push(frame)
+    }
+
+    /** Translate one `$events` stream item into a driver `ServerRequest`. */
+    const eventsFrame = (value: Record<string, unknown>): ServerRequest | null => {
+      if (value.type === "ready") {
+        this.eventsClientId = typeof value.clientId === "string" ? value.clientId : null
+        return null
+      }
+      if (value.type === "emit") {
+        const event = value.event as string
+        const args = Array.isArray(value.args) ? value.args : []
+        if (event === "api-session/status") {
+          return { type: "server-request", rpcId: "", method: "host/session-status", payload: { sessionId: args[0], running: Boolean(args[1]) } }
+        }
+        if (event === "api-session/error") {
+          return { type: "server-request", rpcId: "", method: "host/agent-error", payload: { sessionId: args[0], message: args[1] } }
+        }
+        if (event === "commands/change") {
+          return { type: "server-request", rpcId: "", method: "host/remote-event", payload: { event: "commands/change" } }
+        }
+        return null
+      }
+      if (value.type === "waterfall") {
+        const event = value.event as string
+        const eventId = value.eventId as string
+        const agentId = value.agentId as string
+        const request = (value.request ?? {}) as Record<string, unknown>
+        if (event === "user-questions/request") {
+          return {
+            type: "server-request",
+            rpcId: eventId,
+            method: "question/requested",
+            payload: { sessionId: agentId, clientId: this.eventsClientId, eventId, questions: request.questions },
+          }
+        }
+        if (event === "approval/request") {
+          return {
+            type: "server-request",
+            rpcId: eventId,
+            method: "approval/requested",
+            payload: {
+              sessionId: agentId,
+              clientId: this.eventsClientId,
+              eventId,
+              approvalId: eventId,
+              toolName: request.toolName,
+              callId: request.callId,
+              reason: request.reason,
+            },
+          }
+        }
+        return null
+      }
+      return null
+    }
+
+    /** Translate one `session/follow` stream item. */
+    const followFrame = (value: Record<string, unknown>): ServerRequest | null => {
+      // Snapshot is skipped: the initial transcript is seeded by history()/resync.
+      if (value.type === "event" && value.event) {
+        return { type: "server-request", rpcId: "", method: "session/event", payload: { sessionId, event: value.event } }
+      }
+      return null
+    }
 
     const drain = () => {
       while (waiters.length) {
@@ -589,37 +768,31 @@ export class HarnessClient implements HarnessClientLike {
         w({ value: undefined, done: true })
       }
     }
-    ws.onmessage = (e) => {
+    ws.on("message", (data) => {
       try {
-        const raw = JSON.parse(String(e.data)) as Record<string, unknown>
-        const frame = raw as unknown as ServerRequest
-        if (raw.type === "server-request" && typeof raw.method === "string") {
-          if (waiters.length) (waiters.shift() as (r: IteratorResult<ServerRequest>) => void)({ value: frame, done: false })
-          else queue.push(frame)
-        } else if (raw.type === "session/queue") {
-          // The queue snapshot is its own mux frame; normalize it into the
-          // server-request envelope the driver consumes.
-          const normalized: ServerRequest = {
-            type: "server-request",
-            rpcId: "",
-            method: "session/queue",
-            payload: raw,
-          }
-          if (waiters.length) (waiters.shift() as (r: IteratorResult<ServerRequest>) => void)({ value: normalized, done: false })
-          else queue.push(normalized)
+        const text = typeof data === "string" ? data : Buffer.from(data as Buffer).toString("utf8")
+        const raw = JSON.parse(text) as Record<string, unknown>
+        if (raw.type === "item" && typeof raw.streamId === "string" && raw.value !== null && typeof raw.value === "object") {
+          const value = raw.value as Record<string, unknown>
+          const frame = raw.streamId === EVENTS_STREAM ? eventsFrame(value) : raw.streamId === FOLLOW_STREAM ? followFrame(value) : null
+          if (frame) push(frame)
         }
       } catch {
         /* skip malformed frame */
       }
-    }
-    ws.onerror = () => {
-      socketError = new HarnessError("events.mux socket error", "socket")
+    })
+    ws.on("error", (err) => {
+      socketError = new HarnessError("remote.mux socket error", "socket")
+      if (process.env.DSH_DEBUG === "1") debug(`[dsh-cli] WS error ${(err as Error).message}`)
       drain()
-    }
-    ws.onclose = () => {
+    })
+    ws.on("close", (code, reason) => {
       closed = true
+      if (process.env.DSH_DEBUG === "1") {
+        debug(`[dsh-cli] WS closed code=${code} reason=${JSON.stringify(String(reason ?? ""))}`)
+      }
       drain()
-    }
+    })
     const onAbort = () => {
       try {
         ws.close()
@@ -641,7 +814,6 @@ export class HarnessClient implements HarnessClientLike {
         }
       }
     } finally {
-      clearInterval(heartbeat)
       signal?.removeEventListener("abort", onAbort)
       try {
         ws.close()

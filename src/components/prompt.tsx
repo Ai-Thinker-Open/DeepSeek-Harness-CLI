@@ -3,6 +3,7 @@ import { appendFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { RGBA, SyntaxStyle } from "@opentui/core"
+import { debug } from "../debug"
 import type { TextareaRenderable } from "@opentui/core"
 import { useKeyboard, usePaste, useTerminalDimensions } from "@opentui/solid"
 import type { CommandItem, CommandResultView } from "../commands"
@@ -793,10 +794,10 @@ export function Prompt(props: {
   useKeyboard((key) => {
     if (!active()) return
     // Always record key events to /tmp/dsh-cli-keys.log (cheap, diagnostic
-    // only). DSH_DEBUG additionally echoes them to the console overlay.
+    // only). DSH_DEBUG additionally records them to the debug log file.
     const debugLine = `[dsh-cli] key=${key.name} raw=${JSON.stringify(key.raw ?? "")} source=${key.source ?? ""} menuOpen=${menuOpen()} selected=${selected()} result=${result() !== null} resultSelected=${resultSelected()} resultRows=${resultRows().length}\n`
     if (process.env.DSH_DEBUG) {
-      console.error(debugLine.trim())
+      debug(debugLine.trim())
     }
     try {
       appendFileSync(KEY_LOG, debugLine)

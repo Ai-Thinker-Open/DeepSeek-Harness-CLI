@@ -1,6 +1,7 @@
 import { writeFile } from "node:fs/promises"
 import { join } from "node:path"
 import { createSignal } from "solid-js"
+import { debug } from "../debug"
 import {
   DEEP_DIVING_STATUS,
   EMPTY_STATS,
@@ -718,7 +719,7 @@ export function createHarnessSession(
 
   function onToolCall(ev: SessionEvent): void {
     const data = ev.data as { callId?: string; name?: string; arguments?: string; step?: number; turn?: number }
-    if (process.env.DSH_DEBUG) console.error("[dsh] tool/call", JSON.stringify(data))
+    if (process.env.DSH_DEBUG) debug("[dsh] tool/call", JSON.stringify(data))
     if (!data.callId || !data.name) return
     const args = tryParseArgs(data.arguments ?? "")
     const last = model[model.length - 1]
@@ -761,7 +762,7 @@ export function createHarnessSession(
 
   function onToolResult(ev: SessionEvent): void {
     const block = (ev.data as { message?: { content?: Block[] } }).message?.content?.[0]
-    if (process.env.DSH_DEBUG) console.error("[dsh] tool/result", JSON.stringify(ev.data))
+    if (process.env.DSH_DEBUG) debug("[dsh] tool/result", JSON.stringify(ev.data))
     if (!block || block.type !== "tool-result" || !block.toolCallId) return
     const callId = block.toolCallId
     if (pendingSettles.has(callId)) return
@@ -1042,7 +1043,7 @@ export function createHarnessSession(
       streamAbort = streamAbortController
       lastFrameAt = Date.now()
       try {
-        for await (const frame of client.eventStream(streamAbortController.signal)) {
+        for await (const frame of client.eventStream(streamAbortController.signal, sessionId)) {
           lastFrameAt = Date.now()
           // First frame after a drop: the link is alive again — clear the
           // "连接中断，重连中…" status that would otherwise linger forever.
@@ -1268,7 +1269,7 @@ export function createHarnessSession(
     setCommandsLoading(true)
     try {
       const list = await client.commandList(sessionId)
-      if (process.env.DSH_DEBUG) console.error("[dsh] command.list", JSON.stringify(list))
+      if (process.env.DSH_DEBUG) debug("[dsh] command.list", JSON.stringify(list))
       setCommands(list)
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e)
@@ -1277,7 +1278,7 @@ export function createHarnessSession(
         setCommands([])
         return
       }
-      if (process.env.DSH_DEBUG) console.error("[dsh] command.list failed", e)
+      if (process.env.DSH_DEBUG) debug("[dsh] command.list failed", e)
       // Keep the last known directory; a reconnect or commands/change will retry.
     } finally {
       setCommandsLoading(false)
@@ -1448,7 +1449,7 @@ export function createHarnessSession(
     const ttftSteps = hasProjection && typeof s?.ttftSteps === "number" ? s.ttftSteps : derived.firstTokenCount
     const ttftMs = hasProjection && typeof s?.ttftMs === "number" ? s.ttftMs : derived.firstTokenSumMs
     if (process.env.DSH_DEBUG) {
-      console.error(
+      debug(
         "[dsh] stats restore",
         JSON.stringify({ projected: { turns, steps, llmMs, toolMs, inTokens, outTokens, cacheReadTokens, cacheWriteTokens, reasoningTokens, ttftSteps, ttftMs }, derived }),
       )

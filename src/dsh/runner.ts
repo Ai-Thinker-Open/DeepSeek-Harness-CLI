@@ -15,10 +15,16 @@ import type { TuiStartupValues } from "./startup"
 import { bunVersionProblemFor } from "./node-version"
 import { applyPendingUpdates } from "./silent-update"
 import { portableSpawnOptions, portableSpawnSyncOptions, resolveBun } from "./portable"
+import { debug } from "../debug"
 
 export const name = "tui-runner"
 
-export const inject = ["tuiStartup", "webServer"]
+// `connection` (dsh-client-connection) is async to activate (it awaits the
+// browser-auth secret), so declaring it here makes the Loader wait for it —
+// otherwise tui-runner can prep the client URL before the launch-token service
+// is published, leaving it unauthenticated. Older dsh still provides the
+// service (just without `authenticatedUrl`), so injection stays safe.
+export const inject = ["tuiStartup", "webServer", "connection"]
 
 /** Plugin config: the resolved values from the tuiStartup provider. */
 export interface TuiRunnerConfig {
@@ -78,10 +84,61 @@ export function apply(ctx: DshContext, config: TuiRunnerConfig = {}): void {
 
   const startup = config.startup
   const url = `http://${webServer.host}:${webServer.port}`
+  // dsh >= 0.1.2-rc.1 gates the /api surface behind browser launch-token auth.
+  // The `connection` service (dsh-client-connection) can mint a one-time
+  // launch-token URL for this process; pass it to the client so it can perform
+  // the token -> signed-cookie exchange. Older dsh has no such service, so
+  // authUrl stays undefined and the client connects unauthenticated as before.
+  let authUrl: string | undefined
+  try {
+    const connection = ctx.get<{ authenticatedUrl?(baseUrl: string): string }>("connection")
+    if (connection?.authenticatedUrl) {
+      authUrl = connection.authenticatedUrl(url)
+    } else if (connection === undefined) {
+      if (process.env.DSH_DEBUG === "1") debug("[dsh-cli] runner: connection service not found")
+    }
+  } catch (e) {
+    if (process.env.DSH_DEBUG === "1") debug(`[dsh-cli] runner: authenticatedUrl threw: ${(e as Error).message}`)
+    authUrl = undefined
+  }
+  if (process.env.DSH_DEBUG === "1") {
+    debug(
+      authUrl
+        ? `[dsh-cli] runner minted launch-token URL (${url} -> ${authUrl})`
+        : `[dsh-cli] runner has no connection.authenticatedUrl (${url}); client will connect unauthenticated`,
+    )
+  }
+  // The terminal surface serves no static index, so claim the webserver `/`
+  // seat and hand `GET /?token=...` (and the index) to connection.authorizeIndex.
+  // That is what mints the signed `dsh-auth-*` cookie the client exchanges for
+  // the launch token; without it the client's `/api/*` calls come back 401.
+  try {
+    const connection = ctx.get<{ authorizeIndex?(req: unknown, res: unknown): boolean }>("connection")
+    const server = ctx.get<{
+      register?(route: { kind: "exact"; path: string; handler: (req: unknown, res: unknown) => void }): void
+    }>("webServer")
+    if (connection?.authorizeIndex && server?.register) {
+      server.register({
+        kind: "exact",
+        path: "/",
+        handler: (req, res) => {
+          const respond = (res as { writeHead(code: number, headers?: Record<string, string>): void; end(body?: string): void })
+          // authorizeIndex writes the 303 + Set-Cookie for `/?token=` and the
+          // 401 otherwise; when it returns true the caller may serve the index.
+          if (!connection.authorizeIndex!(req, res)) return
+          respond.writeHead(200, { "content-type": "text/html" })
+          respond.end("<!doctype html><title>dsh-cli</title>")
+        },
+      })
+      if (process.env.DSH_DEBUG === "1") debug("[dsh-cli] runner registered / auth index route")
+    }
+  } catch (e) {
+    if (process.env.DSH_DEBUG === "1") debug(`[dsh-cli] runner could not register / auth index route: ${(e as Error).message}`)
+  }
   const cwd = startup?.cwd ?? process.cwd()
   const cliPath = join(packageRoot(dirname(fileURLToPath(import.meta.url))), "dist", "cli.js")
   if (process.env.DSH_DEBUG) {
-    process.stderr.write(`[dsh-cli] runner loaded from ${import.meta.url}, client at ${cliPath}\n`)
+    debug(`[dsh-cli] runner loaded from ${import.meta.url}, client at ${cliPath}`)
   }
 
   // Forward the continue flag so the client attaches to the last session.
@@ -110,9 +167,11 @@ export function apply(ctx: DshContext, config: TuiRunnerConfig = {}): void {
   if (applied.updated.length > 0) {
     process.env.DSH_RESTART_FOR_UPDATE = applied.updated.map((u) => `${u.pkg}@${u.version}`).join(" | ")
   }
+  const env: NodeJS.ProcessEnv = { ...process.env, DSH_URL: url, DSH_CWD: cwd }
+  if (authUrl) env.DSH_AUTH_URL = authUrl
   const child = internals.spawn(bunBin, [cliPath, ...cliArgs], {
     stdio: "inherit",
-    env: { ...process.env, DSH_URL: url, DSH_CWD: cwd },
+    env,
     ...portableSpawnOptions({}),
   })
 

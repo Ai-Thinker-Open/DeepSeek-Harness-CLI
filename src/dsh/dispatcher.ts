@@ -13,6 +13,7 @@ import { dirname, join } from "node:path"
 import { fileURLToPath, pathToFileURL } from "node:url"
 import { bunVersionProblemFor, nodeVersionProblem } from "./node-version"
 import { portableSpawnOptions, portableSpawnSyncOptions, resolveBun } from "./portable"
+import { debug } from "../debug"
 export { applyPendingUpdates } from "./silent-update"
 export { bootstrapAll } from "./bootstrap"
 
@@ -175,18 +176,19 @@ function normalizeProfileBundles(): boolean {
   return seen.has(PKG_NAME)
 }
 
-/** Probe a harness at `url` with a cheap `host.describe` RPC. */
+/** Probe a harness at `url` with a cheap `session/modelCatalog` RPC
+ *  (`host.describe` was removed in dsh 0.1.2). */
 async function probe(url: string): Promise<boolean> {
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), 1500)
   try {
-    const res = await fetch(`${url.replace(/\/$/, "")}/api/host.describe`, {
+    const res = await fetch(`${url.replace(/\/$/, "")}/api/session/modelCatalog`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
         type: "client-request",
         rpcId: "dsh-cli-probe",
-        method: "host.describe",
+        method: "session/modelCatalog",
         payload: {},
       }),
       signal: controller.signal,
@@ -419,7 +421,7 @@ export function repairProfileDuplicates(): {
  */
 function stageUpdates(): void {
   if (!existsSync(SILENT_UPDATE_AGENT)) return
-  if (process.env.DSH_DEBUG === "1") process.stderr.write("[dsh-cli] staging background updates (silent-update-agent)\n")
+  if (process.env.DSH_DEBUG === "1") debug("[dsh-cli] staging background updates (silent-update-agent)")
   const child = internals.spawn(process.execPath, [SILENT_UPDATE_AGENT], {
     stdio: "ignore",
     detached: true,
@@ -465,7 +467,7 @@ export async function run(args: readonly string[]): Promise<number> {
 
   if (await internals.probe(url)) {
     // An instance is already serving: run the terminal client directly.
-    if (process.env.DSH_DEBUG === "1") process.stderr.write(`[dsh-cli] harness reachable at ${url}; launching terminal client\n`)
+    if (process.env.DSH_DEBUG === "1") debug(`[dsh-cli] harness reachable at ${url}; launching terminal client`)
     const child = internals.spawn(bunBin, [TUI_CLI, ...args], {
       stdio: "inherit",
       env: { ...process.env, DSH_URL: url, DSH_CWD: process.cwd() },
@@ -510,7 +512,7 @@ export async function run(args: readonly string[]): Promise<number> {
   // ERR_PNPM_IGNORED_BUILDS). Idempotent, so it is safe on every boot.
   allowProfileBuilds()
   if (!profileRegistered || profileStale) {
-    if (process.env.DSH_DEBUG === "1") process.stderr.write(`[dsh-cli] registering the tui profile bundle (${PKG_NAME})\n`)
+    if (process.env.DSH_DEBUG === "1") debug(`[dsh-cli] registering the tui profile bundle (${PKG_NAME})`)
     // Profile setup is forwarded to pnpm by dsh; auto-install it when missing
     // so first run works even if the package postinstall was skipped.
     const pnpmProbe = runPortable("pnpm", ["--version"])
@@ -567,7 +569,7 @@ export async function run(args: readonly string[]): Promise<number> {
   }
 
   if (process.env.DSH_DEBUG === "1") {
-    process.stderr.write("[dsh-cli] starting harness (dsh --profile tui); the terminal client will take over this screen\n")
+    debug("[dsh-cli] starting harness (dsh --profile tui); the terminal client will take over this screen")
   }
   // Pre-flight: compose the profile tree and de-duplicate loader-entry ids
   // (e.g. `storage`) before booting. A stale/duplicate layer otherwise aborts
@@ -580,7 +582,7 @@ export async function run(args: readonly string[]): Promise<number> {
     } catch (error) {
       // The pre-flight must never take the launcher down; if it throws for any
       // reason, degrade to a normal boot and let dsh report the real problem.
-      if (process.env.DSH_DEBUG === "1") process.stderr.write(`[dsh-cli] profile repair preflight skipped: ${(error as Error).message}\n`)
+      if (process.env.DSH_DEBUG === "1") debug(`[dsh-cli] profile repair preflight skipped: ${(error as Error).message}`)
     }
     if (duplicates.length > 0) {
       const ids = duplicates.map((item) => item.id).join("、")

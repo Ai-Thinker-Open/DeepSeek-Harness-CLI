@@ -72,6 +72,23 @@
     # session-projection-cache is composed by dsh-base too; keep the comment
     # intent but do not re-insert the row.
 
+    # The host-side API surface: since dsh 0.1.2-rc.1 the `/api/<method>` RPC
+    # endpoints (session.list/create, credentials.*, settings, workspace) are
+    # registered by these controller plugins instead of `dsh-host-apiproxy`
+    # (which is gone upstream). The web surface composes them; the terminal
+    # surface needs the same rows or the client gets 404 on `/api/*`.
+    - id: session-controller
+      name: '@deepseek-ai/dsh-api-session-controller'
+
+    - id: settings-controller
+      name: '@deepseek-ai/dsh-api-settings-controller'
+
+    - id: workspace-controller
+      name: '@deepseek-ai/dsh-api-workspace-controller'
+
+    - id: api-remotes
+      name: '@deepseek-ai/dsh-api-remotes'
+
     - id: plugin-inventory
       name: '@deepseek-ai/dsh-host-plugin-inventory'
 

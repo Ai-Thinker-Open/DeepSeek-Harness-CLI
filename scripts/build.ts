@@ -23,7 +23,11 @@ const cli = await Bun.build({
   // directory without the bunfig preload: at build time the solid transform
   // plugin already rewrites `solid-js/dist/server.js` to the client build.
   // @opentui/core stays external because it loads native platform binaries.
-  external: ["@opentui/core"],
+  // `ws` must stay external: bundling it with Bun swaps its `node:http`
+  // dependency for Bun's shim, which never emits the `upgrade` event, so a
+  // valid 101 handshake arrives as a plain `response` ("Unexpected server
+  // response: 101"). External keeps the real `ws`/`node:http` upgrade path.
+  external: ["@opentui/core", "ws"],
   plugins: [solidPlugin],
 })
 
@@ -35,6 +39,7 @@ const dsh = await Bun.build({
   naming: "[name].js",
   target: "node",
   format: "esm",
+  external: ["ws"],
 })
 
 if (!cli.success || !dsh.success) {
