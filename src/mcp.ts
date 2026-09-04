@@ -221,18 +221,26 @@ export async function listServerTools(config: McpServerConfig, signal?: AbortSig
 
 const toolCache = new Map<string, { at: number; tools: McpToolEntry[] }>()
 
+/** Cache key includes the server URL so two configs (or profile patches) that
+ *  share a name but point at different endpoints never collide — a stale empty
+ *  entry from one environment must not shadow another's tools. */
+function toolCacheKey(server: McpServerConfig): string {
+  return `${server.serverName}|${server.url ?? ""}`
+}
+
 /** All configured MCP servers' tools, cached for a short TTL. */
 export async function listMcpTools(): Promise<McpToolEntry[]> {
   const servers = configuredMcpServers()
   const out: McpToolEntry[] = []
   for (const server of servers) {
-    const cached = toolCache.get(server.serverName)
+    const key = toolCacheKey(server)
+    const cached = toolCache.get(key)
     if (cached && Date.now() - cached.at < TOOL_CACHE_TTL_MS) {
       out.push(...cached.tools)
       continue
     }
     const tools = await listServerTools(server).catch(() => [])
-    toolCache.set(server.serverName, { at: Date.now(), tools })
+    toolCache.set(key, { at: Date.now(), tools })
     out.push(...tools)
   }
   return out

@@ -10,7 +10,7 @@ const savedInternals = { ...internals }
 
 beforeEach(() => {
   temp = mkdtempSync(join(tmpdir(), "dsh-bootstrap-"))
-  for (const key of ["DSH_HOME", "DSH_SKIP_BOOTSTRAP", "DSH_NO_SKILLS", "DSH_NO_FLASHKEY"]) {
+  for (const key of ["DSH_HOME", "DSH_SKIP_BOOTSTRAP", "DSH_NO_SKILLS", "DSH_NO_FLASHKEY", "FLASHKEY_SSE_PORT"]) {
     savedEnv[key] = process.env[key]
     process.env[key] = undefined
   }
@@ -171,12 +171,20 @@ test("bootstrap starts the vendored FlashKey server in place when Python deps ex
     return { unref() {} }
   }) as unknown as typeof internals.spawn
 
+  // ensureSseDaemon probes the configured SSE port first; pick a port that is
+  // free so the probe fails and the server is actually spawned (the default
+  // 8100 may be occupied by a real FlashKey daemon on the host).
+  const probe = Bun.serve({ port: 0, fetch: () => new Response("x") })
+  const flashkeyPort = probe.port
+  probe.stop(true)
+  process.env.FLASHKEY_SSE_PORT = String(flashkeyPort)
+
   process.env.DSH_NO_SKILLS = "1"
   await bootstrapAll()
 
   expect(spawned.length).toBe(1)
   expect(spawned[0]!.command).toBe("python3")
-  expect(spawned[0]!.args).toEqual(["-m", "flashkey_mcp.server", "--sse", "--host", "127.0.0.1", "--port", "8100"])
+  expect(spawned[0]!.args).toEqual(["-m", "flashkey_mcp.server", "--sse", "--host", "127.0.0.1", "--port", String(flashkeyPort)])
   expect(spawned[0]!.env.PYTHONPATH).toBe(join(bundled, "src"))
 })
 
