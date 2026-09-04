@@ -506,7 +506,7 @@ export class HarnessClient implements HarnessClientLike {
     let canOpenPath = false
     try {
       const catalog = await this.call<ModelCatalog>("session/modelCatalog", {})
-      model = catalog.current?.model
+      model = catalog?.current?.model
     } catch {
       // The model name is refreshed later by listModels(); not fatal here.
     }

@@ -379,7 +379,7 @@ export function App(
         return view
       }
       const build = (c: ModelCatalog) => {
-        const current = `${c.current.provider}/${c.current.model}`
+        const current = c.current ? `${c.current.provider}/${c.current.model}` : "未选择"
         const rows: Array<string | { text: string; onClick: () => void }> = [
           `当前模型：${current}`,
           "",
@@ -387,7 +387,7 @@ export function App(
         for (const group of c.groups) {
           rows.push(`── ${group.name} ──`)
           for (const m of group.models) {
-            const isCurrent = c.current.provider === group.id && c.current.model === m.id
+            const isCurrent = c.current?.provider === group.id && c.current?.model === m.id
             const label = `${isCurrent ? "● " : "○ "}${m.name}${m.description ? `  ${truncateTo(m.description, 36)}` : ""}`
             rows.push({
               text: label,

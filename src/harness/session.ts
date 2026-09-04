@@ -1642,7 +1642,7 @@ export function createHarnessSession(
    */
   async function refreshModelName(): Promise<void> {
     const catalog = await listModels()
-    if (catalog?.current.model) setModelName(catalog.current.model)
+    if (catalog?.current?.model) setModelName(catalog.current.model)
   }
 
   /** Switch the session's LLM model; returns false on failure. */
