@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.3.12
+
+### 修复
+
+- `dsh-cli -c` / `--continue` 恢复会话时，`refreshModelName` 在模型目录返回空（`session/modelCatalog` 无值或尚未就绪）时崩溃：`catalog?.current.model` 只守护了 `current`，`catalog` 为 null/undefined 时 `undefined is not an object`。改为 `catalog?.current?.model`，并同步加固 `describe()` 与模型面板里同类的 `current.model`/`current.provider` 访问，缺失时优雅降级（不设置模型名）而非崩溃。
+
 ## 0.3.11
 
 ### 修复与 dsh 0.1.2-rc.1 的兼容
