@@ -464,6 +464,31 @@ test("resumeSession renders the listing-preview transcript immediately", async (
   session.dispose()
 })
 
+test("resumeSession tolerates a null/undefined model catalog instead of crashing", async () => {
+  // `-c`/`--continue` runs refreshModelName() right after resuming. When the
+  // harness returns a catalog with no `current` model (session/modelCatalog yields
+  // an object whose `current` is null/undefined), `catalog?.current.model` only
+  // guards `current` — the unguarded `.model` on `undefined` threw "undefined is
+  // not an object (evaluating 'catalog?.current.model')" as an UNHANDLED
+  // rejection (refreshModelName is fire-and-forget). A missing current model must
+  // now degrade gracefully: resumeSession returns true and no rejection surfaces.
+  for (const bad of [{ current: null }, {}] as Array<Record<string, unknown>>) {
+    const client = new FakeClient()
+    client.listModels = (async () => bad) as unknown as typeof client.listModels
+    client.listSessions = (async () => ({
+      items: [{ sessionId: "s-1", updatedAt: 1, running: false, blank: false, cwd: "/tmp" }],
+    })) as typeof client.listSessions
+    client.history = (async () => ({ events: [], hasMore: false })) as typeof client.history
+    const session = createHarnessSession(client, "/tmp")
+    const items = await session.listSessions()
+    expect(items).toHaveLength(1)
+    expect(await session.resumeSession(items[0]!.sessionId)).toBe(true)
+    // Let the fire-and-forget refreshModelName() settle so a stale rejection
+    // surfaces as a test failure instead of a dangling unhandled rejection.
+    await new Promise((r) => setTimeout(r, 30))
+    session.dispose()
+  }
+})
 test("resume onto a blank session clears the previous conversation", async () => {
   const client = new FakeClient()
   let target = "s-full"
