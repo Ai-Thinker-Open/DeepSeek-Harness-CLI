@@ -8,6 +8,20 @@
 - `package.json`：把 bundle 引用的 11 个 host 插件（`dsh-workspace`、`dsh-host-webserver`、`dsh-client-connection`、`dsh-code-runtime-worker-thread`、`dsh-host-directory-picker-auto`、`dsh-host-plugin-inventory`、`dsh-cordis-host-runner`、`dsh-file-reference-local`、`dsh-message-feedback`、`dsh-session-reference`、`dsh-session-stats`）声明为 `^0.1.2-rc.1` 依赖，安装进 profile，避免启动时 `ERR_MODULE_NOT_FOUND: Cannot find module '@deepseek-ai/dsh-host-apiproxy'`。
 - 启动预检改为**只读**：只检测并打印重复的 plugin id 与所在层，不再自动改动任何配置文件，避免把 YAML 改坏；`DSH_NO_PROFILE_REPAIR=1` 可跳过。
 
+### 连接修复：迁移到 dsh 0.1.2-rc.1 的 `/api/remote.mux` 下行
+
+- 客户端下行从旧的 `/api/events.mux`（SSE，由已删除的 `dsh-host-apiproxy` 提供）迁到 dsh `0.1.2-rc.1` 的**多路复用 `/api/remote.mux` WebSocket**（由 `dsh-api-gateway` 提供）：`eventStream` 打开该 socket、声明 `$events` / `session/follow` 逻辑流并翻译帧；RPC 改为斜杠法端点 + `payload.args`，问答/审批经 `$events/result` 应答。
+- `runner`：注册 launch-token `/` 路由并下发 `DSH_AUTH_URL`，使 `/api/*` 与 `remote.mux` 握手携带签名的 `dsh-auth-*` cookie。
+- **修复 `Unexpected server response: 101`**：构建时把 `ws` 保持 external（`scripts/build.ts` `external: ["@opentui/core","ws"]`）。`bun` 打包 `ws` 会替换其 `node:http` 为 shim，且该 shim 从不触发 `upgrade` 事件，导致合法 101 握手被当作普通 `response` 而报错。
+
+### 健壮性与安全
+
+- 调试日志全部改写到文件（`DSH_DEBUG_LOG` 或 `$TMPDIR/dsh-cli-debug-<pid>.log`，权限 `0600`），不再写 stderr，避免污染 OpenTUI 界面；并**不再记录完整 launch-token cookie**。
+- `DSH_DEBUG` 值语义统一（`0/false/no/off` 视为关闭，修掉 `DSH_DEBUG=0` 反而开启调试）；`runner`/`dispatcher` 在找不到 bun 时提示 `@oven/bun-*` 可选依赖重装或手动安装。
+- 客户端在收到 `401` 时重签一次 launch-token cookie 重试；拒绝通过明文 http/ws 连接**非 loopback** harness（要求 https/wss）。
+- 下行断线重连改为指数退避（1.5s → 30s 封顶），并在成功收帧后复位。
+- README 补充说明：Bun 以 `@oven/bun-*` 可选依赖随包分发，普通 `npm install -g` 无需单独安装 Bun。
+
 ## 0.3.10
 
 ### 启动修复：重复插件条目自动检测与修复
