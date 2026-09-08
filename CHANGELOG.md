@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.3.13
+
+### 修复：`dsh-cli -c` 恢复会话显示空屏
+
+- `history()` 读 `session/page` 时用 `throughSeq:-1`，而宿主端 `paginate` 会把它算成 `end = throughSeq + 1 = 0` → **永远返回空页**，导致恢复会话/读历史都拿不到记录。
+- 改为：识别 `session/follow` 流的**首帧 `snapshot`**（携带 `records` + `cursor` + `projections`），通过 `session/seed` 折叠进模型作为初始记录；同时给 `resyncFromHistory` 加空结果守卫，避免它用空的 `session/page` 覆盖快照 seed 的模型。
+- 顺带：`resyncFromHistory` 在无记录时不再强行清空模型（空白会话的清空由 `resetSessionState` 负责）。
+
 ## 0.3.12
 
 ### 修复
