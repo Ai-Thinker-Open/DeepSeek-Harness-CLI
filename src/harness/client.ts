@@ -505,8 +505,8 @@ export class HarnessClient implements HarnessClientLike {
     let model: string | undefined
     let canOpenPath = false
     try {
-      const catalog = await this.call<ModelCatalog>("session/modelCatalog", {})
-      model = catalog?.current?.model
+      const catalog = await this.fetchModelCatalog()
+      model = catalog.current?.model
     } catch {
       // The model name is refreshed later by listModels(); not fatal here.
     }
@@ -606,8 +606,30 @@ export class HarnessClient implements HarnessClientLike {
     }))
   }
 
+  /**
+   * Fetch the model catalog and normalize the 0.1.2 wire shape to the client's
+   * `ModelCatalog`. The host names the current/default selection `default` (and
+   * lists routable providers as `routableProviders`); the client type uses
+   * `current`/`routable`, so remap them here — otherwise `catalog.current` is
+   * always undefined and the model name never updates after a switch (-c too).
+   */
+  private async fetchModelCatalog(): Promise<ModelCatalog> {
+    const wire = await this.call<{
+      default?: { provider: string; model: string; reasoningEffort?: string }
+      routableProviders?: string[]
+      groups: ModelGroup[]
+      failures: Array<{ id: string; name: string; message: string }>
+    }>("session/modelCatalog", {})
+    return {
+      current: wire.default ?? { provider: "", model: "" },
+      routable: (wire.routableProviders ?? []).length > 0,
+      groups: wire.groups,
+      failures: wire.failures,
+    }
+  }
+
   listModels(sessionId: string): Promise<ModelCatalog> {
-    return this.call<ModelCatalog>("session/modelCatalog", {})
+    return this.fetchModelCatalog()
   }
 
   selectModel(sessionId: string, provider: string, model: string, reasoningEffort?: string): Promise<{ selected: ModelCatalog["current"] }> {
