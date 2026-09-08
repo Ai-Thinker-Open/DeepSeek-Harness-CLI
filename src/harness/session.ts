@@ -836,6 +836,13 @@ export function createHarnessSession(
       case "session/event":
         onSessionEvent((payload as unknown as { event: SessionEvent }).event)
         break
+      case "session/seed": {
+        // The `session/follow` stream's opening snapshot carries the existing
+        // records + projections; fold them into the model as the resume seed.
+        const seed = payload as unknown as { records?: Array<{ event?: SessionEvent }>; projections?: Record<string, unknown> }
+        applySeed(seed.records ?? [], seed.projections)
+        break
+      }
       case "question/requested":
         onQuestionRequested(frame)
         break
@@ -1011,11 +1018,39 @@ export function createHarnessSession(
     }, stallCheckMs)
   }
 
+  /** Fold one `session/follow` snapshot's records + projections into the model
+   *  (the resume seed). `session/page` with throughSeq:-1 paginates to an empty
+   *  page, so the follow snapshot is the reliable source for the initial
+   *  transcript. */
+  function applySeed(records: Array<{ event?: SessionEvent }>, projections?: Record<string, unknown>): void {
+    const events = records.filter((r) => r.event).map((r) => ({ event: r.event as SessionEvent }))
+    if (events.length === 0) return
+    applyPlanProjection(projections)
+    applyImageLimitsProjection(projections)
+    applyHistoryStats(projections, events)
+    const fresh = foldHistory(events.map((e) => e.event))
+    model = fresh
+    streamTurn = null
+    firstTokenDone = true
+    if (!model.some((m) => m.streaming)) {
+      setBusy(false)
+      setStatusText("")
+    }
+    syncAll()
+    void hydrateMessageImages(fresh)
+  }
+
   /** Rebuild the conversation from durable history after a stall/reconnect. */
   async function resyncFromHistory(): Promise<void> {
     if (!sessionId) return
     try {
       const { events, projections } = await client.history(sessionId)
+      // `history()` reads `session/page` with throughSeq:-1, which the host
+      // paginates to an EMPTY page, so on a fresh resume it always returns [].
+      // The durable transcript actually arrives via the `session/follow`
+      // snapshot (applySeed). Skip an empty rebuild so we never clobber the
+      // snapshot-seeded model with an empty one.
+      if (events.length === 0) return
       applyPlanProjection(projections)
       applyImageLimitsProjection(projections)
       applyHistoryStats(projections, events)

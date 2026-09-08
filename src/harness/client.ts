@@ -792,7 +792,24 @@ export class HarnessClient implements HarnessClientLike {
 
     /** Translate one `session/follow` stream item. */
     const followFrame = (value: Record<string, unknown>): ServerRequest | null => {
-      // Snapshot is skipped: the initial transcript is seeded by history()/resync.
+      // The `session/follow` stream opens with a `snapshot` frame carrying the
+      // existing records + cursor — that is the canonical source for the initial
+      // transcript (NOT `session/page` with throughSeq:-1, which paginates to an
+      // empty page). Emit it as a seed the driver folds into the model.
+      if (value.type === "snapshot") {
+        return {
+          type: "server-request",
+          rpcId: "",
+          method: "session/seed",
+          payload: {
+            sessionId,
+            records: Array.isArray(value.records) ? value.records : [],
+            cursor: value.cursor,
+            hasMore: Boolean(value.hasMore),
+            projections: typeof value.projections === "object" && value.projections !== null ? value.projections : undefined,
+          },
+        }
+      }
       if (value.type === "event" && value.event) {
         return { type: "server-request", rpcId: "", method: "session/event", payload: { sessionId, event: value.event } }
       }
