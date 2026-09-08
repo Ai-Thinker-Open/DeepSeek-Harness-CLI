@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.3.16
+
+### 修复：切换模型后模型名不更新/重启回原模型
+
+- 根因：dsh 0.1.2 的 `session/modelCatalog` 返回的当前/默认选择字段是 **`default`**（可路由 provider 是 `routableProviders`），而客户端类型与读取处用的是 **`current`**/`routable`，导致 `catalog.current` 恒为 undefined。
+- 修复：客户端新增 `fetchModelCatalog()`，把服务端 `default` → 客户端 `current`、`routableProviders` → `routable`，`listModels` 与 `describe()` 统一使用。切换模型（`session/selectModel` 持久化到默认选择）后模型名能即时更新，`dsh-cli -c` 恢复时也能读到已切换的模型。
+
 ## 0.3.15
 
 ### 修复
