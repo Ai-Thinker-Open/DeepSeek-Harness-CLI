@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.3.14
+
+### 变更：移除 FlashKey MCP 服务器
+
+- 从包中移除 `vendor/flashkey-mcp`（FlashKey MCP 服务器 Python 源码 + openocd 二进制，约 33MB），后续版本不再随包分发。
+- `bootstrap` 不再安装/启动 FlashKey MCP SSE daemon，也不再向 tui profile 写 `mcp-flashkey` 行；`vendor/` 只保留 Ai-Thinker skills。
+- 相关环境变量 `DSH_NO_FLASHKEY` / `FLASHKEY_INSTALL_URL` / `FLASHKEY_SSE_PORT` 移除。通用 MCP 客户端（`/mcp`）保留，可配置其它 MCP server。
+
+### 功能：会话内静默升级提示
+
+- 后台 `silent-update-agent` 暂存到新 dsh-cli 更新后，**正在运行的会话**会轮询到并在 30s 内弹出「检测到新版本 X · 重启后生效」，无需等到下次启动才提示。
+
 ## 0.3.13
 
 ### 修复：`dsh-cli -c` 恢复会话显示空屏

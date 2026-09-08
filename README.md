@@ -23,7 +23,7 @@ It drives a locally running DeepSeek Harness instance: sessions, tool calls, per
 - **Queue dock**: pending / steering messages can be edited, removed or sent inline
 - **Stats bar**: turns, steps, LLM/tool time, average first-token latency, cache-hit ratio and token usage
 - **Resilient connection**: auto-reconnect, a streaming stall watchdog and recovery from durable history
-- **Bundled skills + FlashKey MCP**: the Ai-Thinker skills collection and the FlashKey MCP server source ship inside the npm package (`vendor/`), so first launch links/enables them locally without cloning repositories
+- **Bundled skills**: the Ai-Thinker skills collection ships inside the npm package (`vendor/`), so first launch links them locally without cloning repositories
 
 ## Requirements
 
@@ -99,7 +99,7 @@ Prefer to install the pieces yourself?
    # scoop install bun
    ```
 
-   > Windows 下建议在 WSL 中运行本项目——终端体验一致，USB 类工具（如 FlashKey FK-01）也需要通过 WSL 的 `usbip` 附加。
+   > Windows 下建议在 WSL 中运行本项目——终端体验一致，USB 类工具也需要通过 WSL 的 `usbip` 附加。
 
    > When a Windows client talks directly to a harness running inside WSL, the
    > client translates the `D:\...` workspace to the WSL-visible form
@@ -134,8 +134,7 @@ dependencies (regular npm packages; only installed when missing — never
 re-installed when already correct):
 
 - `@ai-thinker/deepseek-harness-cli` itself, shipping vendored resources: the
-  Ai-Thinker skills and FlashKey MCP sources (distributed in the npm tarball,
-  usable offline).
+  Ai-Thinker skills (distributed in the npm tarball, usable offline).
 - Bun 1.3.14: the terminal client runtime, installed as `@oven/bun-<platform>-<arch>`
   platform packages. Bun 1.4+ segfaults OpenTUI on Windows, so the resolver
   prefers the bundled 1.3.14 and rejects 1.4+ binaries.
@@ -152,16 +151,14 @@ re-installed when already correct):
   to the current version without blocking (disable with
   `DSH_NO_UPDATE_CHECK=1`).
 - First-launch bootstrap (skippable): links the bundled skills into
-  `~/.dsh/skills`, registers FlashKey MCP in the tui profile, and tries to
-  install `flashkey-mcp` (Python; failure only prints a hint, never blocks).
+  `~/.dsh/skills`.
 
 All of the above can be controlled with environment variables:
-`DSH_SKIP_BOOTSTRAP=1` skips all bootstrap, `DSH_NO_SKILLS=1` /
-`DSH_NO_FLASHKEY=1` skip the corresponding resource, `DSH_NO_UPDATE_CHECK=1`
-disables the startup update checks (background staging and next-launch
-application) for both dsh-cli itself and the harness,
-and `DSH_SKIP_RISK_CONFIRM=1` disables the directory risk confirmation. See
-`CHANGELOG.md` for the full list.
+`DSH_SKIP_BOOTSTRAP=1` skips all bootstrap, `DSH_NO_SKILLS=1` skips the skills
+link step, `DSH_NO_UPDATE_CHECK=1` disables the startup update checks
+(background staging and next-launch application) for both dsh-cli itself and
+the harness, and `DSH_SKIP_RISK_CONFIRM=1` disables the directory risk
+confirmation. See `CHANGELOG.md` for the full list.
 
 ## Quick start
 
@@ -236,10 +233,7 @@ Once started, the `tui-runner` plugin reads the bound web-server address, spawns
 | `OPENTUI_GRAPHICS` | Set to `false` to disable Kitty/Sixel detection (icons fall back to glyphs) |
 | `DSH_SKIP_BOOTSTRAP` | Set to `1` to skip first-run resource installation entirely |
 | `DSH_NO_SKILLS` | Set to `1` to skip installing the Ai-Thinker skills collection |
-| `DSH_NO_FLASHKEY` | Set to `1` to skip enabling the FlashKey MCP server |
 | `AT_SKILLS_URL` | Git URL of the skills repository when not bundled (default: `https://github.com/Ai-Thinker-Open/skills.git`) |
-| `FLASHKEY_INSTALL_URL` | pip/uv install spec for flashkey-mcp when not bundled (mirror override supported) |
-| `FLASHKEY_SSE_PORT` | FlashKey SSE daemon port (default `8100`) |
 
 ## Bundled resources
 
@@ -248,20 +242,12 @@ right after `npm install -g`:
 
 - `vendor/ai-thinker-src` — the Ai-Thinker skills repository; on first launch the
   skill bundles under `skills/` are linked into `~/.dsh/skills/`;
-- `vendor/flashkey-mcp` — the FlashKey MCP server Python source; it starts as a
-  local SSE daemon (default `127.0.0.1:8100`) alongside the harness;
 
 OpenTUI native libraries and the Bun runtime are no longer vendored; they come
 from official per-platform npm packages (`@opentui/core-<platform>-<arch>`,
 `@oven/bun-<platform>-<arch>`) resolved for the platform you install on. To run
 on a different platform (for example WSL after installing on Windows), install
 the package again for that platform.
-
-The MCP server depends on `pyserial`, `mcp`, `starlette` and `uvicorn`. If those
-are already importable by `python3`, the daemon runs straight from the bundled
-source, fully offline. Otherwise first launch installs it from the bundled
-source with pip/uv, fetching those dependencies from PyPI once. Both resources
-can be skipped or redirected with the environment variables above.
 
 Startup/bootstrap progress is silent by default; only errors reach the
 terminal. Set `DSH_DEBUG=1` for verbose progress. The harness (`dsh`) is

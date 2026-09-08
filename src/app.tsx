@@ -9,6 +9,7 @@ import { createHarnessSession } from "./harness/session"
 import type { HarnessClientLike, ImageCommandImage, ModelCatalog, PromptContentPart } from "./harness/client"
 import { listMcpTools, refreshMcpStatus, type McpToolEntry } from "./mcp"
 import { effectiveWorkspace, isHighRiskDirectory, markWorkspaceConfirmed, workspaceConfirmed } from "./directory-risk"
+import { pendingUpdates } from "./dsh/silent-update"
 import { nextMode, type PermissionMode } from "./permission"
 import { Home } from "./screens/home"
 import { SessionScreen } from "./screens/session"
@@ -162,6 +163,22 @@ export function App(
   }
 
   const exit = props.onExit ?? (() => process.exit(0))
+
+  // Surface a "restart to take effect" prompt while the session is running: the
+  // background silent-update agent stages a newer dsh-cli into the pending
+  // marker; poll it (30s) and toast once for any dsh-cli entry that appeared
+  // after this session started, so the user is told to restart without waiting
+  // for the next launch (where applyPendingUpdates actually installs it).
+  const DSH_CLI_PKG = "@ai-thinker/deepseek-harness-cli"
+  const knownStaged = new Set(pendingUpdates().map((e) => `${e.pkg}@${e.version}`))
+  const stagedTimer = setInterval(() => {
+    const fresh = pendingUpdates().filter((e) => e.pkg === DSH_CLI_PKG && !knownStaged.has(`${e.pkg}@${e.version}`))
+    for (const entry of fresh) {
+      knownStaged.add(`${entry.pkg}@${entry.version}`)
+      showToast(`检测到新版本 ${entry.pkg.split("/").pop()}@${entry.version} · 重启后生效`)
+    }
+  }, 30_000)
+  onCleanup(() => clearInterval(stagedTimer))
 
   onMount(() => {
     void (async () => {

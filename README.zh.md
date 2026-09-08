@@ -23,7 +23,7 @@
 - **队列停靠**：待发 / 引导中的消息可直接编辑、移除或发送
 - **统计栏**：轮次、步骤、LLM/工具耗时、首 token 平均、缓存命中率、token 用量
 - **健壮连接**：断线自动重连、流式卡死看门狗、从持久历史恢复会话
-- **内置 skills 与 FlashKey MCP**：Ai-Thinker skills 技能集与 FlashKey MCP 服务器源码随 npm 包分发（`vendor/`），首次启动直接链接/启用，无需联网克隆仓库
+- **内置 skills**：Ai-Thinker skills 技能集随 npm 包分发（`vendor/`），首次启动直接链接，无需联网克隆仓库
 
 ## 环境要求
 
@@ -81,7 +81,7 @@ npx 临时运行同样在首次启动时自动补齐缺失部分；Bun 已随包
    # scoop install bun
    ```
 
-   > Windows 下建议在 WSL 中运行本项目——终端体验一致，USB 类工具（如 FlashKey FK-01）也需要通过 WSL 的 `usbip` 附加。
+   > Windows 下建议在 WSL 中运行本项目——终端体验一致，USB 类工具也需要通过 WSL 的 `usbip` 附加。
 
    > Windows 客户端直连 WSL 里的 harness 时，客户端会自动把 `D:\...` 工作目录
    > 翻译成 WSL 可见路径（`/mnt/d/...`）再创建会话；如需手动指定，可设置
@@ -109,14 +109,14 @@ npx 临时运行同样在首次启动时自动补齐缺失部分；Bun 已随包
 
 `dsh-cli` 在首次启动时会自动检查/补齐以下依赖（均为常规 npm 生态包，缺失时才安装，已有正确版本不会重复安装）：
 
-- `@ai-thinker/deepseek-harness-cli` 本体：内置 Ai-Thinker 技能与 FlashKey MCP 源码（随 npm 包分发，离线可用）。
+- `@ai-thinker/deepseek-harness-cli` 本体：内置 Ai-Thinker 技能（随 npm 包分发，离线可用）。
 - Bun 1.3.14：终端客户端运行时，作为 `@oven/bun-<平台>-<arch>` 平台包随依赖安装。Windows 上 bun 1.4+ 会触发 OpenTUI 段错误，因此运行时优先使用包内 1.3.14 并拒绝 1.4+。
 - `@deepseek-ai/dsh`：DeepSeek Harness 服务端（缺失时通过 npm 自动安装）。
 - `pnpm`：harness 构建 tui profile 所需（缺失时自动安装）。
 - dsh-cli 自身与 `@deepseek-ai/dsh` 采用「静默强制后台更新」：每次 `dsh-cli` 启动时后台查询 npm registry 并暂存新版到临时目录（把待更新写入 `~/.dsh/.updates-pending.json`），下次启动在拉起 harness 前自动 `npm install -g <pkg>@<最新版>`，本次启动即运行最新版。不再弹出更新确认窗，失败静默回退当前版本、不阻塞（可用 `DSH_NO_UPDATE_CHECK=1` 关闭）。
-- 首次启动的 bootstrap（可跳过）：把内置技能链接到 `~/.dsh/skills`、向 tui profile 注册 FlashKey MCP、并尝试安装 `flashkey-mcp`（Python 包；失败只提示、不影响启动）。
+- 首次启动的 bootstrap（可跳过）：把内置技能链接到 `~/.dsh/skills`。
 
-以上行为均可用环境变量控制：`DSH_SKIP_BOOTSTRAP=1` 跳过全部 bootstrap，`DSH_NO_SKILLS=1` / `DSH_NO_FLASHKEY=1` 只跳过对应资源，`DSH_NO_UPDATE_CHECK=1` 关闭启动时对 dsh-cli 自身与 harness 的更新检查，`DSH_SKIP_RISK_CONFIRM=1` 关闭目录风险确认。完整列表见 `CHANGELOG.md`。
+以上行为均可用环境变量控制：`DSH_SKIP_BOOTSTRAP=1` 跳过全部 bootstrap，`DSH_NO_SKILLS=1` 跳过技能链接，`DSH_NO_UPDATE_CHECK=1` 关闭启动时对 dsh-cli 自身与 harness 的更新检查，`DSH_SKIP_RISK_CONFIRM=1` 关闭目录风险确认。完整列表见 `CHANGELOG.md`。
 
 ## 快速开始
 
@@ -188,21 +188,15 @@ dsh --profile tui -c                     # 恢复最近会话
 | `OPENTUI_GRAPHICS` | 置为 `false` 关闭 Kitty/Sixel 检测（图标回退为字形） |
 | `DSH_SKIP_BOOTSTRAP` | 置 `1` 完全跳过首次启动的资源安装 |
 | `DSH_NO_SKILLS` | 置 `1` 跳过 Ai-Thinker skills 安装 |
-| `DSH_NO_FLASHKEY` | 置 `1` 跳过 FlashKey MCP 安装 |
 | `AT_SKILLS_URL` | 未内置时 skills 仓库 git 地址（默认 `https://github.com/Ai-Thinker-Open/skills.git`） |
-| `FLASHKEY_INSTALL_URL` | 未内置时 flashkey-mcp 的 pip/uv 安装源（支持镜像覆盖） |
-| `FLASHKEY_SSE_PORT` | FlashKey SSE 常驻端口（默认 `8100`） |
 
 ## 内置资源
 
 发布到 npm 的包自带运行资源，`npm install -g` 后即可离线启用：
 
 - `vendor/ai-thinker-src`：Ai-Thinker skills 仓库，首次启动把 `skills/` 下的技能包链接进 `~/.dsh/skills/`；
-- `vendor/flashkey-mcp`：FlashKey MCP 服务器 Python 源码，启动时与 harness 同步拉起 SSE 常驻服务（默认 `127.0.0.1:8100`）；
 
 OpenTUI 原生库与 Bun 运行时不再随包体打包，而是通过官方 npm 平台包（`@opentui/core-<平台>-<arch>`、`@oven/bun-<平台>-<arch>`）在安装时按当前平台解析；换平台使用需要重新安装（例如 Windows 上装的包不能直接在 WSL 里运行）。
-
-MCP 服务端依赖 `pyserial`、`mcp`、`starlette`、`uvicorn`。若本机 Python 已具备这些依赖，启动会直接从内置源码运行（完全离线）；否则首次启动会用 pip/uv 从内置源码安装，依赖需从 PyPI 获取一次。skills 与 MCP 都可用环境变量跳过或换源（见上表）。
 
 正常启动时不输出 bootstrap/启动进度信息，只有错误会打印到终端；需要详细日志时设置 `DSH_DEBUG=1`。harness（`dsh`）本身也支持全平台，但必须使用与运行平台一致的安装：WSL 里请用 WSL 的 npm 安装 `@deepseek-ai/dsh`，不要在 WSL 里运行 Windows 侧安装的 `dsh`。
 

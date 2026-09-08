@@ -66,6 +66,12 @@ function readMarker(env: NodeJS.ProcessEnv = process.env): PendingUpdate[] {
   }
 }
 
+/** Current list of staged-but-not-yet-applied updates (shared with the client
+ *  so the running session can surface a "restart to take effect" prompt). */
+export function pendingUpdates(env: NodeJS.ProcessEnv = process.env): PendingUpdate[] {
+  return readMarker(env)
+}
+
 /** Persist the marker atomically (write a sibling temp file, then rename). */
 function writeMarker(pending: PendingUpdate[], env: NodeJS.ProcessEnv = process.env): void {
   const path = updateMarkerPath(env)
