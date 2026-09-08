@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.3.15
+
+### 修复
+
+- toast 自动消失时间从最长 6s 缩短到**最长 3s**（短消息 1.8s 起）。
+- 工具结果在**折叠（回放）和实时到达**时都应用 `stripSubprocessNoise`，过滤掉 Git Bash 在 Windows 上调用 ssh 时打印的 `*** fatal error - couldn't create signal pipe` 噪音行（此前只在 composer 输入处过滤，工具结果卡片仍会显示该噪音）。
+
 ## 0.3.14
 
 ### 变更：移除 FlashKey MCP 服务器
