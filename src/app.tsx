@@ -104,9 +104,8 @@ export function App(
   const showToast = (text: string, kind: ToastMessage["kind"] = "success") => {
     setToast({ text, kind })
     if (toastTimer) clearTimeout(toastTimer)
-    // Longer summaries (e.g. the multi-line /goal status) need more reading
-    // time than a one-liner, but no result should linger forever.
-    toastTimer = setTimeout(() => setToast(null), Math.max(1800, Math.min(6000, text.length * 40)))
+    // Keep toasts short — cap at 3s so nothing lingers too long.
+    toastTimer = setTimeout(() => setToast(null), Math.max(1800, Math.min(3000, text.length * 40)))
   }
 
   onCleanup(() => {

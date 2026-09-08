@@ -5,6 +5,7 @@
 import type { ChatImage, ChatMessage, ToolCallRecord, ToolResultRecord } from "../session"
 import type { ImageContentPart, ImageMediaType, PromptContentPart, SessionEvent } from "./client"
 import { toolSummary } from "./tool-card"
+import { stripSubprocessNoise } from "../subprocess-noise"
 
 export interface Block {
   type?: string
@@ -258,7 +259,7 @@ export function foldToolResult(messages: ChatMessage[], ev: SessionEvent): ToolR
   const data = ev.data as { message?: { content?: Block[] } }
   const block = data.message?.content?.[0]
   if (!block || block.type !== "tool-result" || !block.toolCallId) return null
-  const raw = blockText(block.content)
+  const raw = stripSubprocessNoise(blockText(block.content))
   const { text, truncated } = truncateText(raw, MAX_TOOL_OUTPUT_CHARS)
   const result: ToolResultRecord = {
     toolCallId: block.toolCallId,

@@ -2,6 +2,7 @@ import { writeFile } from "node:fs/promises"
 import { join } from "node:path"
 import { createSignal } from "solid-js"
 import { debug, isDebugEnabled } from "../debug"
+import { stripSubprocessNoise } from "../subprocess-noise"
 import {
   DEEP_DIVING_STATUS,
   EMPTY_STATS,
@@ -767,7 +768,7 @@ export function createHarnessSession(
     if (!block || block.type !== "tool-result" || !block.toolCallId) return
     const callId = block.toolCallId
     if (pendingSettles.has(callId)) return
-    const { text, truncated } = truncateText(blockText(block.content), MAX_TOOL_OUTPUT_CHARS)
+    const { text, truncated } = truncateText(stripSubprocessNoise(blockText(block.content)), MAX_TOOL_OUTPUT_CHARS)
     const result: ToolResultRecord = {
       toolCallId: callId,
       ok: !block.isError,
