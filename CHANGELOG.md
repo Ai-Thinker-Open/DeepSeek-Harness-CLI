@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.3.19
+
+### 功能：启动时自动拉取最新 Ai-Thinker skills（节流）
+
+- 之前：首次 `git clone --depth 1` 后就不再更新，skill 版本停留在首次克隆那一刻。现在：已克隆的 skills 仓库在启动时 `git fetch --depth 1 origin` + `git reset --hard origin/HEAD` 刷新到最新，**默认每天最多一次**（避免每次启动都联网）。
+- 可用 `DSH_NO_SKILLS_UPDATE=1` 关闭自动更新；用 `DSH_SKILLS_UPDATE_INTERVAL_MS` 调整节流间隔（毫秒，默认 24h）。失败非阻塞：联网失败时继续用现有 checkout 并照常链接。
+- 说明：`vendor/` 在 `.gitignore` 中且未进 git，发布包不内置 skills；真实用户走「克隆」分支，因此本功能对真实用户生效；源码/开发机若用 vendor/ 路径则不受影响（开发者手动更新 vendor）。
+
+### 功能：重启一次直接切换到最新版本（免二次重启）
+
+- 之前：`bin/dsh-cli` 先 `import(dispatcher)`（旧代码）再执行 `applyPendingUpdates()`（装新版本），所以版本升级要「应用一次 → 再重启一次」。
+- 现在：新增独立 `dist/apply-update.js`，`bin/dsh-cli` 在 `import(dispatcher)` **之前**先运行它；应用后 import 读到的就是磁盘上的新版 `dist/dispatcher.js`，本次启动即用新版——**一次重启直接切到最新版**。
+- 老版本（0.3.18 及更早）没有 apply-update.js，仍走旧的「两次重启」路径；从本版起后续更新一次重启即切换。
+
 ## 0.3.18
 
 ### 修复：首页模型名与会话实际模型不一致（显示 DeepSeek-V4-Flash，实际是 -Vision-Exp）
