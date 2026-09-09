@@ -13,11 +13,16 @@ import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
 
 export function portableSpawnSyncOptions(options: SpawnSyncOptions): SpawnSyncOptions {
-  return process.platform === "win32" ? { ...options, shell: true } : options
+  // `windowsHide: true` (CREATE_NO_WINDOW) stops Windows from opening a fresh
+  // console window for every `shell: true` subprocess — otherwise each launch
+  // (bun/dsh probes, pnpm/npm setup, ...) pops a new terminal window. Harmless
+  // elsewhere (Node ignores it), and stdio is still inherited so the terminal
+  // surface keeps rendering to the launching console.
+  return process.platform === "win32" ? { ...options, shell: true, windowsHide: true } : options
 }
 
 export function portableSpawnOptions(options: SpawnOptions): SpawnOptions {
-  return process.platform === "win32" ? { ...options, shell: true } : options
+  return process.platform === "win32" ? { ...options, shell: true, windowsHide: true } : options
 }
 
 /** Locate the package root from a source or built module location. */

@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.3.18
+
+### 修复：首页模型名与会话实际模型不一致（显示 DeepSeek-V4-Flash，实际是 -Vision-Exp）
+
+- 根因：`ensureSession()` 先把 harness 实际模型（`describe()` 的 `info.model`）写到徽标，随后 `resetSessionState()` 又把它重置为硬编码占位符 `DeepSeek-V4-Flash`，导致首页/会话徽标一直显示通用默认模型，直到首个 `request/context` 事件才被实际模型覆盖。
+- 修复：把 `setModelName(info.model)` 移到 `resetSessionState()` 之后，让 harness 返回的实际模型覆盖占位符；新增 `refreshHostModel()`（无会话即可读 `session/modelCatalog`），启动时刷新首页徽标，使首页一开始就显示真实模型（如 `DeepSeek-V4-Flash-Vision-Exp`）。
+
+### 修复：Windows 每次启动弹出新终端窗口
+
+- 根因：Windows 上所有子进程经 `portableSpawnOptions`/`portableSpawnSyncOptions` 走 `shell: true`，但未设 `windowsHide`，Node 默认为每个子进程新建控制台窗口。
+- 修复：这两个 helper 在 win32 上追加 `windowsHide: true`（`CREATE_NO_WINDOW`），子进程经继承的 stdio 复用启动终端，不再弹新窗口；Linux/macOS 上是 no-op。
+
 ## 0.3.17
 
 ### 修复：升级后启动页版本号仍显示旧版本

@@ -238,6 +238,24 @@ test("plan mode follows the session projection and plan/mode events", async () =
   expect(session.planMode()).toBe(true)
 })
 
+test("ensureSession keeps the harness's actual model on the badge", async () => {
+  const client = new FakeClient()
+  // The harness reports its real current model (e.g. the -Vision-Exp variant);
+  // ensureSession must keep it after the reset, not fall back to the generic
+  // "DeepSeek-V4-Flash" placeholder until the first request/context event.
+  client.describeResult = { version: "mock", cwd: "/tmp", model: "DeepSeek-V4-Flash-Vision-Exp", attachedSessions: 0, canOpenPath: true }
+  const session = createHarnessSession(client, "/tmp")
+
+  // Sessionless refresh (home badge) reads the same harness model.
+  await session.refreshHostModel()
+  expect(session.modelName()).toBe("DeepSeek-V4-Flash-Vision-Exp")
+
+  // Session create must not clobber it back to the placeholder.
+  await session.ensureSession()
+  await tick()
+  expect(session.modelName()).toBe("DeepSeek-V4-Flash-Vision-Exp")
+})
+
 test("reconnect clears the interrupted status once frames flow again", async () => {
   const client = new FakeClient()
   const original = client.eventStream.bind(client)

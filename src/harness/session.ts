@@ -75,6 +75,8 @@ export interface HarnessSessionApi {
   checkApiKey: () => Promise<"configured" | "missing" | "unsupported">
   /** Persist a DeepSeek API key through the harness credentials service. */
   saveApiKey: (value: string) => Promise<boolean>
+  /** Fetch the harness's current model without a session, for the home badge. */
+  refreshHostModel: () => Promise<void>
   queue: () => QueueItem[]
   updateQueueItem: (itemId: string, action: QueueAction) => Promise<boolean>
   refreshCommands: () => Promise<void>
@@ -1135,10 +1137,15 @@ export function createHarnessSession(
     try {
       const info = await client.describe()
       setConnected(true)
-      if (info.model) setModelName(info.model)
       cwd = harnessCwdFor(cwd, info.cwd)
       const created = await client.createSession(cwd)
       resetSessionState()
+      // resetSessionState() drops the badge to the placeholder default
+      // ("DeepSeek-V4-Flash"); apply the harness's actual model afterwards so
+      // the home/session badge shows the model that will really run (e.g.
+      // DeepSeek-V4-Flash-Vision-Exp) instead of the generic default until the
+      // first request/context event lands.
+      if (info.model) setModelName(info.model)
       sessionId = created.sessionId
       startListening()
       startStallWatchdog()
@@ -1268,6 +1275,22 @@ export function createHarnessSession(
       return true
     } catch {
       return false
+    }
+  }
+
+  /**
+   * Fetch the harness's current model without requiring a session, so the home
+   * badge reflects the model that will actually run (e.g. DeepSeek-V4-Flash-
+   * Vision-Exp) before the first session or `request/context` exists. Uses the
+   * sessionless `session/modelCatalog` via `describe()`; non-fatal — on failure
+   * the placeholder label is kept until a session is created/resumed.
+   */
+  async function refreshHostModel(): Promise<void> {
+    try {
+      const info = await client.describe()
+      if (info.model) setModelName(info.model)
+    } catch {
+      // Non-fatal; the model is resolved on session create/resume.
     }
   }
 
@@ -1952,6 +1975,7 @@ export function createHarnessSession(
     resumeSession,
     resumeLastSession,
     checkApiKey,
+    refreshHostModel,
     saveApiKey,
     queue,
     updateQueueItem,

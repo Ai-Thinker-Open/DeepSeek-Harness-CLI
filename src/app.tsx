@@ -145,6 +145,10 @@ export function App(
   /** API-key gate, then the real startup (home or `-c` resume). */
   const continueStartup = () => {
     void (async () => {
+      // Refresh the home badge to the harness's actual model (sessionless)
+      // before the first session exists, so it does not show the generic
+      // placeholder (DeepSeek-V4-Flash) while the session runs a -Vision-Exp.
+      void session.refreshHostModel()
       const state = await session.checkApiKey()
       if (state === "missing") {
         setApiKeyOpen(true)
