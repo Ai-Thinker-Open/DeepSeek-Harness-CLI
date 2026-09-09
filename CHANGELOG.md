@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.3.20
+
+### 修复：首页发出的第一条消息未在会话页显示
+
+- 根因：harnes 可能在 `session/seed`（`session/follow` 首帧快照）里返回**还没持久化这条 prompt 的历史**（真实竞态），而客户端 `applySeed`/`resyncFromHistory` 用 `model = foldHistory(...)` **整体替换**模型，导致用户刚在首页发出的首条消息被快照清掉。
+- 修复：`applySeed` 与 `resyncFromHistory` 替换模型前先保留本地已添加的用户消息，若快照/历史里还没有同内容的回声，则追加回去（同内容回声跳过，避免重复）。
+
+### 修复：首页/会话模型名不一致（仍显示 DeepSeek-V4-Flash，实际是 -Vision-Exp）
+
+- 根因：`modelName` 来自 catalog 默认值，而 catalog 刷新（`describe`/`refreshModelName`/`refreshHostModel`）会在 `request/context`/`/model` 上报真实模型后**又覆盖回默认值**。
+- 修复：新增 `modelNameLive` 标记——`request/context` 或显式 `/model` 选择上报的模型为权威，之后的 catalog 刷新不再覆盖。会话运行后首页/会话徽标稳定显示实际模型。
+- 说明：纯首页（未发消息、无 request/context）仍显示 catalog 默认值；若要让「启动即显示 Vision-Exp」，需 harness 的 `session/modelCatalog` 把当前模型上报为 `-Vision-Exp`（客户端侧无法推断）。
+
+### 修复：tui profile 仍残留 FlashKey MCP 配置
+
+- 根因：0.3.14 移除 FlashKey MCP 时只停止**写入** `mcp-flashkey`，未清理已存在 profile 的 `cordis.patch.yml` 旧行，导致 `/mcp` 仍列出已移除的服务器。
+- 修复：dispatcher 启动时对 tui profile 的 `cordis.patch.yml` 做幂等清理——移除 `mcp-flashkey` 行及随之变空的 `- insert:`。
+
 ## 0.3.19
 
 ### 功能：启动时自动拉取最新 Ai-Thinker skills（节流）
