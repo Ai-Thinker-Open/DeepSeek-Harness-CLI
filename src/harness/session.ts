@@ -1041,7 +1041,18 @@ export function createHarnessSession(
     applyImageLimitsProjection(projections)
     applyHistoryStats(projections, events)
     const fresh = foldHistory(events.map((e) => e.event))
+    // The harness may send the opening `session/seed` snapshot before it has
+    // persisted the just-sent prompt (a real-harness race), so folding it would
+    // silently drop the first message a user typed on the home screen. Preserve
+    // locally-appended user messages the snapshot hasn't echoed yet; the echo
+    // (same content) is skipped so nothing duplicates.
+    const pendingUsers = model.filter((m) => m.role === "user")
     model = fresh
+    for (const pending of pendingUsers) {
+      if (!fresh.some((f) => f.role === "user" && f.content === pending.content)) {
+        model.push(pending)
+      }
+    }
     streamTurn = null
     firstTokenDone = true
     if (!model.some((m) => m.streaming)) {
@@ -1067,10 +1078,19 @@ export function createHarnessSession(
       applyImageLimitsProjection(projections)
       applyHistoryStats(projections, events)
       const fresh = foldHistory(events.map((e) => e.event))
+      // Preserve locally-appended user messages the durable history doesn't yet
+      // hold (e.g. a prompt the harness hasn't persisted when a stall forces a
+      // resync), so they are not dropped by the rebuild.
+      const pendingUsers = model.filter((m) => m.role === "user")
       // A blank session (no foldable events) must still clear the previous
       // conversation — otherwise a resume onto an empty session keeps the
       // prior session's messages on screen under the new session id.
       model = fresh
+      for (const pending of pendingUsers) {
+        if (!fresh.some((f) => f.role === "user" && f.content === pending.content)) {
+          model.push(pending)
+        }
+      }
       streamTurn = null
       firstTokenDone = true
       // If the stalled turn completed durably, drop the busy/streaming state.

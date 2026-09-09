@@ -1737,3 +1737,46 @@ test("same-platform cwd is passed to session.create unchanged", async () => {
   expect(client.createdCwds).toEqual(["/home/seahi/proj"])
   session.dispose()
 })
+
+test("a session/seed snapshot after the first prompt keeps the user message", async () => {
+  const client = new FakeClient()
+  const session = createHarnessSession(client, "/tmp")
+
+  await session.start("hello")
+  await tick()
+  expect(session.messages().map((m) => m.role)).toEqual(["user"])
+
+  // The harness emits its session/follow snapshot; the record echoes the message.
+  client.push(
+    frame("session/seed", {
+      sessionId: "s-1",
+      records: [{ event: ev("user/message", { id: "m1", content: [{ type: "text", text: "hello" }] }, 1) }],
+    }),
+  )
+  await tick()
+
+  expect(session.messages().some((m) => m.role === "user" && m.content === "hello")).toBe(true)
+})
+
+test("a session/seed snapshot that lags the first message keeps the locally-added message", async () => {
+  const client = new FakeClient()
+  const session = createHarnessSession(client, "/tmp")
+
+  // The harness may send the snapshot with a history that doesn't yet hold the
+  // just-sent prompt (a real-harness race): folding it must not drop the first
+  // message the user typed, so applySeed re-appends the locally-added message.
+  await session.start("hello")
+  await tick()
+  client.push(
+    frame("session/seed", {
+      sessionId: "s-1",
+      records: [
+        { event: ev("user/message", { id: "unrelated", content: [{ type: "text", text: "previous" }] }, 1) },
+      ],
+      projections: {},
+    }),
+  )
+  await tick()
+
+  expect(session.messages().some((m) => m.role === "user" && m.content === "hello")).toBe(true)
+})
