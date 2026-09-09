@@ -167,6 +167,11 @@ export function createHarnessSession(
   const [error, setError] = createSignal<string | null>(null)
   const [connected, setConnected] = createSignal(false)
   const [modelName, setModelName] = createSignal("DeepSeek-V4-Flash")
+  // True once a LIVE source (request/context, or an explicit /model selection)
+  // has reported the model. Catalog-based refreshes (describe/refreshModelName)
+  // must not overwrite that, or the badge would revert to the catalog's default
+  // (e.g. "DeepSeek-V4-Flash") after the session actually runs a -Vision-Exp.
+  let modelNameLive = false
   const [planMode, setPlanMode] = createSignal(false)
   const [planPending, setPlanPending] = createSignal(false)
   const [commands, setCommands] = createSignal<CommandDescriptor[]>([])
@@ -299,6 +304,7 @@ export function createHarnessSession(
     setQuestion(null)
     setError(null)
     setModelName("DeepSeek-V4-Flash")
+    modelNameLive = false
     setPlanMode(false)
     setPlanPending(false)
     setCommands([])
@@ -552,7 +558,10 @@ export function createHarnessSession(
       case "request/context": {
         const ctx = ev.data as { provider?: string; model?: string }
         const name = ctx.model ?? ctx.provider
-        if (name) setModelName(name)
+        if (name) {
+          setModelName(name)
+          modelNameLive = true
+        }
         break
       }
       case "command/run": {
@@ -1145,7 +1154,7 @@ export function createHarnessSession(
       // the home/session badge shows the model that will really run (e.g.
       // DeepSeek-V4-Flash-Vision-Exp) instead of the generic default until the
       // first request/context event lands.
-      if (info.model) setModelName(info.model)
+      if (!modelNameLive && info.model) setModelName(info.model)
       sessionId = created.sessionId
       startListening()
       startStallWatchdog()
@@ -1196,7 +1205,7 @@ export function createHarnessSession(
       if (!sessionId) {
         const info = await client.describe()
         setConnected(true)
-        if (info.model) setModelName(info.model)
+        if (!modelNameLive && info.model) setModelName(info.model)
         cwd = harnessCwdFor(cwd, info.cwd)
       }
       const created = await client.createSession(cwd, undefined, target)
@@ -1288,7 +1297,7 @@ export function createHarnessSession(
   async function refreshHostModel(): Promise<void> {
     try {
       const info = await client.describe()
-      if (info.model) setModelName(info.model)
+      if (!modelNameLive && info.model) setModelName(info.model)
     } catch {
       // Non-fatal; the model is resolved on session create/resume.
     }
@@ -1701,7 +1710,7 @@ export function createHarnessSession(
    */
   async function refreshModelName(): Promise<void> {
     const catalog = await listModels()
-    if (catalog?.current?.model) setModelName(catalog.current.model)
+    if (!modelNameLive && catalog?.current?.model) setModelName(catalog.current.model)
   }
 
   /** Switch the session's LLM model; returns false on failure. */
@@ -1709,7 +1718,10 @@ export function createHarnessSession(
     if (!sessionId) return false
     try {
       const res = await client.selectModel(sessionId, provider, model, reasoningEffort)
-      if (res.selected.model) setModelName(res.selected.model)
+      if (res.selected.model) {
+        setModelName(res.selected.model)
+        modelNameLive = true
+      }
       return true
     } catch {
       return false

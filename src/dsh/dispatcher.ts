@@ -362,6 +362,50 @@ export function removeListItemById(text: string, id: string): { text: string; re
 }
 
 /**
+ * Drop the stale `mcp-flashkey` MCP server row that pre-0.3.14 bootstrap wrote
+ * into the tui profile patch. The server was removed from the package, but the
+ * row in an existing profile's cordis.patch.yml was never cleaned up, so the
+ * `/mcp` status kept listing it. This also removes the now-empty parent
+ * `- insert:` block so the patch stays tidy.
+ */
+export function stripFlashKeyMcp(patchText: string): string {
+  const { text, removed } = removeListItemById(patchText, "mcp-flashkey")
+  if (!removed) return patchText
+  // Drop an orphaned `- insert:` that lost all its items (nothing indented under
+  // it before the next top-level entry or end of file).
+  const lines = text.split(/\r?\n/)
+  const out: string[] = []
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i] ?? ""
+    if (/^-\s*insert:\s*$/.test(line)) {
+      let hasChild = false
+      for (let j = i + 1; j < lines.length; j++) {
+        const l = lines[j] ?? ""
+        if (l.trim() === "" || l.trim().startsWith("#")) continue
+        hasChild = (l.match(/^(\s*)/)?.[1] ?? "").length > 0
+        break
+      }
+      if (!hasChild) continue
+    }
+    out.push(line)
+  }
+  return out.join("\n")
+}
+
+/** Remove the stale FlashKey MCP row from the tui profile patch (best-effort). */
+function cleanupFlashKeyProfile(): void {
+  const patch = join(profileDir(), "cordis.patch.yml")
+  try {
+    const text = readFileSync(patch, "utf8")
+    const cleaned = stripFlashKeyMcp(text)
+    if (cleaned !== text) writeFileSync(patch, cleaned)
+    if (isDebugEnabled() && cleaned !== text) debug("[dsh-cli] removed stale mcp-flashkey row from the tui profile patch")
+  } catch {
+    // Best-effort: a missing/unreadable patch is fine.
+  }
+}
+
+/**
  * Pre-flight: compose the tui profile tree and detect duplicate loader-entry
  * ids (e.g. `storage`). Detection is read-only — the launcher never edits a
  * patch file, because editing an installed bundle (or a pnpm-store copy) is
@@ -506,6 +550,10 @@ export async function run(args: readonly string[]): Promise<number> {
     )
   }
   const profileRegistered = normalizeProfileBundles()
+  // Drop the stale mcp-flashkey row that pre-0.3.14 bootstrap left in an
+  // existing profile's cordis.patch.yml, so /mcp no longer lists the removed
+  // FlashKey server. Best-effort and idempotent.
+  cleanupFlashKeyProfile()
   // The running CLI comes from the tui profile bundle, a separate copy of this
   // package. A plain `npm install -g` (and the silent-updater) only update the
   // global package, leaving the profile copy on the old version — so the launcher

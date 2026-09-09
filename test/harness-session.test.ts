@@ -256,6 +256,25 @@ test("ensureSession keeps the harness's actual model on the badge", async () => 
   expect(session.modelName()).toBe("DeepSeek-V4-Flash-Vision-Exp")
 })
 
+test("a live request/context model is not overwritten by a catalog refresh", async () => {
+  const client = new FakeClient()
+  // The catalog reports the generic default, but the actual routed model is the
+  // -Vision-Exp variant reported by request/context.
+  client.describeResult = { version: "mock", cwd: "/tmp", model: "DeepSeek-V4-Flash", attachedSessions: 0, canOpenPath: true }
+  const session = createHarnessSession(client, "/tmp")
+
+  await session.ensureSession()
+  await tick()
+  // The live model arrives with the first request.
+  client.push(frame("session/event", { sessionId: "s-1", event: ev("request/context", { model: "DeepSeek-V4-Flash-Vision-Exp" }, 4) }))
+  await tick()
+  expect(session.modelName()).toBe("DeepSeek-V4-Flash-Vision-Exp")
+
+  // A later catalog-based refresh must NOT revert to the generic default.
+  await session.refreshHostModel()
+  expect(session.modelName()).toBe("DeepSeek-V4-Flash-Vision-Exp")
+})
+
 test("reconnect clears the interrupted status once frames flow again", async () => {
   const client = new FakeClient()
   const original = client.eventStream.bind(client)

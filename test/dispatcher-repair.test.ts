@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs"
 import { join } from "node:path"
 import { load as parseYaml } from "js-yaml"
 import { expect, test } from "bun:test"
-import { parseComposedLayerIds, removeListItemById } from "../src/dsh/dispatcher"
+import { parseComposedLayerIds, removeListItemById, stripFlashKeyMcp } from "../src/dsh/dispatcher"
 
 test("parseComposedLayerIds reports a duplicate id across layers", () => {
   const dump = `# == @deepseek-ai/dsh-base
@@ -109,4 +109,42 @@ test("detects a storage duplicate between a newer dsh-base and the bundle", () =
   for (const r of rows) counts[r.id] = (counts[r.id] ?? 0) + 1
   expect(counts.storage).toBe(2)
   expect(counts["mcp-flashkey"]).toBe(1)
+})
+
+test("stripFlashKeyMcp removes the row and the orphaned empty - insert:", () => {
+  const patch = `# profile patch
+- insert:
+    - id: mcp-flashkey
+      name: '@deepseek-ai/dsh-mcp-client'
+      config:
+        serverName: flashkey
+        url: http://127.0.0.1:8100/sse
+`
+  const out = stripFlashKeyMcp(patch)
+  expect(out.includes("mcp-flashkey")).toBe(false)
+  // The now-empty `- insert:` is dropped too, leaving only the comment.
+  expect(out).not.toContain("- insert:")
+  expect(out.trim()).toBe("# profile patch")
+  // When the mcp-flashkey row sits in an insert that also has other rows, the
+  // siblings stay and the parent insert is kept (covered by the next test).
+})
+
+test("stripFlashKeyMcp keeps other rows and is a no-op when absent", () => {
+  const patch = `- insert:
+    - id: mcp-flashkey
+      name: '@deepseek-ai/dsh-mcp-client'
+      config:
+        serverName: flashkey
+    - id: other-mcp
+      name: '@deepseek-ai/dsh-mcp-client'
+      config:
+        serverName: mine
+`
+  const out = stripFlashKeyMcp(patch)
+  expect(out.includes("mcp-flashkey")).toBe(false)
+  expect(out).toContain("serverName: mine")
+  expect(out).toContain("- insert:")
+
+  const without = `- id: tui-runner\n  name: '@ai-thinker/deepseek-harness-cli'\n`
+  expect(stripFlashKeyMcp(without)).toBe(without)
 })
