@@ -10,7 +10,7 @@ const savedInternals = { ...internals }
 
 beforeEach(() => {
   temp = mkdtempSync(join(tmpdir(), "dsh-bootstrap-"))
-  for (const key of ["DSH_HOME", "DSH_SKIP_BOOTSTRAP", "DSH_NO_SKILLS"]) {
+  for (const key of ["DSH_HOME", "DSH_SKIP_BOOTSTRAP", "DSH_NO_SKILLS", "DSH_NO_SKILLS_UPDATE", "DSH_SKILLS_UPDATE_INTERVAL_MS"]) {
     savedEnv[key] = process.env[key]
     process.env[key] = undefined
   }
@@ -118,4 +118,62 @@ test("bootstrap falls back to cloning skills when vendor/ is absent", async () =
   await bootstrapAll()
 
   expect(cloned).toBe(true)
+})
+
+/** Create an existing skills clone with one bundle so the update path runs. */
+function seedClone(): string {
+  const repoRoot = join(temp, "skills", "ai-thinker-src")
+  mkdirSync(join(repoRoot, ".git"), { recursive: true })
+  mkdirSync(join(repoRoot, "skills", "alpha"), { recursive: true })
+  writeFileSync(join(repoRoot, "skills", "alpha", "SKILL.md"), "---\nname: alpha\n---\n")
+  return repoRoot
+}
+
+test("bootstrap refreshes a cloned skills repo from origin when stale", async () => {
+  const repoRoot = seedClone()
+  writeFileSync(join(repoRoot, ".dsh-last-update"), "0") // stale -> must update
+  internals.bundledSkillsRepo = join(temp, "vendor", "ai-thinker-src") // absent -> clone path
+  const gitCalls: string[][] = []
+  internals.spawnSync = ((command: string, args: string[]) => {
+    if (command === "git") gitCalls.push(args)
+    return { status: 0, stdout: "", stderr: "", pid: 0, output: [], signal: null }
+  }) as unknown as typeof internals.spawnSync
+
+  await bootstrapAll()
+
+  expect(gitCalls.some((a) => a.includes("fetch"))).toBe(true)
+  expect(gitCalls.some((a) => a.includes("reset") && a.includes("origin/HEAD"))).toBe(true)
+  // A successful refresh bumps the marker, so the next launch skips.
+  expect(Number.parseInt(readFileSync(join(repoRoot, ".dsh-last-update"), "utf8"), 10)).toBeGreaterThan(0)
+})
+
+test("bootstrap skips the skills refresh when update is disabled", async () => {
+  const repoRoot = seedClone()
+  writeFileSync(join(repoRoot, ".dsh-last-update"), "0")
+  internals.bundledSkillsRepo = join(temp, "vendor", "ai-thinker-src")
+  let gitCalls = 0
+  internals.spawnSync = ((command: string) => {
+    if (command === "git") gitCalls += 1
+    return { status: 0, stdout: "", stderr: "", pid: 0, output: [], signal: null }
+  }) as unknown as typeof internals.spawnSync
+  process.env.DSH_NO_SKILLS_UPDATE = "1"
+
+  await bootstrapAll()
+
+  expect(gitCalls).toBe(0)
+})
+
+test("bootstrap skips the skills refresh when refreshed recently", async () => {
+  const repoRoot = seedClone()
+  writeFileSync(join(repoRoot, ".dsh-last-update"), String(Date.now())) // fresh
+  internals.bundledSkillsRepo = join(temp, "vendor", "ai-thinker-src")
+  let gitCalls = 0
+  internals.spawnSync = ((command: string) => {
+    if (command === "git") gitCalls += 1
+    return { status: 0, stdout: "", stderr: "", pid: 0, output: [], signal: null }
+  }) as unknown as typeof internals.spawnSync
+
+  await bootstrapAll()
+
+  expect(gitCalls).toBe(0)
 })

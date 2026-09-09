@@ -18,10 +18,12 @@ import {
   lstatSync,
   mkdirSync,
   readdirSync,
+  readFileSync,
   realpathSync,
   statSync,
   symlinkSync,
   unlinkSync,
+  writeFileSync,
 } from "node:fs"
 import { homedir } from "node:os"
 import { dirname, join } from "node:path"
@@ -69,6 +71,53 @@ function notice(message: string): void {
 
 function dshHome(): string {
   return process.env.DSH_HOME ?? join(homedir(), ".dsh")
+}
+
+const SKILLS_UPDATE_INTERVAL_MS = 24 * 60 * 60 * 1000 // default: refresh at most once/day
+
+function skillsLastUpdateAt(repoRoot: string): number {
+  try {
+    return Number.parseInt(readFileSync(join(repoRoot, ".dsh-last-update"), "utf8"), 10) || 0
+  } catch {
+    return 0
+  }
+}
+
+function markSkillsUpdated(repoRoot: string): void {
+  try {
+    writeFileSync(join(repoRoot, ".dsh-last-update"), String(Date.now()))
+  } catch {
+    // Best-effort marker; a failed write only means the next launch retries.
+  }
+}
+
+/**
+ * Pull the latest skills for an already-cloned repo, throttled so we don't hit
+ * the network on every launch. Best-effort and never throws: on any git/network
+ * failure we keep the existing checkout and link that instead.
+ *
+ * `git clone --depth 1` pins `origin/HEAD`, so a shallow `fetch --depth 1 origin`
+ * plus a `reset --hard origin/HEAD` keeps the checkout shallow and fast-forwards
+ * it to the newest commit. Disable with `DSH_NO_SKILLS_UPDATE=1`; override the
+ * cadence with `DSH_SKILLS_UPDATE_INTERVAL_MS`.
+ */
+function updateSkillsIfStale(repoRoot: string): void {
+  if (process.env.DSH_NO_SKILLS_UPDATE === "1") return
+  const intervalMs = Number.parseInt(String(process.env.DSH_SKILLS_UPDATE_INTERVAL_MS ?? ""), 10) || SKILLS_UPDATE_INTERVAL_MS
+  if (Date.now() - skillsLastUpdateAt(repoRoot) < intervalMs) return
+
+  const fetch = internals.spawnSync("git", ["-C", repoRoot, "fetch", "--depth", "1", "origin"], portableSpawnSyncOptions({ stdio: "ignore" }))
+  if (fetch.status !== 0) {
+    info("skills update fetch failed; keeping the existing checkout")
+    return
+  }
+  const reset = internals.spawnSync("git", ["-C", repoRoot, "reset", "--hard", "origin/HEAD"], portableSpawnSyncOptions({ stdio: "ignore" }))
+  if (reset.status !== 0) {
+    warn("skills update reset failed; keeping the existing checkout")
+    return
+  }
+  markSkillsUpdated(repoRoot)
+  info("skills refreshed from origin")
 }
 
 /** Link every SKILL.md bundle under `<repo>/skills` into a harness skill root. */
@@ -138,6 +187,11 @@ async function ensureSkills(): Promise<void> {
       warn("skills clone failed; run it manually or retry next launch")
       return
     }
+    // A fresh shallow clone is already at the newest commit, so no re-fetch yet.
+    markSkillsUpdated(repoRoot)
+  } else {
+    // Keep an existing clone current (throttled, best-effort, never blocks).
+    updateSkillsIfStale(repoRoot)
   }
   const linked = linkSkillBundles(skillsRoot, repoRoot)
   if (linked > 0) notice(`链接技能目录：${linked} 个新 skills → ${skillsRoot}`)
