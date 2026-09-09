@@ -854,6 +854,49 @@ test("entering a key and confirming saves it and closes the modal", async () => 
   expect(frame).toContain("给智能体发消息")
 })
 
+test("backspace edits the masked API key before confirming", async () => {
+  const client = new FakeClient()
+  client.apiKeyConfigured = false
+  const app = await testRender(() => <App client={client} />, { width: 80, height: 32 })
+  await app.renderOnce()
+  await tick(80)
+  await app.renderOnce()
+
+  app.mockInput.typeText("sk-abcd")
+  await app.renderOnce()
+  // Backspace removes the trailing "d", then typing appends "x": sk-abcd -> sk-abcx.
+  app.mockInput.pressKey("BACKSPACE")
+  await app.renderOnce()
+  app.mockInput.typeText("x")
+  await app.renderOnce()
+  app.mockInput.pressEnter()
+  await tick()
+  await app.renderOnce()
+
+  expect(client.credentialsSetCalls).toEqual([{ ref: "DEEPSEEK_API_KEY", value: "sk-abcx" }])
+  const frame = app.captureCharFrame()
+  expect(frame).not.toContain("请输入DeepSeek API Key")
+  expect(frame).toContain("给智能体发消息")
+})
+
+test("empty API key shows a validation error instead of saving", async () => {
+  const client = new FakeClient()
+  client.apiKeyConfigured = false
+  const app = await testRender(() => <App client={client} />, { width: 80, height: 32 })
+  await app.renderOnce()
+  await tick(80)
+  await app.renderOnce()
+
+  app.mockInput.pressEnter()
+  await tick()
+  await app.renderOnce()
+
+  expect(client.credentialsSetCalls).toHaveLength(0)
+  expect(app.captureCharFrame()).toContain("API Key 不能为空")
+  // Modal stays open so the user can correct the input.
+  expect(app.captureCharFrame()).toContain("请输入DeepSeek API Key")
+})
+
 test("escaping the API key prompt skips it and continues startup", async () => {
   const client = new FakeClient()
   client.apiKeyConfigured = false

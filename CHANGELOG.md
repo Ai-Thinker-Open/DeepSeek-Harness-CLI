@@ -7,6 +7,12 @@
 - 根因：TUI 始终运行在 tui profile 里的 bundle 副本（`~/.dsh/profiles/tui/.../dist/cli.js`），其版本号在**构建期**内联进 `dist`。`npm install -g` / 静默升级只更新全局包，profile 副本的 `dist` 可能被 pnpm 复用旧文件，导致刷新 profile 后页脚仍显示上一版（如 0.3.13）。
 - 修复：启动器（dispatcher）把自身实际版本经 `DSH_CLI_VERSION` 环境变量透传给 `dsh` → runner → 客户端；页脚优先读取该值，未设置时才回退到构建期内联的 `pkg.version`。这样升级后启动页脚号始终等于启动器当前版本，不再受 profile bundle 陈旧副本影响。
 
+### 修复：API Key 输入框 Enter / 退格键无法确认
+
+- 根因：`api-key-modal` 除了 `<input>` 自身的 `onSubmit`（Enter）外，又叠加了一个全局 `useKeyboard` 的 Enter 处理并调用了 `key.preventDefault?.()`，会抢占输入框原生的 Enter / 退格路由；在部分终端上这让 Enter 无法提交、退格/删除无效。
+- 修复：移除模态里这段多余的 Enter 全局处理，只保留 `Esc`（跳过）走 `useKeyboard`，Enter 统一交给输入框原生 `onSubmit`，与主输入框/队列编辑框的标准行为一致。退格/删除由输入框原生处理。
+- 回归：新增「退格编辑后确认」与「空 Key 提示校验错误」两个用例，锁定 Enter/退格行为。
+
 ## 0.3.16
 
 ### 修复：切换模型后模型名不更新/重启回原模型

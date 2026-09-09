@@ -56,10 +56,7 @@ export function ApiKeyModal(props: {
 
   useKeyboard((key) => {
     if (!props.open()) return
-    if (key.name === "return" || key.name === "enter") {
-      key.preventDefault?.()
-      void confirm()
-    } else if (key.name === "escape") {
+    if (key.name === "escape") {
       props.onDone(false)
     }
   })
