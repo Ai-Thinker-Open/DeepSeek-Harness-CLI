@@ -3,6 +3,7 @@ import { mkdirSync, mkdtempSync, readFileSync, writeFileSync, rmSync } from "nod
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterEach, expect, test } from "bun:test"
+import pkg from "../package.json"
 import { internals as dispatcherInternals, PROFILE_NAME, run } from "../src/dsh/dispatcher"
 import { resolveBun } from "../src/dsh/portable"
 
@@ -76,6 +77,9 @@ test("dispatcher reuses a reachable harness and runs the client directly", async
   expect(calls[0]?.command).toBe(resolveBun())
   expect(calls[0]?.options.env?.DSH_URL).toBe("http://127.0.0.1:3999")
   expect(calls[0]?.options.env?.DSH_CWD).toBe(process.cwd())
+  // The launcher forwards its own version so the badge stays correct even when
+  // the tui profile bundle the client runs from is still on an older copy.
+  expect(calls[0]?.options.env?.DSH_CLI_VERSION).toBe(pkg.version)
 })
 
 test("dispatcher forwards -c to the client when the harness is reachable", async () => {
@@ -106,6 +110,7 @@ test("dispatcher boots dsh --profile tui when the profile already has the bundle
   expect(calls[0]?.command).toBe("dsh")
   expect(calls[0]?.args).toEqual(["--profile", "tui", "--port", "3199"])
   expect(calls[0]?.options.env).toBe(process.env)
+  expect(process.env.DSH_CLI_VERSION).toBe(pkg.version)
   expect(syncCalls.map((c) => c.args[0])).not.toContain("plugin")
 })
 

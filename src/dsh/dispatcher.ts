@@ -463,6 +463,16 @@ export async function run(args: readonly string[]): Promise<number> {
     return 1
   }
 
+  // The terminal client always runs from the tui profile bundle's `dist` (a
+  // separate copy of this package), so its build-baked `pkg.version` can lag
+  // the launcher right after an upgrade — the profile re-register below
+  // rebuilds the bundle, but pnpm may keep a stale copy, so the footer badge
+  // would still print the old version (0.3.13 → …). Pass the launcher's actual
+  // version down through `dsh`/the runner to the client; the client reads it
+  // first and only falls back to its baked `pkg.version` when unset (e.g. when
+  // `dsh --profile tui` is run directly, skipping this launcher).
+  process.env.DSH_CLI_VERSION = PKG_VERSION
+
   // Stage any newer dsh-cli / harness version in the background before we
   // probe/launch; the next launch applies it. Skipped when disabled.
   if (process.env.DSH_NO_UPDATE_CHECK !== "1") {

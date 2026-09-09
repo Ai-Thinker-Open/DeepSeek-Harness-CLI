@@ -17,3 +17,21 @@ test("home screen renders brand and version", async () => {
   expect(frame).toContain("● 提示")
   expect(frame).toContain("DeepSeek-V4-Flash")
 })
+
+test("home screen version badge honors the DSH_CLI_VERSION override", async () => {
+  // The badge reads the launcher-supplied DSH_CLI_VERSION first and falls back
+  // to its own build-baked version, so an upgraded launcher can show the new
+  // version even when the tui profile bundle's dist is still the old copy.
+  const saved = process.env.DSH_CLI_VERSION
+  process.env.DSH_CLI_VERSION = "9.9.9-launcher"
+  try {
+    const app = await testRender(() => <Home motion={false} loading={false} />, { width: 80, height: 32 })
+    await app.renderOnce()
+    const frame = app.captureCharFrame()
+    expect(frame).toContain("v9.9.9-launcher")
+    expect(frame).not.toContain(`v${pkg.version}`)
+  } finally {
+    if (saved === undefined) delete process.env.DSH_CLI_VERSION
+    else process.env.DSH_CLI_VERSION = saved
+  }
+})

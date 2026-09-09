@@ -85,7 +85,7 @@ export function Footer() {
       </text>
       <McpStatus />
       <box flexGrow={1} />
-      <text fg={theme.textMuted}>v{pkg.version}</text>
+      <text fg={theme.textMuted}>v{process.env.DSH_CLI_VERSION ?? pkg.version}</text>
     </box>
   )
 }

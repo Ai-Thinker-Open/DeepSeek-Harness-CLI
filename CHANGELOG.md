@@ -7,6 +7,11 @@
 - 根因：dsh 0.1.2 的 `session/modelCatalog` 返回的当前/默认选择字段是 **`default`**（可路由 provider 是 `routableProviders`），而客户端类型与读取处用的是 **`current`**/`routable`，导致 `catalog.current` 恒为 undefined。
 - 修复：客户端新增 `fetchModelCatalog()`，把服务端 `default` → 客户端 `current`、`routableProviders` → `routable`，`listModels` 与 `describe()` 统一使用。切换模型（`session/selectModel` 持久化到默认选择）后模型名能即时更新，`dsh-cli -c` 恢复时也能读到已切换的模型。
 
+### 修复：升级后启动页版本号仍显示旧版本
+
+- 根因：TUI 始终运行在 tui profile 里的 bundle 副本（`~/.dsh/profiles/tui/.../dist/cli.js`），其版本号在**构建期**内联进 `dist`。`npm install -g` / 静默升级只更新全局包，profile 副本的 `dist` 可能被 pnpm 复用旧文件，导致刷新 profile 后页脚仍显示上一版（如 0.3.13）。
+- 修复：启动器（dispatcher）把自身实际版本经 `DSH_CLI_VERSION` 环境变量透传给 `dsh` → runner → 客户端；页脚优先读取该值，未设置时才回退到构建期内联的 `pkg.version`。这样升级后启动页脚号始终等于启动器当前版本，不再受 profile bundle 陈旧副本影响。
+
 ## 0.3.15
 
 ### 修复
