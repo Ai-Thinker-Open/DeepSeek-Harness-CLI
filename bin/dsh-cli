@@ -21,6 +21,7 @@ if (!process.isBun) {
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..")
 const dispatcher = join(root, "dist", "dispatcher.js")
+const applier = join(root, "dist", "apply-update.js")
 
 if (!existsSync(dispatcher)) {
   process.stderr.write("dsh-cli: building dist/ first (bun run scripts/build.ts)...\n")
@@ -28,15 +29,40 @@ if (!existsSync(dispatcher)) {
   if (build.status !== 0) process.exit(build.status ?? 1)
 }
 
+// Apply any update staged by a previous launch BEFORE importing the dispatcher,
+// so the freshly-installed version (dsh-cli or the harness) is picked up by
+// THIS launch — one restart switches directly to the new build instead of the
+// old two-launch dance (apply, then restart again). The apply still runs before
+// the terminal renderer, so Windows' opentui.dll lock is not a concern.
+let appliedPreImport = null
+if (existsSync(applier)) {
+  const apply = spawnSync(process.execPath, [applier], {
+    stdio: ["ignore", "pipe", "inherit"],
+    windowsHide: true,
+  })
+  if (apply.status === 0) {
+    try {
+      const parsed = JSON.parse(String(apply.stdout ?? "{}"))
+      if (parsed && Array.isArray(parsed.updated)) appliedPreImport = parsed
+    } catch {
+      // Malformed output: treat as no-pre-import-apply and fall back below.
+    }
+  }
+}
+
 const { run, bootstrapAll, applyPendingUpdates } = await import(pathToFileURL(dispatcher).href)
-// Apply any update staged by a previous launch before booting (next-launch
-// model: the freshly-installed package is what this launch uses, and no
-// renderer is alive yet so Windows' opentui.dll lock is not a concern).
-const applied = applyPendingUpdates()
-if (applied.updated.length > 0) {
-  // The upgrade only takes effect on the next launch, so surface a restart
-  // hint in the upcoming session instead of silently running the old build.
-  process.env.DSH_RESTART_FOR_UPDATE = applied.updated.map((u) => `${u.pkg}@${u.version}`).join(" | ")
+if (appliedPreImport !== null) {
+  // The pre-import apply ran: any dsh-cli/harness update took effect this launch.
+} else {
+  // Older install (no apply-update.js) or the applier failed: apply in place and
+  // hint a restart, since the dispatcher (already loaded above) keeps running
+  // the previous build this launch.
+  const applied = applyPendingUpdates()
+  if (applied.updated.length > 0) {
+    // The upgrade only takes effect on the next launch, so surface a restart
+    // hint in the upcoming session instead of silently running the old build.
+    process.env.DSH_RESTART_FOR_UPDATE = applied.updated.map((u) => `${u.pkg}@${u.version}`).join(" | ")
+  }
 }
 // First-run resources (Ai-Thinker skills + FlashKey MCP) install best-effort
 // before the harness boots so the profile rows exist before dsh starts.

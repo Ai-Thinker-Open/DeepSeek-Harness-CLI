@@ -34,7 +34,13 @@ const cli = await Bun.build({
 // Node-compatible dsh bundle plugin entry points: loaded inside the official
 // `dsh` process (runner + startup), plus the dispatcher used by bin/dsh-cli.
 const dsh = await Bun.build({
-  entrypoints: ["src/dsh/startup.ts", "src/dsh/runner.ts", "src/dsh/dispatcher.ts", "src/dsh/silent-update-agent.ts"],
+  entrypoints: [
+    "src/dsh/startup.ts",
+    "src/dsh/runner.ts",
+    "src/dsh/dispatcher.ts",
+    "src/dsh/silent-update-agent.ts",
+    "src/dsh/apply-update.ts",
+  ],
   outdir: "dist",
   naming: "[name].js",
   target: "node",
@@ -47,4 +53,4 @@ if (!cli.success || !dsh.success) {
   process.exit(1)
 }
 
-console.log("built dist/cli.js, dist/startup.js, dist/runner.js, dist/dispatcher.js, dist/silent-update-agent.js")
+console.log("built dist/cli.js, dist/startup.js, dist/runner.js, dist/dispatcher.js, dist/silent-update-agent.js, dist/apply-update.js")
