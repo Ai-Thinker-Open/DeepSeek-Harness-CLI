@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.4.0
+
+### 适配：升级到 DeepSeek Harness `@deepseek-ai/dsh` 0.1.5
+
+- host 插件依赖从 `^0.1.2-rc.1` 整体升到 `^0.1.5-rc.1`（profile 内与 dsh-base 0.1.5 保持同版本线，避免错配）。
+- **`system-prompt` 配置键改名**：dsh 0.1.5 把 `persona` 拆成 `personaPrefix`/`personaSuffix`（`@deepseek-ai/dsh-system-prompt`），`cordis.patch.yml` 已改用 `personaPrefix`。
+- **`commands/execute` 的 `images` 需要判别字段**：0.1.5 把该数组改为 image/file 联合类型，图片必须带 `type: "image"`；`ImageCommandImage` 与命令发图路径已补上。
+- 兼容性核对（0.1.2-rc.1 → 0.1.5-rc.1）已确认其余契约**未破坏**：`/api/remote.mux` 复用协议、api-gateway 的 `/api/<method>` 分发、`session/modelCatalog` 结果结构、`session/create`·`selectModel`·`credentials/*`·`settings/*`·`skills/list` 参数/结果、`connection.authenticatedUrl`/`authorizeIndex`、`webServer.register`、`appExit`/`cmdlineArgs` 服务、dsh-base 的行 id 集合（仅移除 dsh-cli 未使用的 `tool-str-replace-editor`）。
+- 其余上游变更为**新增**（远端方法新增 `workspaceFiles/*`、`fileUploads/upload`、`goals/get`、`sessionFeedback/record`；`session/prompt`/`session/updateQueue` 新增 `file` 变体；`session/list` 新增 `inbox` 投影），对 dsh-cli 向后兼容。
+
 ## 0.3.20
 
 ### 修复：首页发出的第一条消息未在会话页显示

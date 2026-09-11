@@ -414,6 +414,7 @@ export function Prompt(props: {
     }
     if (!props.onCommand) return
     const commandImages: ImageCommandImage[] = images.map((img) => ({
+      type: "image",
       mediaType: img.mediaType,
       data: img.data,
       ...(img.name ? { name: img.name } : {}),

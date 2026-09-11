@@ -39,7 +39,8 @@ test("bundle patch declares the terminal surface over dsh-base", () => {
   expect(byId.get("webserver")?.inject).toContain("tuiStartup")
   expect(byId.get("tui-runner")?.inject).toEqual(["tuiStartup", "webServer"])
   expect(byId.get("hmr")?.disabled).toBe(true)
-  expect(String(byId.get("system-prompt")?.config?.persona)).toContain("{{model}}")
+  // dsh 0.1.5 renamed `persona` to personaPrefix/Suffix on dsh-system-prompt.
+  expect(String(byId.get("system-prompt")?.config?.personaPrefix)).toContain("{{model}}")
   // dsh-base already composes these (and `dsh-host-apiproxy` was removed in
   // dsh 0.1.2-rc.1); re-declaring them would collide or fail to resolve.
   expect(byId.get("api-gateway")).toBeUndefined()
@@ -56,6 +57,9 @@ test("patch declares the standard host services a full surface composes", () => 
     ["message-feedback", "@deepseek-ai/dsh-message-feedback"],
     ["plugin-inventory", "@deepseek-ai/dsh-host-plugin-inventory"],
     ["cordis-host-runner", "@deepseek-ai/dsh-cordis-host-runner"],
+    // dsh 0.1.5: the session controller injects `fileUploads`, so the surface
+    // must provide this row or the loader leaves the controller pending.
+    ["file-upload", "@deepseek-ai/dsh-client-file-upload"],
   ]
   for (const [id, pkg] of expected) {
     expect(byId.get(id)?.name, `missing host row ${id}`).toBe(pkg)

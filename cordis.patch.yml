@@ -12,7 +12,9 @@
 
 - id: system-prompt
   config:
-    persona: >-
+    # dsh 0.1.5 renamed the single `persona` key to a personaPrefix/Suffix pair
+    # (@deepseek-ai/dsh-system-prompt); the deployment persona text is the prefix.
+    personaPrefix: >-
       You are a coding agent powered by the {{model}} model. Your working directory is {{cwd}}.
       Always reply in 简体中文 (Simplified Chinese) by default. Only respond in another language
       when the user explicitly asks for it.
@@ -79,6 +81,13 @@
     # surface needs the same rows or the client gets 404 on `/api/*`.
     - id: session-controller
       name: '@deepseek-ai/dsh-api-session-controller'
+
+    # dsh 0.1.5's session controller injects the `fileUploads` service (staged
+    # prompt-file receipts); without this provider the loader leaves the
+    # controller pending and the tree fails to boot. The web surface declares the
+    # same row.
+    - id: file-upload
+      name: '@deepseek-ai/dsh-client-file-upload'
 
     - id: settings-controller
       name: '@deepseek-ai/dsh-api-settings-controller'

@@ -169,8 +169,11 @@ export interface ImageContentPart {
 /** One item of a session prompt content list. */
 export type PromptContentPart = { type: "text"; text: string } | ImageContentPart
 
-/** Image wire shape for `commands/execute` (same as an image block minus type). */
+/** Image wire shape for `commands/execute`. dsh 0.1.5 requires the
+ *  `type: "image"` discriminant: the images array is now a union of image and
+ *  file parts, so the tag is mandatory. */
 export interface ImageCommandImage {
+  type: "image"
   mediaType: ImageMediaType
   data: string
   name?: string
