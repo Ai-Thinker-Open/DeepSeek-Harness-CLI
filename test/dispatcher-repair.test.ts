@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs"
 import { join } from "node:path"
 import { load as parseYaml } from "js-yaml"
 import { expect, test } from "bun:test"
-import { parseComposedLayerIds, removeListItemById, stripFlashKeyMcp } from "../src/dsh/dispatcher"
+import { normalizeProfilePatch, parseComposedLayerIds, removeListItemById, stripFlashKeyMcp } from "../src/dsh/dispatcher"
 
 test("parseComposedLayerIds reports a duplicate id across layers", () => {
   const dump = `# == @deepseek-ai/dsh-base
@@ -147,4 +147,34 @@ test("stripFlashKeyMcp keeps other rows and is a no-op when absent", () => {
 
   const without = `- id: tui-runner\n  name: '@ai-thinker/deepseek-harness-cli'\n`
   expect(stripFlashKeyMcp(without)).toBe(without)
+})
+
+test("normalizeProfilePatch keeps a comments-only patch a valid top-level array", () => {
+  // Reproduces the regression: stripping the only row would leave comments only,
+  // which parses to null and aborts profile boot
+  // ("must be a top-level YAML array of loader patch entries").
+  const patch = `# profile patch
+- insert:
+    - id: mcp-flashkey
+      name: '@deepseek-ai/dsh-mcp-client'
+      config:
+        serverName: flashkey
+        url: http://127.0.0.1:8100/sse
+`
+  const out = normalizeProfilePatch(patch)
+  expect(out.includes("mcp-flashkey")).toBe(false)
+  expect(Array.isArray(parseYaml(out))).toBe(true)
+
+  // An already-broken (comments-only / empty) patch is repaired too.
+  const broken = "# just a comment\n"
+  const fixed = normalizeProfilePatch(broken)
+  expect(Array.isArray(parseYaml(fixed))).toBe(true)
+
+  const empty = normalizeProfilePatch("")
+  expect(Array.isArray(parseYaml(empty))).toBe(true)
+})
+
+test("normalizeProfilePatch leaves a patch with real rows untouched", () => {
+  const patch = `- id: tui-runner\n  name: '@ai-thinker/deepseek-harness-cli'\n`
+  expect(normalizeProfilePatch(patch)).toBe(patch)
 })

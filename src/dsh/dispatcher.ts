@@ -392,14 +392,43 @@ export function stripFlashKeyMcp(patchText: string): string {
   return out.join("\n")
 }
 
-/** Remove the stale FlashKey MCP row from the tui profile patch (best-effort). */
-function cleanupFlashKeyProfile(): void {
+/** True when the patch text has a top-level YAML array item (or an explicit
+ *  empty array). A file with only comments/blank lines parses to `null`, which
+ *  the loader rejects ("must be a top-level YAML array of loader patch
+ *  entries"). */
+function hasTopLevelPatchEntry(text: string): boolean {
+  for (const raw of text.split(/\r?\n/)) {
+    const line = raw.trim()
+    if (line === "" || line.startsWith("#")) continue
+    return line === "[]" || line === "-" || /^-\s/.test(line)
+  }
+  return false
+}
+
+/**
+ * Strip the stale FlashKey row and guarantee the result is still a valid
+ * top-level YAML array. Removing the only entry would otherwise leave a
+ * comments-only file, which parses to `null` and aborts profile boot — so an
+ * explicit `[]` is appended in that case (this also repairs a profile that an
+ * earlier build already left comments-only).
+ */
+export function normalizeProfilePatch(patchText: string): string {
+  const stripped = stripFlashKeyMcp(patchText)
+  if (hasTopLevelPatchEntry(stripped)) return stripped
+  const head = stripped.trimEnd()
+  return head === "" ? "[]\n" : `${head}\n[]\n`
+}
+
+/** Remove the stale FlashKey row / repair an empty profile patch (best-effort). */
+function repairProfilePatch(): void {
   const patch = join(profileDir(), "cordis.patch.yml")
   try {
     const text = readFileSync(patch, "utf8")
-    const cleaned = stripFlashKeyMcp(text)
-    if (cleaned !== text) writeFileSync(patch, cleaned)
-    if (isDebugEnabled() && cleaned !== text) debug("[dsh-cli] removed stale mcp-flashkey row from the tui profile patch")
+    const cleaned = normalizeProfilePatch(text)
+    if (cleaned !== text) {
+      writeFileSync(patch, cleaned)
+      if (isDebugEnabled()) debug("[dsh-cli] repaired the tui profile patch (dropped a stale mcp-flashkey row and/or restored a top-level array)")
+    }
   } catch {
     // Best-effort: a missing/unreadable patch is fine.
   }
@@ -553,7 +582,7 @@ export async function run(args: readonly string[]): Promise<number> {
   // Drop the stale mcp-flashkey row that pre-0.3.14 bootstrap left in an
   // existing profile's cordis.patch.yml, so /mcp no longer lists the removed
   // FlashKey server. Best-effort and idempotent.
-  cleanupFlashKeyProfile()
+  repairProfilePatch()
   // The running CLI comes from the tui profile bundle, a separate copy of this
   // package. A plain `npm install -g` (and the silent-updater) only update the
   // global package, leaving the profile copy on the old version — so the launcher

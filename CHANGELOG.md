@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.4.1
+
+### 修复：FlashKey 清理把 profile 补丁清空导致启动失败
+
+- 根因：0.4.0 清理 `mcp-flashkey` 时，如果不小心把 profile 的 `cordis.patch.yml` 清成**只剩注释**，YAML 会解析为 `null` 而不是顶层数组，dsh 直接报错拒绝启动：`overlay .../profiles/tui/cordis.patch.yml must be a top-level YAML array of loader patch entries`。
+- 修复：新增 `normalizeProfilePatch()` —— 移除 FlashKey 行后若补丁不再含顶层数组项，则补一个显式 `[]`，保证始终是合法顶层数组；并且**会自动修复已经被上一版清理坏的注释-only 补丁**（下次启动自愈）。
+- 如果你的 profile 已经坏了、暂时起不来，可先手动修：
+  `printf '\n[]\n' >> ~/.dsh/profiles/tui/cordis.patch.yml`
+
 ## 0.4.0
 
 ### 适配：升级到 DeepSeek Harness `@deepseek-ai/dsh` 0.1.5
