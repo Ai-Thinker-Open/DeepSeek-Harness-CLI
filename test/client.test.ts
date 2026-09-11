@@ -54,3 +54,41 @@ test("unary RPC payload is wrapped under the gateway args envelope", async () =>
     { method: "/api/credentials/set credentials/set", payload: { args: { ref: "API_KEY", value: "secret" } } },
   ])
 })
+
+test("catalog model ids resolve to their display names for the badge", async () => {
+  const client = new HarnessClient("http://127.0.0.1:3080")
+  client.call = (async (method: string) => {
+    if (method === "session/modelCatalog") {
+      return {
+        default: { provider: "deepseek-official", model: "deepseek-flash" },
+        routableProviders: ["deepseek-official"],
+        groups: [
+          {
+            id: "deepseek-official",
+            name: "DeepSeek",
+            models: [
+              // dsh's v4.1 flash model: the id gives no hint of the version.
+              { id: "deepseek-flash", name: "DeepSeek-V41-Flash" },
+              { id: "deepseek-v4-flash", name: "DeepSeek-V4-Flash" },
+            ],
+          },
+        ],
+        failures: [],
+      }
+    }
+    if (method === "session/canOpenWorkspacePath") return true
+    throw new Error(`unexpected ${method}`)
+  }) as typeof client.call
+
+  // Before any catalog read there is no mapping to apply.
+  expect(client.modelLabel("deepseek-flash")).toBe("deepseek-flash")
+
+  const info = await client.describe()
+  expect(info.model).toBe("DeepSeek-V41-Flash")
+
+  // The mapping is retained for ids that arrive later (request/context,
+  // selectModel), and unknown ids fall back to themselves.
+  expect(client.modelLabel("deepseek-flash")).toBe("DeepSeek-V41-Flash")
+  expect(client.modelLabel("deepseek-v4-flash")).toBe("DeepSeek-V4-Flash")
+  expect(client.modelLabel("mystery-model")).toBe("mystery-model")
+})

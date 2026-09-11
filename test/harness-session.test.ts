@@ -131,6 +131,13 @@ class FakeClient implements HarnessClientLike {
     return { selected: { provider: "p", model: "m" } }
   }
 
+  /** Model id -> display name, as the real client learns from the catalog. */
+  modelLabels = new Map<string, string>()
+
+  modelLabel(id: string): string {
+    return this.modelLabels.get(id) ?? id
+  }
+
   async renameSession() {
     return { title: "t" }
   }
@@ -273,6 +280,26 @@ test("a live request/context model is not overwritten by a catalog refresh", asy
   // A later catalog-based refresh must NOT revert to the generic default.
   await session.refreshHostModel()
   expect(session.modelName()).toBe("DeepSeek-V4-Flash-Vision-Exp")
+})
+
+test("request/context renders the catalog display name for a model id", async () => {
+  const client = new FakeClient()
+  const session = createHarnessSession(client, "/tmp")
+
+  await session.ensureSession()
+  await tick()
+  // The harness reports ids in request/context and only the catalog carries the
+  // friendly name, so the badge must resolve `deepseek-flash` (dsh's v4.1 flash
+  // model) to `DeepSeek-V41-Flash` rather than showing the bare id.
+  client.modelLabels.set("deepseek-flash", "DeepSeek-V41-Flash")
+  client.push(frame("session/event", { sessionId: "s-1", event: ev("request/context", { model: "deepseek-flash" }, 4) }))
+  await tick()
+  expect(session.modelName()).toBe("DeepSeek-V41-Flash")
+
+  // An id the catalog does not know still falls back to the raw id.
+  client.push(frame("session/event", { sessionId: "s-1", event: ev("request/context", { model: "mystery-model" }, 5) }))
+  await tick()
+  expect(session.modelName()).toBe("mystery-model")
 })
 
 test("reconnect clears the interrupted status once frames flow again", async () => {

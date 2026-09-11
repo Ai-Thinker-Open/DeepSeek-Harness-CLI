@@ -11,8 +11,10 @@ import { Socket } from "node:net"
 import { homedir } from "node:os"
 import { dirname, join } from "node:path"
 import { fileURLToPath, pathToFileURL } from "node:url"
+import { dshVersionProblemFor, parseDshVersion } from "./dsh-version"
 import { bunVersionProblemFor, nodeVersionProblem } from "./node-version"
 import { portableSpawnOptions, portableSpawnSyncOptions, resolveBun } from "./portable"
+import { renderLibProblem } from "./render-lib"
 import { debug, isDebugEnabled } from "../debug"
 export { applyPendingUpdates } from "./silent-update"
 export { bootstrapAll } from "./bootstrap"
@@ -231,6 +233,25 @@ function cachedNpxDsh(): string | undefined {
   return undefined
 }
 
+/**
+ * Version reported by the resolved dsh (`dsh --version`), or `undefined` when
+ * the probe fails — an unknown version never blocks startup (see
+ * `dsh-version.ts`).
+ */
+function readDshVersion(dsh: { bin: string; prefix: string[] }): string | undefined {
+  try {
+    const probe = internals.spawnSync(
+      dsh.bin,
+      [...dsh.prefix, "--version"],
+      portableSpawnSyncOptions({ stdio: ["ignore", "pipe", "ignore"] }),
+    )
+    if (probe.status !== 0) return undefined
+    return parseDshVersion(probe.stdout == null ? "" : String(probe.stdout))
+  } catch {
+    return undefined
+  }
+}
+
 function exitCodeOf(child: ReturnType<typeof spawn>): Promise<number> {
   return new Promise((resolveExit) => {
     child.on("error", () => resolveExit(1))
@@ -271,7 +292,8 @@ export const internals: {
   spawn: typeof spawn
   spawnSync: typeof spawnSync
   stageUpdates: typeof stageUpdates
-} = { probe, spawn, spawnSync, stageUpdates }
+  renderLibProblem: typeof renderLibProblem
+} = { probe, spawn, spawnSync, stageUpdates, renderLibProblem }
 
 interface ComposedRow {
   id: string
@@ -536,6 +558,17 @@ export async function run(args: readonly string[]): Promise<number> {
     return 1
   }
 
+  // The client's renderer is a per-platform native package chosen at install
+  // time, so a node_modules tree installed on another OS has no copy for this
+  // platform and crashes inside OpenTUI after the harness has already taken
+  // over the terminal. Refuse up front with the real cause. The dsh profile
+  // path is covered separately by the runner, which owns that client copy.
+  const renderProblem = internals.renderLibProblem()
+  if (renderProblem) {
+    process.stderr.write(`[dsh-cli] ${renderProblem}\n`)
+    return 1
+  }
+
   // The terminal client always runs from the tui profile bundle's `dist` (a
   // separate copy of this package), so its build-baked `pkg.version` can lag
   // the launcher right after an upgrade — the profile re-register below
@@ -577,6 +610,15 @@ export async function run(args: readonly string[]): Promise<number> {
     process.stderr.write(
       "[dsh-cli] 未检测到全局 dsh，将通过 npx 下载 @deepseek-ai/dsh（首次联网，可能需要几分钟）；或先执行 npm install -g @deepseek-ai/dsh 以加速启动\n",
     )
+  }
+  // A dsh older than this bundle supports cannot load the patch rows below, and
+  // the failure surfaces inside the Cordis loader as a raw "Cannot find
+  // package" stack. Fail here with the actual cause instead. The npx fallback
+  // always resolves the latest release, so only a PATH/npx-cache dsh is checked.
+  const dshProblem = dsh.bin === "npx" ? null : dshVersionProblemFor(readDshVersion(dsh))
+  if (dshProblem) {
+    process.stderr.write(`[dsh-cli] ${dshProblem}\n`)
+    return 1
   }
   const profileRegistered = normalizeProfileBundles()
   // Drop the stale mcp-flashkey row that pre-0.3.14 bootstrap left in an

@@ -59,13 +59,14 @@ async function renderSession(opts: {
   queue?: () => QueueItem[]
   onQueueAction?: (itemId: string, action: QueueAction) => void
   kittyKeyboard?: boolean
+  model?: () => string
 } = {}) {
   const app = await testRender(
     () => (
       <SessionScreen
         messages={() => opts.messages ?? []}
         mode={() => "workspace-write"}
-        model={() => "DeepSeek-V4-Flash"}
+        model={opts.model ?? (() => "DeepSeek-V4-Flash")}
         toast={() => null}
         stats={() => opts.stats ?? EMPTY_STATS}
         statusText={() => opts.statusText ?? ""}
@@ -1858,7 +1859,7 @@ test("/image attaches a file and the next submit sends image content", async () 
 
   // The command result panel confirms the attachment.
   expect(app.captureCharFrame()).toContain("已添加")
-  expect(notices).toContain("当前模型可能不支持图片，请切换到视觉模型（如 DeepSeek-V4-Flash-Vision-Exp）")
+  expect(notices).toContain("当前模型可能不支持图片，请切换到支持图片的模型（如 DeepSeek-V41-Flash）")
 
   app.mockInput.typeText("看看这张图")
   await new Promise((resolve) => setTimeout(resolve, 80))
@@ -1874,6 +1875,33 @@ test("/image attaches a file and the next submit sends image content", async () 
   const image = sent[0]![0]
   if (image?.type !== "image") throw new Error("expected an image content part")
   expect(image.data).toBe(png.toString("base64"))
+})
+
+test("/image does not warn on an image-capable model without a vision marker", async () => {
+  // dsh's v4.1 flash model is id `deepseek-flash` / name `DeepSeek-V41-Flash`
+  // with inputModalities ["text","image"], so the composer must stay silent.
+  const png = Buffer.from(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==",
+    "base64",
+  )
+  const dir = mkdtempSync(join(tmpdir(), "dsh-img-cap-"))
+  const file = join(dir, "shot.png")
+  writeFileSync(file, png)
+  const notices: string[] = []
+  const app = await renderSession({
+    model: () => "DeepSeek-V41-Flash",
+    onNotice: (text) => notices.push(text),
+  })
+  await app.renderOnce()
+
+  app.mockInput.typeText(`/image ${file}`)
+  await new Promise((resolve) => setTimeout(resolve, 80))
+  app.mockInput.pressEnter()
+  await new Promise((resolve) => setTimeout(resolve, 200))
+  await app.renderOnce()
+
+  expect(app.captureCharFrame()).toContain("已添加")
+  expect(notices.filter((text) => text.includes("不支持图片"))).toHaveLength(0)
 })
 
 test("ctrl+v pastes an image from the host clipboard into the draft", async () => {

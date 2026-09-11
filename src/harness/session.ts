@@ -559,7 +559,9 @@ export function createHarnessSession(
         const ctx = ev.data as { provider?: string; model?: string }
         const name = ctx.model ?? ctx.provider
         if (name) {
-          setModelName(name)
+          // The event carries the model id; render its catalog display name
+          // (e.g. `deepseek-flash` -> `DeepSeek-V41-Flash`).
+          setModelName(client.modelLabel(name))
           modelNameLive = true
         }
         break
@@ -1730,7 +1732,7 @@ export function createHarnessSession(
    */
   async function refreshModelName(): Promise<void> {
     const catalog = await listModels()
-    if (!modelNameLive && catalog?.current?.model) setModelName(catalog.current.model)
+    if (!modelNameLive && catalog?.current?.model) setModelName(client.modelLabel(catalog.current.model))
   }
 
   /** Switch the session's LLM model; returns false on failure. */
@@ -1739,7 +1741,7 @@ export function createHarnessSession(
     try {
       const res = await client.selectModel(sessionId, provider, model, reasoningEffort)
       if (res.selected.model) {
-        setModelName(res.selected.model)
+        setModelName(client.modelLabel(res.selected.model))
         modelNameLive = true
       }
       return true

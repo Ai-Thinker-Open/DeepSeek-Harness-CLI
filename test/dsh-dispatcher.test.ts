@@ -15,6 +15,10 @@ const savedProbe = dispatcherInternals.probe
 const savedSpawn = dispatcherInternals.spawn
 const savedSpawnSync = dispatcherInternals.spawnSync
 const noopStageUpdates = () => {}
+// The render-library preflight's own logic is covered by render-lib.test.ts;
+// dispatcher tests must not depend on which platform packages this dev machine
+// happens to have installed.
+const noRenderProblem = () => null
 let profileHome: string | undefined
 
 afterEach(() => {
@@ -23,6 +27,7 @@ afterEach(() => {
   dispatcherInternals.spawn = savedSpawn
   dispatcherInternals.spawnSync = savedSpawnSync
   dispatcherInternals.stageUpdates = noopStageUpdates
+  dispatcherInternals.renderLibProblem = noRenderProblem
   if (profileHome) rmSync(profileHome, { recursive: true, force: true })
   profileHome = undefined
 })
@@ -30,6 +35,7 @@ afterEach(() => {
 // Silent-update staging is exercised in silent-update.test.ts; keep dispatcher
 // tests free of real background agent spawns unless a test opts in.
 dispatcherInternals.stageUpdates = noopStageUpdates
+dispatcherInternals.renderLibProblem = noRenderProblem
 
 function installSpawn() {
   const calls: SpawnCall[] = []
@@ -43,7 +49,9 @@ function installSpawn() {
   return { calls, children }
 }
 
-function installSpawnSync(responses: Record<string, { status: number | null }>) {
+function installSpawnSync(
+  responses: Record<string, { status: number | null; stdout?: string; stderr?: string }>,
+) {
   const calls: SyncCall[] = []
   dispatcherInternals.spawnSync = ((command: string, args: string[], _options?: unknown) => {
     calls.push({ command, args })
@@ -424,4 +432,30 @@ test("dispatcher prunes legacy dependency entries during migration", async () =>
   const manifest = JSON.parse(readFileSync(join(dir, "package.json"), "utf8"))
   expect(manifest.dependencies).toEqual({ other: "1.0.0" })
   expect(manifest.dsh.profile.bundles).toEqual(["@ai-thinker/deepseek-harness-cli"])
+})
+
+test("dispatcher boots no bundle when the resolved dsh is too old", async () => {
+  const { calls } = installSpawn()
+  const { calls: syncCalls } = installSpawnSync({
+    "--help": { status: 0 },
+    "--version": { status: 0, stdout: "0.1.2-rc.1\n" },
+  })
+  dispatcherInternals.probe = async () => false
+  writeProfile(["@ai-thinker/deepseek-harness-cli"])
+
+  await expect(run([])).resolves.toBe(1)
+
+  // The version probe ran, and the incompatible harness was never spawned.
+  expect(syncCalls.some((c) => c.args[0] === "--version")).toBe(true)
+  expect(calls).toHaveLength(0)
+})
+
+test("dispatcher refuses to start the client without a render library", async () => {
+  const { calls } = installSpawn()
+  installSpawnSync({ "--help": { status: 0 } })
+  dispatcherInternals.probe = async () => false
+  dispatcherInternals.renderLibProblem = () => "no OpenTUI render library for linux-x64"
+
+  await expect(run([])).resolves.toBe(1)
+  expect(calls).toHaveLength(0)
 })

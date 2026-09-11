@@ -1,7 +1,16 @@
 import { EventEmitter } from "node:events"
-import { expect, test } from "bun:test"
+import { afterEach, expect, test } from "bun:test"
 import { apply, Config, internals as runnerInternals } from "../src/dsh/runner"
 import { resolveBun } from "../src/dsh/portable"
+
+// The render-library preflight's own logic is covered by render-lib.test.ts;
+// here it must not depend on which platform packages this dev machine happens
+// to have installed.
+const noRenderProblem = () => null
+runnerInternals.renderLibProblem = noRenderProblem
+afterEach(() => {
+  runnerInternals.renderLibProblem = noRenderProblem
+})
 
 type SpawnCall = { command: string; args: string[]; options: { env?: Record<string, string | undefined> } }
 
@@ -75,6 +84,15 @@ test("tui-runner exits 1 when bun cannot be spawned", () => {
 test("tui-runner fails loud without webServer or appExit", () => {
   expect(() => apply(fakeCtx({}).ctx)).toThrow("webServer")
   expect(() => apply(fakeCtx({ webServer: { host: "127.0.0.1", port: 3080 }, appExit: undefined }).ctx)).toThrow("appExit")
+})
+
+test("tui-runner refuses to spawn the client without a render library", () => {
+  const { calls } = installSpawn()
+  runnerInternals.renderLibProblem = () => "no OpenTUI render library for linux-x64"
+  const { ctx, exitCalls } = fakeCtx({ webServer: { host: "127.0.0.1", port: 3080 } })
+  apply(ctx, { startup: { host: "127.0.0.1", port: 3080, cwd: "/ws", continueLast: false } })
+  expect(exitCalls).toEqual([1])
+  expect(calls).toHaveLength(0)
 })
 
 test("tui-runner Config schema accepts defaults and the tuiStartup shape", () => {

@@ -399,7 +399,14 @@ export function App(
         return view
       }
       const build = (c: ModelCatalog) => {
-        const current = c.current ? `${c.current.provider}/${c.current.model}` : "未选择"
+        // Show the catalog's friendly name, not the raw id: dsh's v4.1 flash
+        // model is id `deepseek-flash` / name `DeepSeek-V41-Flash`, so the id
+        // alone reads as an unrelated model. Falls back to the id.
+        const currentModel = c.current?.model
+        const currentName = currentModel === undefined
+          ? undefined
+          : c.groups.flatMap((group) => group.models).find((m) => m.id === currentModel)?.name ?? currentModel
+        const current = c.current ? `${c.current.provider}/${currentName}` : "未选择"
         const rows: Array<string | { text: string; onClick: () => void }> = [
           `当前模型：${current}`,
           "",

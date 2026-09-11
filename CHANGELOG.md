@@ -1,5 +1,35 @@
 # Changelog
 
+## 0.4.2
+
+### 修复：启动前拦截「dsh 版本不匹配」与「跨系统 node_modules」，给出根因而非原始堆栈
+
+- 根因一（dsh 版本过低）：bundle 的 `cordis.patch.yml` 行引用的插件包，必须存在于**已解析 dsh 自身**的依赖闭包里（loader 用裸标识符从 dsh 自己的 `node_modules` 动态 import）。例如 `@deepseek-ai/dsh-client-file-upload` 是经 `dsh → dsh-web-app → dsh-client-file-upload` 传递进来的，0.1.2 的 dsh 两者都没有 —— 于是 loader 直接抛 `Cannot find package '@deepseek-ai/dsh-client-file-upload'`（或 `duplicate loader entry id`），把真正原因藏起来。
+  - 新增 `src/dsh/dsh-version.ts`：`MIN_DSH_VERSION = "0.1.5-rc.1"`。启动时探测 `dsh --version`，低于该版本则打印明确修复命令（`npm i -g @deepseek-ai/dsh@0.1.5-rc.1`）并以 1 退出；npx 回退路径始终取最新版，跳过检查。探测失败或版本无法解析时**不拦截**启动（缺省放行）。
+- 根因二（跨系统 node_modules）：OpenTUI 渲染库是按平台安装的 optionalDependency（`@opentui/core-<os>-<arch>[-musl]`）。在 Windows 装好却在 WSL 里运行（或复制了另一系统的 node_modules）时，当前平台的包并不存在，客户端会在 harness 已接管终端之后才在渲染器深处抛 `Cannot find module '@opentui/core-linux-x64'`。
+  - 新增 `src/dsh/render-lib.ts`：按平台/架构列出候选包名，用 ESM 解析（`import.meta.resolve`，与客户端同解析条件、同作用域）确认其是否存在，缺失则在 spawn 客户端之前给出「node_modules 是给另一个系统装的」提示。dispatcher（直接拉起客户端）与 runner（经 profile 启动客户端）两条路径都已覆盖。
+  - 有意不用 `require.resolve`：OpenTUI 平台包只导出 `bun`/`import` 条件，CJS 解析对**已安装**的包也会报 `ERR_PACKAGE_PATH_NOT_EXPORTED`，会造成误报。
+- 两个检查均通过可注入的 `internals` seam 接入（便于测试），并补充单测：`test/dsh-version.test.ts`、`test/render-lib.test.ts`，以及 dispatcher/runner 的失败路径用例。
+
+### 修复：deepseek-v4.1-flash（`deepseek-flash` / `DeepSeek-V41-Flash`）被误报「可能不支持图片」
+
+- 根因：composer 判断图片能力用的是模型名启发式 —— 名字里必须出现 `vision`/`multimodal`/`omni`/`vl` 才认为支持图片。dsh 0.1.5 的新默认模型 `deepseek-flash`（显示名 `DeepSeek-V41-Flash`）在 `@deepseek-ai/dsh-llm-deepseek` 的 `DEFAULT_MODELS` 里声明的是 `inputModalities: ["text","image"]`，但名字里没有这些标记词，于是 dsh-cli 贴图时会误报「当前模型可能不支持图片，请切换到视觉模型」，让用户以为该模型不被支持。
+- 背景：harness 并未把 `inputModalities` 暴露给 API 客户端 —— `session/modelCatalog` 每条只返回 `id`/`name`/`description`/`reasoning`；`imageLimits` 投影是附件存储的**静态**媒体类型表（不随模型变化），不是按模型的能力。因此客户端只能按 id/名字判断，这正是该判断需要集中管理的原因。
+- 修复：新增 `src/harness/model.ts` 的 `modelSupportsImages()`，把判断收敛到一处 —— ①显式列出 dsh 声明支持图片的模型（比较时忽略大小写与 `-`/`.`/`_`/空格，因此 catalog id `deepseek-flash`、显示名 `DeepSeek-V41-Flash`、写法 `deepseek-v4.1-flash` 均可命中）；②保留原有的 `vision|multimodal|omni|vl` 关键字启发式。两者都不匹配仍按「不支持」处理（保持提示，最终由 harness 裁决）。`provider/model` 前缀会被忽略。
+- 提示文案同步改为指向当前支持图片的模型（如 `DeepSeek-V41-Flash`）。新增单测 `test/model-capability.test.ts`，并在 `test/session.test.tsx` 增加「该模型贴图不再误报」的集成用例。
+
+### 修复：模型显示的是原始 id（`deepseek-flash`）而不是模型名（`DeepSeek-V41-Flash`）
+
+- 根因：harness 只在 `session/modelCatalog` 的**分组条目**里给出模型友好名（`name`），而在真正驱动界面显示的三处位置给的都是 **id**：`request/context.model`、`catalog.default.model`（即"当前模型"）、`selectModel` 的返回值。dsh-cli 直接把这些 id 原样写进 `modelName`，于是 composer 右下角显示的是 `deepseek-flash` —— 完全看不出这是 v4.1 flash 模型（模型名 `DeepSeek-V41-Flash` 里的 "V41" 才是版本信息）。`dsh-cli` 因此被感觉成"没有 deepseek-v4.1-flash 的模型显示"。
+- 修复：在 `src/harness/client.ts` 里把 **id → 友好名** 的映射集中到客户端（每次读取 catalog 时记录，`modelLabel(id)` 查询，未知 id 原样返回），并在四个显示点统一应用：
+  - `describe()` 的 `HostDescribe.model`（首页徽标，改动后语义为**显示名**）；
+  - `request/context` 事件（会话中的徽标）；
+  - `refreshModelName()`（resume/fork 后的补齐）；
+  - `selectModel()`（切换模型后的即时更新）。
+- `/model` 面板的「当前模型」行同样改为显示友好名（`deepseek-official/DeepSeek-V41-Flash`），与面板内 `○ DeepSeek-V41-Flash` 列表行保持一致；catalog 里查不到时回退为 id。
+- `HarnessClientLike` 新增 `modelLabel(id)`，两个测试用 FakeClient 已同步实现。
+- 新增单测：`test/client.test.ts`（真实 `HarnessClient` 的 catalog→显示名映射与 `describe()` 结果）、`test/harness-session.test.ts`（`request/context` 的 id 解析与未知 id 回退）。
+
 ## 0.4.1
 
 ### 修复：FlashKey 清理把 profile 补丁清空导致启动失败

@@ -35,6 +35,7 @@ export interface HostDescribe {
   version: string
   cwd: string
   provider?: string
+  /** Display label for the current model (friendly catalog name, not the id). */
   model?: string
   attachedSessions: number
   canOpenPath: boolean
@@ -286,6 +287,11 @@ export interface HarnessClientLike {
   commandExecute(sessionId: string, line: string, images?: ImageCommandImage[]): Promise<CommandExecutionResult | undefined>
   listModels(sessionId: string): Promise<ModelCatalog>
   selectModel(sessionId: string, provider: string, model: string, reasoningEffort?: string): Promise<{ selected: ModelCatalog["current"] }>
+  /**
+   * Display name for a harness model id, from the last catalog read.
+   * Falls back to the id when the catalog has not been read or does not list it.
+   */
+  modelLabel(id: string): string
   renameSession(sessionId: string, title: string): Promise<{ title: string }>
   forkSession(sessionId: string): Promise<{ sessionId: string }>
   skillList(sessionId: string): Promise<{ skills: SkillEntry[] }>
@@ -379,6 +385,13 @@ export class HarnessClient implements HarnessClientLike {
   /** `clientId` of the current `$events` mux stream generation (for answering
    *  forwarded Remote events via `$events/result`). */
   private eventsClientId: string | null = null
+  /**
+   * Model id -> display name, learned from every catalog read. The harness
+   * reports ids in the places the UI needs a label (`request/context.model`,
+   * `catalog.current.model`, `selectModel`), and the friendly name only in the
+   * catalog entries, so the mapping is kept here and applied at display time.
+   */
+  private modelLabels = new Map<string, string>()
 
   /**
    * dsh >= 0.1.2-rc.1 guards the `/api` surface behind browser launch-token
@@ -509,7 +522,9 @@ export class HarnessClient implements HarnessClientLike {
     let canOpenPath = false
     try {
       const catalog = await this.fetchModelCatalog()
-      model = catalog.current?.model
+      const current = catalog.current?.model
+      // `HostDescribe.model` is a display label (see `modelLabel`), not the id.
+      model = current ? this.modelLabel(current) : undefined
     } catch {
       // The model name is refreshed later by listModels(); not fatal here.
     }
@@ -623,12 +638,25 @@ export class HarnessClient implements HarnessClientLike {
       groups: ModelGroup[]
       failures: Array<{ id: string; name: string; message: string }>
     }>("session/modelCatalog", {})
-    return {
+    const catalog: ModelCatalog = {
       current: wire.default ?? { provider: "", model: "" },
       routable: (wire.routableProviders ?? []).length > 0,
       groups: wire.groups,
       failures: wire.failures,
     }
+    // Remember id -> friendly name so display surfaces can show
+    // `DeepSeek-V41-Flash` where the harness only reports `deepseek-flash`.
+    for (const group of catalog.groups) {
+      for (const model of group.models) {
+        if (model.name) this.modelLabels.set(model.id, model.name)
+      }
+    }
+    return catalog
+  }
+
+  /** Display name for a model id from the last catalog read (see the interface). */
+  modelLabel(id: string): string {
+    return this.modelLabels.get(id) ?? id
   }
 
   listModels(sessionId: string): Promise<ModelCatalog> {

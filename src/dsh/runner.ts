@@ -16,6 +16,7 @@ import type { TuiStartupValues } from "./startup"
 import { bunVersionProblemFor } from "./node-version"
 import { applyPendingUpdates } from "./silent-update"
 import { portableSpawnOptions, portableSpawnSyncOptions, resolveBun } from "./portable"
+import { renderLibProblem } from "./render-lib"
 import { debug, isDebugEnabled } from "../debug"
 
 export const name = "tui-runner"
@@ -55,7 +56,11 @@ export interface WebServerLike {
 }
 
 /** Process spawn seam; tests substitute a fake child process. */
-export const internals: { spawn: typeof spawn; spawnSync: typeof spawnSync } = { spawn, spawnSync }
+export const internals: {
+  spawn: typeof spawn
+  spawnSync: typeof spawnSync
+  renderLibProblem: typeof renderLibProblem
+} = { spawn, spawnSync, renderLibProblem }
 
 /** Locate the package root regardless of which copy the loader imported. */
 function packageRoot(start: string): string {
@@ -154,6 +159,17 @@ export function apply(ctx: DshContext, config: TuiRunnerConfig = {}): void {
     process.stderr.write(
       "tui-runner: the terminal client needs the `ws` package, but it is not installed in this profile.\nRun `pnpm install` (or `bun install`) here and then re-run `dsh --profile tui`.\n",
     )
+    exit(1)
+    return
+  }
+  // OpenTUI's renderer is a per-platform native package selected when the tree
+  // was installed. A tree installed on another OS (a Windows install run from
+  // WSL, a copied prefix) lacks this platform's copy, and the client then dies
+  // inside the renderer with a raw "Cannot find module" stack. Report it before
+  // spawning bun, while the harness can still print a useful message.
+  const renderProblem = internals.renderLibProblem()
+  if (renderProblem) {
+    process.stderr.write(`tui-runner: ${renderProblem}\n`)
     exit(1)
     return
   }

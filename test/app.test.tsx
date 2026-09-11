@@ -144,6 +144,13 @@ class FakeClient implements HarnessClientLike {
     return { selected: { provider, model } }
   }
 
+  // This mock's `describe()` returns `describeResult` verbatim (already a
+  // display label), so id -> name resolution is a no-op here; the real
+  // resolution is covered in client.test.ts.
+  modelLabel(id: string): string {
+    return id
+  }
+
   async renameSession() {
     return { title: "t" }
   }

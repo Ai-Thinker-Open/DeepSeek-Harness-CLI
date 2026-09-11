@@ -28,6 +28,7 @@ import {
 } from "../harness/client"
 import { isDown, isEnter, isUp } from "./key-match"
 import { modeLabel, type PermissionMode } from "../permission"
+import { modelSupportsImages } from "../harness/model"
 import { ACCENT_BORDER, theme } from "../theme"
 import {
   buildPasteFoldInfo,
@@ -452,9 +453,9 @@ export function Prompt(props: {
     // Color the tag immediately — not on the next 60ms poll — so pasted
     // images appear highlighted in the frame where they insert.
     applyImageHighlights(ref?.plainText ?? value())
-    if (!visionWarned && !/(?:vision|multimodal|omni|vl)/i.test(model())) {
+    if (!visionWarned && !modelSupportsImages(model())) {
       visionWarned = true
-      props.onNotice?.("当前模型可能不支持图片，请切换到视觉模型（如 DeepSeek-V4-Flash-Vision-Exp）", "error")
+      props.onNotice?.("当前模型可能不支持图片，请切换到支持图片的模型（如 DeepSeek-V41-Flash）", "error")
     }
     return true
   }
