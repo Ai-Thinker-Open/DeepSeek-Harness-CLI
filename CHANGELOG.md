@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.4.3
+
+### 修复：`@deepseek-ai/schemastery` 锁在 3.18.1 导致 npm 全局安装失败，并产生 79 份重复副本
+
+- 根因：`package.json` 把 `@deepseek-ai/schemastery` 精确锁在 `3.18.1`，而本包依赖的 dsh 插件（解析到 `0.1.5-rc.2`）声明的是 `^3.18.2`。
+  - **npm 侧**：严格 peer 校验直接失败 —— `ERESOLVE: Could not resolve dependency: peer @deepseek-ai/schemastery@"^3.18.2" from @deepseek-ai/dsh-settings@0.1.5-rc.2`。也就是说 `npm install -g @ai-thinker/deepseek-harness-cli` 装不上；因为 bun/pnpm 对 peer 宽松，本地开发与 CI 一直没暴露这个问题。
+  - **bun 侧**：bun 靠嵌套多份副本来绕过 —— 根是 `3.18.1`，另外装了 **79 份嵌套的 `schemastery@3.18.2`**。同一进程里同时存在两个 schemastery 实例（schema 校验依赖实例一致性，属隐患，同时也是体积浪费）。
+- 修复：该依赖从 `3.18.1` 提升到 **`3.18.2`**，并保持本仓库对共享运行时库的**精确锁定**约定（与 `@opentui/core@0.5.9`、`@opentui/solid@0.5.9`、`solid-js@1.9.12`、`ws@8.21.3` 一致）。`3.18.2` 同时满足全树所有范围声明（`^3.18.1` ×68、`^3.18.2` ×41），因此 npm 的 peer 校验不再可能冲突。
+- 效果：`bun.lock` 重新解析后 schemastery 只剩 1 条解析条目（`-129` 行），嵌套副本 **79 → 0**，全树共用一份实例；`bun install --frozen-lockfile` 报 no changes（CI 可正常通过）。
+- 测试：`test/dsh-patch.test.ts` 里的精确锁定断言同步为 `3.18.2`。
+
 ## 0.4.2
 
 ### 修复：启动前拦截「dsh 版本不匹配」与「跨系统 node_modules」，给出根因而非原始堆栈

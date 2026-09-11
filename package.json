@@ -1,6 +1,6 @@
 {
   "name": "@ai-thinker/deepseek-harness-cli",
-  "version": "0.4.2",
+  "version": "0.4.3",
   "description": "DeepSeek Harness - OpenTUI terminal interface",
   "type": "module",
   "license": "MIT",
@@ -59,7 +59,7 @@
     "@deepseek-ai/dsh-session-reference": "^0.1.5-rc.1",
     "@deepseek-ai/dsh-session-stats": "^0.1.5-rc.1",
     "@deepseek-ai/dsh-workspace": "^0.1.5-rc.1",
-    "@deepseek-ai/schemastery": "3.18.1",
+    "@deepseek-ai/schemastery": "3.18.2",
     "@opentui/core": "0.5.9",
     "@opentui/solid": "0.5.9",
     "solid-js": "1.9.12",

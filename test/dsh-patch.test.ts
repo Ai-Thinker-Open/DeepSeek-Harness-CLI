@@ -96,7 +96,7 @@ test("manifest declares standard npm dependencies and no install-time mutation",
   expect(manifest.dependencies?.["@opentui/core"]).toBe("0.5.9")
   expect(manifest.dependencies?.["@opentui/solid"]).toBe("0.5.9")
   expect(manifest.dependencies?.["solid-js"]).toBe("1.9.12")
-  expect(manifest.dependencies?.["@deepseek-ai/schemastery"]).toBe("3.18.1")
+  expect(manifest.dependencies?.["@deepseek-ai/schemastery"]).toBe("3.18.2")
   expect(manifest.optionalDependencies?.["@oven/bun-windows-x64"]).toBe("1.3.14")
   expect(manifest.optionalDependencies?.["@oven/bun-linux-x64-musl"]).toBe("1.3.14")
 })
