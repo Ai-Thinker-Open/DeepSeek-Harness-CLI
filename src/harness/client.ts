@@ -170,9 +170,10 @@ export interface ImageContentPart {
 /** One item of a session prompt content list. */
 export type PromptContentPart = { type: "text"; text: string } | ImageContentPart
 
-/** Image wire shape for `commands/execute`. dsh 0.1.5 requires the
- *  `type: "image"` discriminant: the images array is now a union of image and
- *  file parts, so the tag is mandatory. */
+/** Image attachment as `commands/execute` carries it: the image variant of the
+ *  harness's `CommandSubmitAttachment` union (its sibling is a staged
+ *  `{ type: "file"; receiptId }` receipt, which this client never sends). The
+ *  `type: "image"` discriminant is mandatory because the array is a union. */
 export interface ImageCommandImage {
   type: "image"
   mediaType: ImageMediaType
@@ -356,6 +357,22 @@ export class HarnessError extends Error {
   }
 }
 
+/** The two wire names `commands/execute` has used for its attachment array. */
+export type CommandAttachmentField = "submittedAttachments" | "images"
+
+/**
+ * Whether a failure is the gateway rejecting the attachment field name.
+ *
+ * The gateway validates args by exact field equality and reports both halves in
+ * one message (`missing "submittedAttachments"; unexpected "images"`), so match
+ * on the field names instead of the bare `gateway/arguments-invalid` code: a
+ * genuinely malformed argument must surface without a pointless retry.
+ */
+export function isCommandAttachmentFieldMismatch(error: unknown): boolean {
+  if (!(error instanceof HarnessError) || error.code !== "gateway/arguments-invalid") return false
+  return error.message.includes("submittedAttachments") || error.message.includes("images")
+}
+
 export const DEFAULT_HARNESS_URL = "http://127.0.0.1:3081"
 
 /** Loopback hostnames never leave this machine, so plain http/ws is fine there. */
@@ -392,6 +409,14 @@ export class HarnessClient implements HarnessClientLike {
    * catalog entries, so the mapping is kept here and applied at display time.
    */
   private modelLabels = new Map<string, string>()
+  /**
+   * Wire name of `commands/execute`'s attachment parameter. The harness renamed
+   * it from `images` (up to dsh-commands 0.1.5-rc.1) to `submittedAttachments`
+   * (0.1.5-rc.2 on), and the gateway validates args by exact field equality, so
+   * only one name can be sent per call. Starts on the current name and is
+   * flipped once if the harness rejects it (see `commandExecute`).
+   */
+  private commandAttachmentField: CommandAttachmentField = "submittedAttachments"
 
   /**
    * dsh >= 0.1.2-rc.1 guards the `/api` surface behind browser launch-token
@@ -714,16 +739,41 @@ export class HarnessClient implements HarnessClientLike {
   /**
    * Execute a slash-command line against the session's agent. Returns the
    * settled execution, or undefined when the line does not resolve.
+   *
+   * The attachments parameter is named `submittedAttachments` on current
+   * harnesses but was `images` up to dsh-commands 0.1.5-rc.1; the gateway
+   * rejects an args object carrying the wrong one (and the field is mandatory,
+   * so an empty array must still be sent). The first such rejection flips the
+   * name once, and the winner is remembered for every later call.
    */
   async commandExecute(
     sessionId: string,
     line: string,
     images: ImageCommandImage[] = [],
   ): Promise<CommandExecutionResult | undefined> {
-    // Newer harnesses require `images` (composer attachments, empty for a
-    // plain invocation) alongside agentId/line.
-    const args = { agentId: sessionId, line, images }
-    return this.call<CommandExecutionResult | undefined>("commands/execute", args)
+    const send = (field: CommandAttachmentField) => {
+      const args: Record<string, unknown> = { agentId: sessionId, line }
+      args[field] = images
+      return this.call<CommandExecutionResult | undefined>("commands/execute", args)
+    }
+    const field = this.commandAttachmentField
+    try {
+      return await send(field)
+    } catch (error) {
+      if (!isCommandAttachmentFieldMismatch(error)) throw error
+      const alternate: CommandAttachmentField =
+        field === "submittedAttachments" ? "images" : "submittedAttachments"
+      this.commandAttachmentField = alternate
+      try {
+        return await send(alternate)
+      } catch (retryError) {
+        // Both names rejected: revert so a later call starts from the same
+        // place instead of latching a guess. A retry that got past the gateway
+        // (command-level failure) keeps `alternate` — the args were accepted.
+        if (isCommandAttachmentFieldMismatch(retryError)) this.commandAttachmentField = field
+        throw retryError
+      }
+    }
   }
 
   /** Apply an edit/remove/steer operation to a pending queue occurrence. */

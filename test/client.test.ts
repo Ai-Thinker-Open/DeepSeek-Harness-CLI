@@ -15,7 +15,7 @@ test("command RPCs hit the Typert remote gateway with agentId args", async () =>
   await client.commandExecute("s-1", "/compact")
   expect(seen).toEqual([
     { method: "commands/list", payload: { agentId: "s-1" } },
-    { method: "commands/execute", payload: { agentId: "s-1", line: "/compact", images: [] } },
+    { method: "commands/execute", payload: { agentId: "s-1", line: "/compact", submittedAttachments: [] } },
   ])
 })
 
@@ -91,4 +91,64 @@ test("catalog model ids resolve to their display names for the badge", async () 
   expect(client.modelLabel("deepseek-flash")).toBe("DeepSeek-V41-Flash")
   expect(client.modelLabel("deepseek-v4-flash")).toBe("DeepSeek-V4-Flash")
   expect(client.modelLabel("mystery-model")).toBe("mystery-model")
+})
+
+/** The gateway's rejection for a harness whose descriptor still says `images`. */
+function fieldMismatch(field: string): HarnessError {
+  return new HarnessError(
+    `args fields do not match the descriptor: missing "images"; unexpected "${field}"`,
+    "gateway/arguments-invalid",
+  )
+}
+
+test("commandExecute negotiates the renamed attachment field once, then remembers it", async () => {
+  const fields: string[] = []
+  const client = new HarnessClient("http://127.0.0.1:3080")
+  client.call = (async (_method: string, payload: Record<string, unknown>) => {
+    const field = "images" in payload ? "images" : "submittedAttachments"
+    fields.push(field)
+    // A harness on dsh-commands <= 0.1.5-rc.1 rejects the current name.
+    if (field === "submittedAttachments") throw fieldMismatch(field)
+    return { commandId: "c1", result: { kind: "success", text: "ok" } }
+  }) as unknown as typeof client.call
+
+  await client.commandExecute("s-1", "/plan")
+  await client.commandExecute("s-1", "/model")
+
+  // First call: probe the current name, fall back to `images`. Second call:
+  // straight to the remembered name, with no further probe.
+  expect(fields).toEqual(["submittedAttachments", "images", "images"])
+})
+
+test("commandExecute does not retry an attachment-unrelated arguments-invalid", async () => {
+  const fields: string[] = []
+  const client = new HarnessClient("http://127.0.0.1:3080")
+  client.call = (async (_method: string, payload: Record<string, unknown>) => {
+    fields.push("images" in payload ? "images" : "submittedAttachments")
+    throw new HarnessError(
+      'args fields do not match the descriptor: missing "line"',
+      "gateway/arguments-invalid",
+    )
+  }) as unknown as typeof client.call
+
+  await expect(client.commandExecute("s-1", "/plan")).rejects.toThrow(/missing "line"/)
+  expect(fields).toEqual(["submittedAttachments"])
+})
+
+test("commandExecute reverts the field when neither name is accepted", async () => {
+  const fields: string[] = []
+  const client = new HarnessClient("http://127.0.0.1:3080")
+  client.call = (async (_method: string, payload: Record<string, unknown>) => {
+    const field = "images" in payload ? "images" : "submittedAttachments"
+    fields.push(field)
+    throw fieldMismatch(field)
+  }) as unknown as typeof client.call
+
+  await expect(client.commandExecute("s-1", "/plan")).rejects.toThrow()
+  expect(fields).toEqual(["submittedAttachments", "images"])
+
+  // The cache reverted, so the next call starts from the default again rather
+  // than latching the failed guess.
+  await expect(client.commandExecute("s-1", "/plan")).rejects.toThrow()
+  expect(fields).toEqual(["submittedAttachments", "images", "submittedAttachments", "images"])
 })

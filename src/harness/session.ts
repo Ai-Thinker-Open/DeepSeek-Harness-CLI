@@ -16,6 +16,7 @@ import {
 import {
   DEFAULT_IMAGE_LIMITS,
   HarnessClient,
+  HarnessError,
   type CommandDescriptor,
   type HarnessClientLike,
   type HistoryEntry,
@@ -1407,6 +1408,16 @@ export function createHarnessSession(
         const plan = await runPlanFallback(line)
         if (plan) return plan
         return { ok: false, text: "当前 harness 未启用 commands 服务（版本过旧或未加载命令插件），host 命令不可用" }
+      }
+      // The Typert gateway rejects an args object whose fields do not match the
+      // remote's descriptor exactly. That is a client/harness contract drift
+      // (e.g. a renamed parameter), not a failed command — say so rather than
+      // echoing the raw gateway string, which reads like a broken command.
+      if (e instanceof HarnessError && e.code === "gateway/arguments-invalid") {
+        return {
+          ok: false,
+          text: `host 命令通道参数与 harness 不匹配（客户端与 harness 版本不一致，请升级 dsh-cli 或 harness）：${message}`,
+        }
       }
       return { ok: false, text: message }
     }

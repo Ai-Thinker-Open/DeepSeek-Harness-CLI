@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.4.4
+
+### 修复：所有 host slash 命令（含 plan 模式）报 `commands/execute: args fields do not match the descriptor`
+
+- 根因：harness 在 0.1.5-rc 系列把 `commands/execute` 的第三个参数从 `images` 改名为 **`submittedAttachments`**（同一个数组现在同时承载图片与 staged file 回执，`file` 变体为 `{ type: "file", receiptId }`），而 dsh-cli 仍固定发 `images`。Typert 网关对 args 做**严格全等校验**（`dsh-api-gateway` 的 `assertExactArguments`：多一个字段 = `unexpected`，少一个 = `missing`），于是每次调用都被拒：`missing "submittedAttachments"; unexpected "images"`。
+  - 影响面是**所有** host 命令（`/model`、`/mcp`、`/image`、`/rename`、`/fork`、`/compact`…）以及 **plan 模式开关 `/plan`、`/plan off`** —— `runCommand` 只特判 `not found|404`，网关原文被当提示直接抛出，就是用户看到的红条。
+- 佐证：官方 `@deepseek-ai/dsh-client-connection` 的 fixture 至今仍在读 `args.images`，说明这确实是 harness 近期改名，dsh-cli 曾经正确、只是没跟上。
+- **为什么不用版本号判断**：本机 harness 的 meta 包是 `dsh 0.1.5-rc.1`，但其组件 `dsh-commands` 已是 `0.1.5-rc.2` —— `dsh --version` 分辨不出这次改名，`MIN_DSH_VERSION` 一类守卫对此无效。
+- 修复：
+  - `src/harness/client.ts` 的 `commandExecute()` 改发 `submittedAttachments`（其 image 变体与原有 `ImageCommandImage` 形状完全一致；数组必填，空数组也要显式发送）。
+  - 新增**一次性、带缓存**的字段协商：若网关以 `gateway/arguments-invalid` 拒绝且错误文本点名了附件字段，则改用另一名字重试一次并记住结果；重试仍失败且仍是同类错误时**回滚**缓存（避免锁死猜测值）；与附件无关的参数非法**不重试**。
+  - `src/harness/session.ts` 的 `runCommand` 对 `gateway/arguments-invalid` 给出可读诊断（"客户端与 harness 版本不一致"），不再把网关原文当命令错误展示。
+- 顺带核对：用 harness 的 descriptor 逐个比对了 dsh-cli 调用的 **17 个 endpoint**（`wrapArgs` 包装规则 vs 各 descriptor 的必填 wire），**只有 `commands/execute` 一处漂移**，其余（含 `commands/list`、`session/list` 的 `_request`、`settings/update` 的可选 `expectedRevision`）全部匹配。
+- 测试：`test/client.test.ts` 新增「协商成功并缓存」「无关错误不重试」「两个名字都失败时回滚」三个用例；既有 payload 断言同步为 `submittedAttachments`。
+
 ## 0.4.3
 
 ### 修复：`@deepseek-ai/schemastery` 锁在 3.18.1 导致 npm 全局安装失败，并产生 79 份重复副本
