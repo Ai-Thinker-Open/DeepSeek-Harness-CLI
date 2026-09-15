@@ -41,6 +41,10 @@ test("bundle patch declares the terminal surface over dsh-base", () => {
   expect(byId.get("hmr")?.disabled).toBe(true)
   // dsh 0.1.5 renamed `persona` to personaPrefix/Suffix on dsh-system-prompt.
   expect(String(byId.get("system-prompt")?.config?.personaPrefix)).toContain("{{model}}")
+  // dsh 0.1.6-alpha.1 defaults llm-deepseek to the Messages wire; dsh gateways
+  // (MemoryProxy and friends) only implement the OpenAI chat/completions wire,
+  // so the bundle must keep pinning it.
+  expect(byId.get("llm-deepseek")?.config?.protocol).toBe("chat-completions")
   // dsh-base already composes these (and `dsh-host-apiproxy` was removed in
   // dsh 0.1.2-rc.1); re-declaring them would collide or fail to resolve.
   expect(byId.get("api-gateway")).toBeUndefined()

@@ -29,6 +29,24 @@
     # Keep the same temporary process-wide Code Mode opt-in as the other surfaces.
     mode: !!js process.env.DSH_TOOLS_MODE
 
+# dsh 0.1.6-alpha.1 gave @deepseek-ai/dsh-llm-deepseek a `protocol` choice and
+# made "messages" the default: DeepSeek now POSTs `${baseURL}/v1/messages` and
+# parses Anthropic-shaped SSE (`event:`/`data.type` frames). 0.1.5 only ever
+# spoke `${baseURL}/chat/completions`, and that is the wire every gateway in
+# front of this surface implements for dsh — MemoryProxy mounts dsh on the
+# OpenAI routes and synthesizes OpenAI-shaped session-init / tool_call frames
+# (`data: {object: "chat.completion.chunk", ...}`, no `type` field). Left at the
+# new default, the Messages parser rejects the first captured frame with
+# "DeepSeek Messages SSE event type mismatch" and no turn ever starts.
+#
+# Pin the wire this bundle has always used. A deployment that really wants the
+# Messages protocol sets `llm-deepseek: { protocol: messages }` in its own
+# settings: the settings section merges over this row field by field, so only
+# this one key is affected and every other default above still applies.
+- id: llm-deepseek
+  config:
+    protocol: chat-completions
+
 # Full-text cross-session search is a TUI-first feature: the client's /search
 # command queries the harness session-query index. Enable the SQLite FTS5
 # backend lazily (openAt first-search) with a durable index path, so search
@@ -137,3 +155,19 @@
       inject: [tuiStartup, webServer]
       config:
         startup: !!js ctx.tuiStartup
+
+    # The model-facing `ask_user_question` tool (@deepseek-ai/dsh-tool-ask-user).
+    #
+    # dsh-base mounts only the `dsh-user-questions` *seam* (see its patch, the
+    # `@deepseek-ai/dsh-user-questions` row), never this tool. The web surface
+    # gets it indirectly: dsh-web-app mounts `@deepseek-ai/dsh-agent-presets`,
+    # whose shipped `standard` preset lists `- id: tool-ask-user`. The terminal
+    # surface composes straight from dsh-base, so without this row `body.tools`
+    # never carries `ask_user_question`, and the TDai memory proxy classifies
+    # every request as headless (`MemoryProxy/src/handler.ts` `_dshHeadless`) —
+    # which zeroes `tdaiClient` and skips the `/v3/conversation/add` L0 write.
+    #
+    # Mounting the tool alone (instead of the whole agent-presets roster) keeps
+    # this surface's `personaPrefix` and tool set exactly as they are.
+    - id: tool-ask-user
+      name: '@deepseek-ai/dsh-tool-ask-user'

@@ -1,5 +1,27 @@
 # Changelog
 
+## 0.4.6
+
+### 修复：升级后首轮对话报 `DeepSeek Messages SSE event type mismatch`
+
+- 现象：全局 harness 升到 `0.1.6-alpha.1` 后，只要 `llm-deepseek.baseURL` 指向网关（如 MemoryProxy 的 `http://127.0.0.1:8096/dsh/<space>`），第一轮请求就报 `DeepSeek Messages SSE event type mismatch`，对话完全无法开始。
+- 根因：`0.1.6-alpha.1` 给 `@deepseek-ai/dsh-llm-deepseek` 新增了 `protocol` 开关，**默认 `messages`**（`0.1.5` 只有 `chat-completions`，没有这个字段）。默认值一改，请求就从 `${baseURL}/chat/completions` 变成 `${baseURL}/v1/messages`，而网关侧的 dsh 通路只实现 OpenAI Chat Completions：会话初始化 / tool_call 帧是 `data: {object: "chat.completion.chunk", ...}`（没有 `type` 字段）。Messages 解析器读到没有 `type` 的帧即判 `typeof event.type !== "string"`，抛出的正是这条错误。
+- 修复：在 bundle 补丁里覆盖 base 的 `llm-deepseek` 行，显式 `config.protocol: chat-completions`，把线上协议固定回本 bundle 一直使用的形态。settings 是逐字段深合并，用户仍可在自己的 `settings.yaml` 里写 `llm-deepseek: { protocol: messages }` 覆盖，只影响这一个键。
+- 验证：`bun run typecheck` 通过；全量测试通过（含新增的 `test/dsh-patch.test.ts` 断言，防止该默认值再次漂移）。
+
+### 适配：主机插件依赖升到 `@deepseek-ai/dsh 0.1.6-alpha.1`
+
+- 背景：全局 harness 升到 `0.1.6-alpha.1`（npm 上 `latest` 仍是 `0.1.5-rc.1`、`next` 是 `0.1.5-rc.2`、`alpha` 是 `0.1.6-alpha.1`）。本 bundle 的 16 个 `@deepseek-ai/dsh-*` 依赖由 `^0.1.5-rc.1` 升到 `^0.1.6-alpha.1`。
+- **例外**：`@deepseek-ai/dsh-code-runtime-worker-thread` 保留 `^0.1.5-rc.1` —— 该包（连同 `dsh-code-runtime` 家族）**没有** `0.1.6-alpha.1`，最新只到 `0.1.5-rc.2`。
+- 兼容性核对（静态：用 alpha.1 的 dsh-base `cordis.patch.yml` 对比本 bundle 补丁）：
+  - base 共 87 行（全为 `insert`）；本 bundle 的 19 个 `insert` id **与 base 没有任何重复** → 不会触发 `duplicate loader entry id`；
+  - 本 bundle 的 4 个顶层覆盖（`system-prompt` / `hmr` / `tools` / `session-query-sqlite`）**均命中 base 现存行**（否则只会告警跳过）；
+  - base 把网关行由 `api-gateway` **改名为 `typert-gateway`**（仍指向 `@deepseek-ai/dsh-api-gateway`）；本 bundle 既不插入也不覆盖该行，故不受影响；
+  - base 仍不含 `file-upload` / `session-reference` / `session-stats` / `workspace` 等 host 面行 —— 正是本 bundle 需要插入的那批，保持不变。
+- `@deepseek-ai/schemastery` 仍精确锁 `3.18.2`：alpha.1 各包声明的都是 `^3.18.2`，兼容（不会重演 0.4.3 那次 peer 冲突）。
+- 验证：`bun install --frozen-lockfile` 通过（与 CI 一致）；`tsc --noEmit` 通过；全量测试通过；构建通过。
+- **注意**：`0.1.6-alpha.1` 属 **alpha** 通道。若要退回，执行 `npm i -g @deepseek-ai/dsh@0.1.5-rc.1`，并把本文件对应的 dsh-* 依赖范围改回 `^0.1.5-rc.1`。
+
 ## 0.4.5
 
 ### 修复：回车确认审批时会连正在编辑的草稿一起发出；审批卡片无法鼠标操作
