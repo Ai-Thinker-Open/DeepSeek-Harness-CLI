@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.4.5
+
+### 修复：回车确认审批时会连正在编辑的草稿一起发出；审批卡片无法鼠标操作
+
+- 根因一（误发草稿）：审批/提问卡片用全局 `useKeyboard` 处理按键，但**没有消费**回车。而 OpenTUI 的派发顺序是：先跑所有全局 `useKeyboard` 监听器，再跑"可渲染物"（聚焦的 Textarea）处理器；后者只有在事件已被 `preventDefault()` 时才会跳过（见 `@opentui/core` 的 `InternalKeyHandler.emitWithPriority` 与 `KeyHandler.d.ts` 的注释："global handlers can preventDefault before renderable handlers process events"）。同时 `answerApproval`/`answerPermission` 会**同步** `setQuestion(null)`，于是同一次回车内 composer 的 `active()` 立刻变回 true —— 未被消费的回车继续落到 Textarea 的 `onSubmit`，把半截草稿当成消息发了出去。
+  - 修复：卡片对它**实际处理**的按键统一调用 `preventDefault()` + `stopPropagation()`（`consumeKey()`）。`preventDefault()` 拦住 Textarea，`stopPropagation()` 顺带阻止同批次里更晚注册的全局监听器；未处理的按键（普通输入）照常落到 composer，草稿得以保留。
+- 根因二（鼠标不可用）：`question-modal.tsx` 里**完全没有 `onMouse`**，所以审批卡片既不能点选项也不能点按钮。
+  - 修复：选项行/多选请求行支持 hover 移动高亮、左键点击等价于在该行按回车（与命令菜单、结果面板的既有约定一致）；底部两个按钮（允许/下一步/确认全部、拒绝/上一题）也可点击，批量模式下 hover 会同步底部焦点高亮。
+  - 新增 `activateOption()` / `activatePrimary()` / `activateSecondary()` / `recordAndAdvance()` 把"回车语义"抽成一处，键盘与鼠标共用，避免两条路径行为漂移。
+- 顺带核对：`↑/↓/←/→/Enter/Esc/Tab/Space/a/n/i/l` 在四种形态（沙箱审批、多选权限、单问、多问批量）下均已消费；批量问答的"回车记录并翻页"逻辑改为调用 `recordAndAdvance()`，行为不变。
+- 测试：`test/session.test.tsx` 新增两个用例 —— 「草稿未写完时回车确认审批，草稿不被发送且仍在输入框里」（已验证：去掉消费逻辑该用例会失败）与「鼠标点击选项行/拒绝按钮分别触发对应结果」。
+
 ## 0.4.4
 
 ### 修复：所有 host slash 命令（含 plan 模式）报 `commands/execute: args fields do not match the descriptor`

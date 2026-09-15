@@ -1696,6 +1696,98 @@ test("approval modal arrow keys pick session-allow or reject", async () => {
   expect(decided).toEqual(["rejected"])
 })
 
+test("Enter on an approval does not also send the composer draft", async () => {
+  const [current, setCurrent] = createSignal<HarnessQuestion | null>(null)
+  const sent: PromptContentPart[][] = []
+  const decided: Array<"allowed-once" | "rejected"> = []
+  const app = await renderSession({
+    messages: [userMsg("你好")],
+    question: current,
+    onSend: (content) => sent.push(content),
+    onApproval: (outcome) => {
+      decided.push(outcome)
+      setCurrent(null)
+    },
+  })
+  await app.renderOnce()
+
+  // A draft is mid-edit when the escalation arrives.
+  app.mockInput.typeText("这段草稿还没写完")
+  await new Promise((resolve) => setTimeout(resolve, 60))
+  await app.renderOnce()
+  setCurrent({
+    rpcId: "rpc-ap-draft",
+    id: "ap-draft",
+    title: "权限确认",
+    detail: "bash · escalate sandbox to danger-full-access: 写回 D 盘",
+    options: ["允许本次", "当前会话允许", "拒绝"],
+    kind: "permission",
+    approval: { id: "ap-draft", toolName: "bash" },
+  })
+  await app.renderOnce()
+
+  // Enter answers the approval. Answering clears `question()` synchronously,
+  // which flips the composer back to active within the same keypress — so an
+  // unconsumed Enter would fall through to the textarea and send the draft.
+  app.mockInput.pressEnter()
+  await new Promise((resolve) => setTimeout(resolve, 60))
+  await app.renderOnce()
+
+  expect(decided).toEqual(["allowed-once"])
+  expect(sent).toHaveLength(0)
+  expect(app.captureCharFrame()).toContain("这段草稿还没写完")
+})
+
+test("approval modal mouse click activates an option row and the reject chip", async () => {
+  const [current, setCurrent] = createSignal<HarnessQuestion | null>(null)
+  const decided: Array<"allowed-once" | "rejected"> = []
+  let sessionAllowed = 0
+  const open = () =>
+    setCurrent({
+      rpcId: "rpc-ap-mouse",
+      id: "ap-mouse",
+      title: "权限确认",
+      detail: "bash · escalate sandbox to danger-full-access: 写回 D 盘",
+      options: ["允许本次", "当前会话允许", "拒绝"],
+      kind: "permission",
+      approval: { id: "ap-mouse", toolName: "bash" },
+    })
+  const app = await renderSession({
+    messages: [userMsg("你好")],
+    question: current,
+    onApproval: (outcome) => {
+      decided.push(outcome)
+      setCurrent(null)
+    },
+    onApprovalAllowSession: () => {
+      sessionAllowed++
+      setCurrent(null)
+    },
+  })
+  open()
+  await app.renderOnce()
+
+  // Clicking an option row behaves exactly like Enter on it.
+  let lines = app.captureCharFrame().split("\n")
+  let y = lines.findIndex((line) => line.includes("当前会话允许"))
+  await app.mockMouse.click((lines[y]?.indexOf("当前会话允许") ?? 0) + 1, y)
+  await new Promise((resolve) => setTimeout(resolve, 40))
+  await app.renderOnce()
+  expect(sessionAllowed).toBe(1)
+  expect(decided).toEqual([])
+
+  // The footer chip is the last "拒绝" on screen (the option row is above it).
+  open()
+  await app.renderOnce()
+  lines = app.captureCharFrame().split("\n")
+  const rejectRows = lines.map((line, i) => (line.includes("拒绝") ? i : -1)).filter((i) => i >= 0)
+  y = rejectRows[rejectRows.length - 1]!
+  await app.mockMouse.click((lines[y]?.indexOf("拒绝") ?? 0) + 1, y)
+  await new Promise((resolve) => setTimeout(resolve, 40))
+  await app.renderOnce()
+  expect(decided).toEqual(["rejected"])
+})
+
 test("plan review modal renders the harness options and answers them", async () => {
   const [current, setCurrent] = createSignal<HarnessQuestion | null>({
     rpcId: "rpc-plan",

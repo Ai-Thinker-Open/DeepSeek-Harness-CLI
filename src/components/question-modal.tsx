@@ -1,5 +1,6 @@
 import { For, Show, createEffect, createMemo, createSignal } from "solid-js"
 import { useKeyboard, useRenderer } from "@opentui/solid"
+import type { KeyEvent } from "@opentui/core"
 import { isDown, isEnter, isSpace, isUp } from "./key-match"
 import type { HarnessQuestion } from "../session"
 import { theme } from "../theme"
@@ -97,6 +98,25 @@ export function QuestionModal(props: {
   const canPrev = createMemo(() => page() > 0)
   const allAnswered = createMemo(() => asks().every((item) => answers()[item.id] !== undefined))
 
+  /**
+   * Mark a key the modal acted on as consumed. `preventDefault()` is what keeps
+   * the focused Textarea from also seeing it: OpenTUI runs renderable handlers
+   * after the global ones and skips them when the event is already prevented.
+   * That is load-bearing here because answering clears `question()`
+   * synchronously, so the composer's `active()` gate flips back to true within
+   * the same keypress — an unconsumed Enter would then fall through to the
+   * textarea's submit and send the half-written draft together with the
+   * approval. `stopPropagation()` additionally keeps any later global listener
+   * from acting on the same key.
+   */
+  const consumeKey = (key: KeyEvent) => {
+    key.preventDefault()
+    key.stopPropagation()
+  }
+
+  const toggleRequest = (id: string) =>
+    setChecked((ids) => (ids.includes(id) ? ids.filter((z) => z !== id) : [...ids, id]))
+
   useKeyboard((key) => {
     const x = q()
     if (!x) return
@@ -104,25 +124,35 @@ export function QuestionModal(props: {
     // Permission multi-select: Space/a/n/i/l toggle, Enter/Esc answer all.
     if (isMulti()) {
       const requests = x.requests as NonNullable<HarnessQuestion["requests"]>
-      const toggle = (id: string) =>
-        setChecked((ids) => (ids.includes(id) ? ids.filter((z) => z !== id) : [...ids, id]))
-      if (isUp(key)) setSel((s) => Math.max(0, s - 1))
-      else if (isDown(key)) setSel((s) => Math.min(requests.length - 1, s + 1))
-      else if (isSpace(key)) toggle(requests[sel()]?.id as string)
-      else if (key.name === "a") setChecked(requests.map((r) => r.id))
-      else if (key.name === "n") setChecked([])
-      else if (key.name === "i") {
+      if (isUp(key)) {
+        setSel((s) => Math.max(0, s - 1))
+        consumeKey(key)
+      } else if (isDown(key)) {
+        setSel((s) => Math.min(requests.length - 1, s + 1))
+        consumeKey(key)
+      } else if (isSpace(key)) {
+        toggleRequest(requests[sel()]?.id as string)
+        consumeKey(key)
+      } else if (key.name === "a") {
+        setChecked(requests.map((r) => r.id))
+        consumeKey(key)
+      } else if (key.name === "n") {
+        setChecked([])
+        consumeKey(key)
+      } else if (key.name === "i") {
         const active = new Set(checked())
         setChecked(requests.filter((r) => !active.has(r.id)).map((r) => r.id))
+        consumeKey(key)
       } else if (key.name === "l") {
         const latest = requests[requests.length - 1]
         setChecked(latest ? [latest.id] : [])
+        consumeKey(key)
       } else if (isEnter(key)) {
         props.onAnswerMany?.(checked())
-        key.preventDefault?.()
+        consumeKey(key)
       } else if (key.name === "escape") {
         props.onAnswerMany?.([])
-        key.preventDefault?.()
+        consumeKey(key)
       }
       return
     }
@@ -133,9 +163,17 @@ export function QuestionModal(props: {
         if (sel() === 0) props.onApproval?.("allowed-once")
         else if (sel() === 1) props.onApprovalAllowSession?.()
         else props.onApproval?.("rejected")
-      } else if (key.name === "escape") props.onApproval?.("rejected")
-      else if (isUp(key)) setSel((s) => Math.max(0, s - 1))
-      else if (isDown(key)) setSel((s) => Math.min(x.options.length - 1, s + 1))
+        consumeKey(key)
+      } else if (key.name === "escape") {
+        props.onApproval?.("rejected")
+        consumeKey(key)
+      } else if (isUp(key)) {
+        setSel((s) => Math.max(0, s - 1))
+        consumeKey(key)
+      } else if (isDown(key)) {
+        setSel((s) => Math.min(x.options.length - 1, s + 1))
+        consumeKey(key)
+      }
       return
     }
 
@@ -146,6 +184,7 @@ export function QuestionModal(props: {
       if (footerFocus()) {
         if (key.name === "left" || key.name === "right") {
           setFooterSel((s) => (s === 0 ? 1 : 0))
+          consumeKey(key)
         } else if (isEnter(key)) {
           if (footerSel() === 0) {
             if (canPrev()) setPage((p) => Math.max(0, p - 1))
@@ -160,54 +199,159 @@ export function QuestionModal(props: {
           }
           setFooterFocus(false)
           setFooterSel(0)
+          consumeKey(key)
         } else if (key.name === "escape") {
           props.onAnswerBatch?.(items.map((item) => ({ id: item.id, selected: [item.options[item.options.length - 1] ?? ""] })))
           setFooterFocus(false)
           setFooterSel(0)
+          consumeKey(key)
         } else if (key.name === "tab") {
           setFooterFocus(false)
+          consumeKey(key)
         }
         return
       }
       // Option list focus.
-      if (isUp(key)) setSel((s) => Math.max(0, s - 1))
-      else if (isDown(key)) setSel((s) => Math.min(qq.options.length - 1, s + 1))
-      else if (key.name === "left") {
+      if (isUp(key)) {
+        setSel((s) => Math.max(0, s - 1))
+        consumeKey(key)
+      } else if (isDown(key)) {
+        setSel((s) => Math.min(qq.options.length - 1, s + 1))
+        consumeKey(key)
+      } else if (key.name === "left") {
         setPage((p) => Math.max(0, p - 1))
         setSel(0)
+        consumeKey(key)
       } else if (key.name === "right") {
         setPage((p) => Math.min(items.length - 1, p + 1))
         setSel(0)
-      }
-      else if (isEnter(key)) {
-        const opt = qq.options[sel()] ?? qq.options[qq.options.length - 1] ?? ""
-        setAnswers((a) => ({ ...a, [qq.id]: [opt] }))
+        consumeKey(key)
+      } else if (isEnter(key)) {
         // Record the option then auto-advance to the next question. On the last
         // question there is nothing to advance to, so reveal the footer on
         // "确认全部" for the explicit submit (a second Enter) — never an
         // accidental auto-submit.
-        if (isLast()) {
-          setFooterFocus(true)
-          setFooterSel(1)
-        } else {
-          setPage((p) => Math.min(items.length - 1, p + 1))
-          setSel(0)
-        }
+        recordAndAdvance(sel())
+        consumeKey(key)
       } else if (key.name === "escape") {
         props.onAnswerBatch?.(items.map((item) => ({ id: item.id, selected: [item.options[item.options.length - 1] ?? ""] })))
+        consumeKey(key)
       } else if (key.name === "tab") {
         setFooterFocus(true)
         setFooterSel(0)
+        consumeKey(key)
       }
       return
     }
 
     // Single ask-user / plan-review question.
-    if (isUp(key)) setSel((s) => Math.max(0, s - 1))
-    else if (isDown(key)) setSel((s) => Math.min(x.options.length - 1, s + 1))
-    else if (isEnter(key)) props.onAnswer(x.options[sel()] as string)
-    else if (key.name === "escape") props.onAnswer(x.options[x.options.length - 1] as string)
+    if (isUp(key)) {
+      setSel((s) => Math.max(0, s - 1))
+      consumeKey(key)
+    } else if (isDown(key)) {
+      setSel((s) => Math.min(x.options.length - 1, s + 1))
+      consumeKey(key)
+    } else if (isEnter(key)) {
+      props.onAnswer(x.options[sel()] as string)
+      consumeKey(key)
+    } else if (key.name === "escape") {
+      props.onAnswer(x.options[x.options.length - 1] as string)
+      consumeKey(key)
+    }
   })
+
+  /**
+   * Record the highlighted option for the current batch page and advance, which
+   * is exactly what Enter does on the option list.
+   */
+  function recordAndAdvance(index: number): void {
+    const items = asks()
+    const qq = items[page()] ?? items[0]!
+    const opt = qq.options[index] ?? qq.options[qq.options.length - 1] ?? ""
+    setAnswers((a) => ({ ...a, [qq.id]: [opt] }))
+    if (isLast()) {
+      setFooterFocus(true)
+      setFooterSel(1)
+    } else {
+      setPage((p) => Math.min(items.length - 1, p + 1))
+      setSel(0)
+    }
+  }
+
+  /**
+   * Activate option `index` exactly as Enter does on the highlighted row — the
+   * shared target of the keyboard path and a mouse click on an option row.
+   */
+  function activateOption(index: number): void {
+    setSel(index)
+    const x = cur()
+    if (x.approval) {
+      if (index === 0) props.onApproval?.("allowed-once")
+      else if (index === 1) props.onApprovalAllowSession?.()
+      else props.onApproval?.("rejected")
+      return
+    }
+    if (isMulti()) {
+      const id = (x.requests ?? [])[index]?.id
+      if (id) toggleRequest(id)
+      return
+    }
+    if (isBatch()) {
+      recordAndAdvance(index)
+      return
+    }
+    props.onAnswer(x.options[index] as string)
+  }
+
+  /** The bottom-right chip: allow / next page / 确认全部. */
+  function activatePrimary(): void {
+    if (isMulti()) {
+      props.onAnswerMany?.(checked())
+      return
+    }
+    const x = cur()
+    if (x.approval) {
+      if (sel() === 0) props.onApproval?.("allowed-once")
+      else if (sel() === 1) props.onApprovalAllowSession?.()
+      else props.onApproval?.("rejected")
+      return
+    }
+    if (isBatch()) {
+      const items = asks()
+      if (!isLast()) {
+        setPage((p) => Math.min(items.length - 1, p + 1))
+        setSel(0)
+        return
+      }
+      if (!allAnswered()) return
+      props.onAnswerBatch?.(
+        items.map((item) => ({ id: item.id, selected: answers()[item.id] ?? [item.options[item.options.length - 1] ?? ""] })),
+      )
+      return
+    }
+    props.onAnswer(x.options[sel()] as string)
+  }
+
+  /** The bottom-left chip: reject / previous page. */
+  function activateSecondary(): void {
+    if (isMulti()) {
+      props.onAnswerMany?.([])
+      return
+    }
+    const x = cur()
+    if (x.approval) {
+      props.onApproval?.("rejected")
+      return
+    }
+    if (isBatch()) {
+      if (canPrev()) {
+        setPage((p) => Math.max(0, p - 1))
+        setSel(0)
+      }
+      return
+    }
+    props.onAnswer(x.options[x.options.length - 1] as string)
+  }
 
   if (!cur()) return null
 
@@ -319,7 +463,19 @@ export function QuestionModal(props: {
           fallback={
             <For each={cur().options}>
               {(option, i) => (
-                <box flexDirection="row" backgroundColor={i() === sel() ? theme.backgroundCardActive : undefined}>
+                <box
+                  flexDirection="row"
+                  backgroundColor={i() === sel() ? theme.backgroundCardActive : undefined}
+                  onMouse={(evt) => {
+                    // Hover follows the pointer; a click behaves exactly like
+                    // Enter on that row (the contract the command menu uses).
+                    if (evt.type === "over") setSel(i())
+                    if (evt.type === "down" && evt.button === 0) {
+                      activateOption(i())
+                      evt.preventDefault()
+                    }
+                  }}
+                >
                   <text fg={i() === sel() ? kindColor() : theme.border}>{i() === sel() ? "▎" : " "}</text>
                   <text
                     fg={batch && answers()[cur().id]?.[0] === option ? kindColor() : i() === sel() ? theme.text : theme.textMuted}
@@ -336,7 +492,19 @@ export function QuestionModal(props: {
             {(request, i) => {
               const isChecked = () => checked().includes(request.id)
               return (
-                <box flexDirection="column" backgroundColor={i() === sel() ? theme.backgroundCardActive : undefined}>
+                <box
+                  flexDirection="column"
+                  backgroundColor={i() === sel() ? theme.backgroundCardActive : undefined}
+                  onMouse={(evt) => {
+                    if (evt.type === "over") setSel(i())
+                    if (evt.type === "down" && evt.button === 0) {
+                      // A request row is a checkbox: clicking toggles it, the
+                      // same as Space on the highlighted row.
+                      activateOption(i())
+                      evt.preventDefault()
+                    }
+                  }}
+                >
                   <box flexDirection="row">
                     <text fg={i() === sel() ? kindColor() : theme.border}>{i() === sel() ? "▎" : " "}</text>
                     <text fg={i() === sel() ? theme.text : isChecked() ? theme.text : theme.textMuted} wrapMode="char">
@@ -389,6 +557,16 @@ export function QuestionModal(props: {
             paddingLeft={1}
             paddingRight={1}
             marginRight={1}
+            onMouse={(evt) => {
+              if (evt.type === "over" && batch) {
+                setFooterFocus(true)
+                setFooterSel(0)
+              }
+              if (evt.type === "down" && evt.button === 0) {
+                activateSecondary()
+                evt.preventDefault()
+              }
+            }}
           >
             <text fg={batch && footerFocus() && footerSel() === 0 ? theme.accent : secondary().fg}>
               {footerFocus() && footerSel() === 0 ? "▎" : " "}
@@ -405,6 +583,16 @@ export function QuestionModal(props: {
             }
             paddingLeft={1}
             paddingRight={1}
+            onMouse={(evt) => {
+              if (evt.type === "over" && batch) {
+                setFooterFocus(true)
+                setFooterSel(1)
+              }
+              if (evt.type === "down" && evt.button === 0) {
+                activatePrimary()
+                evt.preventDefault()
+              }
+            }}
           >
             <text
               fg={
