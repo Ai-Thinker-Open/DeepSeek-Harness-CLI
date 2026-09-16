@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.4.7
+
+### 修复：`Deep diving` 偶发不显示（回合进行中状态行变空，只剩「Esc 取消」）
+
+- 现象：回合进行中，底部状态行有时整行是空的，右侧只有「Esc 取消」——`Deep diving` 与流水灯一起消失，直到该回合结束才恢复；下一次回合又正常，故表现为「偶发」。
+- 根因：状态行原本是一个**存储型**信号 `statusText`，同时兼作「忙碌指示」与「临时提示」，而回合进行中仍会把它清空的路径不止一条：
+  - `answer` / `answerBatch` / `answerPermission` / `answerApproval` / `cancelQuestion`：回合内弹出的提问 / 审批卡片一旦被回答或 Esc，就无条件 `setStatusText("")`，但 `busy` 仍为 true；
+  - `listenLoop` 重连后第一帧的无条件清空（本意只清「连接中断…」）。
+  两条路径都只清状态、不清 `busy`，于是产生「busy 为真但状态为空」的非法组合，`screens/session.tsx` 里的 `<Show when={props.statusText()}>` 直接把整行隐藏。
+- 修复：状态行改为**派生**：`statusOverride() || (busy() ? DEEP_DIVING_STATUS : "")`。显式提示（连接中断、长时间无响应正在恢复…）优先；只要 `busy` 为真就兜底显示 `Deep diving`。「busy 但空白」从此不可表达，二十处 `setStatusText` 调用点无需逐个打补丁。`abort` / `turn/end` / `host/agent-error` 仍照原样把 `busy` 置 false，状态随之清空。
+- 验证：`bun run typecheck` 通过；全量测试 373 pass。新增回归用例 `answering a mid-turn prompt keeps the busy indicator on screen`（在旧代码下必然失败：`Expected: "Deep diving" / Received: ""`），并把重连用例的断言由「清空状态」改为「回到 `Deep diving`（回合并未结束）」。
+
 ## 0.4.6
 
 ### 修复：升级后首轮对话报 `DeepSeek Messages SSE event type mismatch`

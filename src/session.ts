@@ -46,7 +46,8 @@ export interface ChatImage {
   error?: boolean
 }
 
-/** Status shown while the harness is deep-diving (reasoning) over a turn. */
+/** Status shown while the harness is deep-diving (reasoning) over a turn. Also
+ *  the fallback label for any busy turn with no more specific status. */
 export const DEEP_DIVING_STATUS = "Deep diving"
 
 export type ToolCallStatus = "running" | "ok" | "error" | "denied"

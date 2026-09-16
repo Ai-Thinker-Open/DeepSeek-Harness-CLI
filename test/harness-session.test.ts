@@ -317,10 +317,12 @@ test("reconnect clears the interrupted status once frames flow again", async () 
   await tick()
 
   // The first stream attempt failed; after the reconnect delay a live frame
-  // clears whatever stale status was showing (连接中断 or Deep diving).
+  // clears the 连接中断 status. The turn itself never ended, so the busy
+  // indicator must take over rather than leaving the row blank.
   client.push(frame("session/event", { sessionId: "s-1", event: ev("step/start", { step: 1 }, 5) }))
   await new Promise((resolve) => setTimeout(resolve, 1_700))
-  expect(session.statusText()).toBe("")
+  expect(session.statusText()).toBe("Deep diving")
+  expect(session.busy()).toBe(true)
   expect(calls).toBeGreaterThanOrEqual(2)
 })
 
@@ -431,6 +433,40 @@ test("Deep diving status survives tool execution without being overwritten", asy
   )
   await tick()
   expect(session.statusText()).toBe("Deep diving")
+})
+
+test("answering a mid-turn prompt keeps the busy indicator on screen", async () => {
+  const client = new FakeClient()
+  const session = createHarnessSession(client, "/tmp")
+  await session.start("hello")
+  client.push(frame("session/event", { sessionId: "s-1", event: ev("turn/start", { turn: 1 }, 5) }))
+  await tick()
+  expect(session.statusText()).toBe("Deep diving")
+
+  // The running turn asks for a sandbox escalation. Dismissing the prompt used
+  // to blank the stored status while `busy` stayed true, so the row showed
+  // nothing but "Esc 取消" until the turn ended; the status is derived now.
+  client.push(
+    frame("approval/requested", {
+      sessionId: "s-1",
+      approvalId: "ap-1",
+      toolName: "bash",
+      reason: "写回 D 盘",
+    }),
+  )
+  await tick()
+  expect(session.question()).not.toBeNull()
+
+  await session.answerApproval("allowed-once")
+  expect(session.busy()).toBe(true)
+  expect(session.statusText()).toBe("Deep diving")
+
+  // Only the end of the turn clears the row.
+  client.push(frame("session/event", { sessionId: "s-1", event: ev("turn/end", { turn: 1 }, 9) }))
+  await tick()
+  expect(session.busy()).toBe(false)
+  expect(session.statusText()).toBe("")
+  session.dispose()
 })
 
 test("fast tool results hold the running shine window before settling", async () => {

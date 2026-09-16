@@ -1,6 +1,6 @@
 import { writeFile } from "node:fs/promises"
 import { join } from "node:path"
-import { createSignal } from "solid-js"
+import { createMemo, createSignal } from "solid-js"
 import { debug, isDebugEnabled } from "../debug"
 import { stripSubprocessNoise } from "../subprocess-noise"
 import {
@@ -163,7 +163,26 @@ export function createHarnessSession(
   const [messages, setMessages] = createSignal<ChatMessage[]>([])
   const [stats, setStats] = createSignal<SessionStats>(EMPTY_STATS)
   const [busy, setBusy] = createSignal(false)
-  const [statusText, setStatusText] = createSignal("")
+  /** A specific status line (连接中断 / 恢复中 …). Empty defers to the derived
+   *  busy indicator below. */
+  const [statusOverride, setStatusOverride] = createSignal("")
+  /**
+   * The status row is DERIVED, never stored: an explicit override wins,
+   * otherwise a busy turn falls back to the deep-diving indicator.
+   *
+   * Storing it (and clearing it from unrelated call sites) is what made
+   * "Deep diving" disappear at random: `answer`/`answerBatch`/
+   * `answerPermission`/`answerApproval`/`cancelQuestion` all set the status to
+   * "" while the turn they were asked from keeps running, and the reconnect
+   * cleanup blanks it too. `busy` stayed true, so the row showed nothing but
+   * "Esc 取消" until the turn ended. Deriving it makes "busy but blank"
+   * unrepresentable.
+   */
+  const statusText = createMemo(() => statusOverride() || (busy() ? DEEP_DIVING_STATUS : ""))
+  /** Set the override line; "" clears it (a busy turn still shows Deep diving). */
+  function setStatusText(text: string): void {
+    setStatusOverride(text)
+  }
   const [question, setQuestion] = createSignal<HarnessQuestion | null>(null)
   const [error, setError] = createSignal<string | null>(null)
   const [connected, setConnected] = createSignal(false)
